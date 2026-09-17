@@ -18,6 +18,7 @@ package com.sure.ai.client.compat;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -45,11 +46,14 @@ import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.ImagePart;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
 import com.sure.ai.model.MessagePart;
 import com.sure.ai.model.TextPart;
 import com.sure.ai.model.ToolCall;
 import com.sure.ai.model.ToolFunction;
 import com.sure.ai.model.ToolSpec;
+import com.sure.ai.internal.json.JsonObject;
 
 /**
  * {@link OpenAiCompatClient} 集成测试：本地 HttpServer mock。
@@ -307,5 +311,93 @@ public class OpenAiCompatClientTest {
 		OpenAiCompatClient client = newClient();
 		assertEquals(1, client.embed("e", "hi").embeddings().size());
 		client.close();
+	}
+
+	/** 图像生成：URL 格式响应解析，全字段序列化。 */
+	@Test
+	public void testImageGeneration() {
+		handle(200, "{\"created\":1700000000,\"data\":[{\"url\":\"https://example.com/a.png\","
+			+ "\"revised_prompt\":\"a cat\"}]}");
+		OpenAiCompatClient client = newClient();
+		ImageResponse resp = client.generate(ImageRequest.builder()
+			.model("dall-e-3").prompt("a cat").n(1).size("1024x1024")
+			.quality("hd").style("vivid").responseFormat("url").user("tester").build());
+		assertTrue(this.lastBody.get().contains("\"model\":\"dall-e-3\""));
+		assertTrue(this.lastBody.get().contains("\"prompt\":\"a cat\""));
+		assertTrue(this.lastBody.get().contains("\"n\":1"));
+		assertTrue(this.lastBody.get().contains("\"size\":\"1024x1024\""));
+		assertTrue(this.lastBody.get().contains("\"quality\":\"hd\""));
+		assertTrue(this.lastBody.get().contains("\"style\":\"vivid\""));
+		assertTrue(this.lastBody.get().contains("\"response_format\":\"url\""));
+		assertEquals(1700000000L, resp.created());
+		assertEquals(1, resp.data().size());
+		assertEquals("https://example.com/a.png", resp.firstUrl());
+		assertEquals("a cat", resp.data().get(0).revisedPrompt());
+		client.close();
+	}
+
+	/** 图像生成：b64_json 格式 + 便捷 generate(model,prompt)。 */
+	@Test
+	public void testImageGenerationB64() {
+		handle(200, "{\"created\":1700000001,\"data\":[{\"b64_json\":\"iVBORw0KGgo=\"}]}");
+		OpenAiCompatClient client = newClient();
+		ImageResponse resp = client.generate("dall-e-2", "draw");
+		assertEquals("iVBORw0KGgo=", resp.firstB64());
+		assertNull(resp.firstUrl());
+		client.close();
+	}
+
+	/** 图像生成：空 data 响应不抛异常。 */
+	@Test
+	public void testImageGenerationEmptyData() {
+		handle(200, "{\"created\":0}");
+		OpenAiCompatClient client = newClient();
+		ImageResponse resp = client.generate("dall-e-3", "x");
+		assertTrue(resp.data().isEmpty());
+		assertNull(resp.firstUrl());
+		client.close();
+	}
+
+	/** 图像生成：extra 透传字段。 */
+	@Test
+	public void testImageGenerationExtra() {
+		handle(200, "{\"created\":1,\"data\":[{\"url\":\"http://x/y.png\"}]}");
+		OpenAiCompatClient client = newClient();
+		client.generate(ImageRequest.builder().model("m").prompt("p")
+			.extra("custom_field", "custom_value").build());
+		assertTrue(this.lastBody.get().contains("\"custom_field\":\"custom_value\""));
+		client.close();
+	}
+
+	/** doGet：GET 请求鉴权与响应解析。 */
+	@Test
+	public void testDoGet() {
+		handle(200, "{\"status\":\"SUCCEEDED\",\"result\":\"ok\"}");
+		TestGetClient client = new TestGetClient(AiConfig.builder()
+			.apiKey("test-key").baseUrl(this.baseUrl).build());
+		JsonObject resp = client.doGetPublic("/tasks/123");
+		assertEquals("SUCCEEDED", resp.getString("status"));
+		assertEquals("Bearer test-key", this.lastAuth.get());
+		client.close();
+	}
+
+	/** doGet：404 映射为 AiApiException。 */
+	@Test
+	public void testDoGetNotFound() {
+		handle(404, "{\"error\":\"not found\"}");
+		TestGetClient client = new TestGetClient(AiConfig.builder()
+			.apiKey("test-key").baseUrl(this.baseUrl).build());
+		assertThrows(AiApiException.class, () -> client.doGetPublic("/tasks/missing"));
+		client.close();
+	}
+
+	/** 暴露 protected doGet 的测试子类。 */
+	private static class TestGetClient extends OpenAiCompatClient {
+		TestGetClient(AiConfig config) {
+			super(config);
+		}
+		JsonObject doGetPublic(String path) {
+			return doGet(path);
+		}
 	}
 }

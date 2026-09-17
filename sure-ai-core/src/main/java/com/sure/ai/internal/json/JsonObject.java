@@ -243,6 +243,15 @@ public final class JsonObject extends JsonElement {
 	}
 
 	@Override
+	public long optLong(String key, long defaultValue) {
+		JsonElement el = this.map.get(key);
+		if (el == null || !el.isNumber()) {
+			return defaultValue;
+		}
+		return el.getAsLong();
+	}
+
+	@Override
 	public String toString() {
 		return JsonWriter.stringify(this);
 	}

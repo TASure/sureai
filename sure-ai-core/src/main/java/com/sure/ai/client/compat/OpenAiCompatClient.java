@@ -25,6 +25,7 @@ import com.sure.ai.client.AiClient;
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.EmbeddingClient;
+import com.sure.ai.client.ImageClient;
 import com.sure.ai.internal.json.Json;
 import com.sure.ai.internal.json.JsonArray;
 import com.sure.ai.internal.json.JsonObject;
@@ -36,6 +37,9 @@ import com.sure.ai.model.Choice;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.ImagePart;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.ImageResult;
 import com.sure.ai.model.MessagePart;
 import com.sure.ai.model.Role;
 import com.sure.ai.model.TextPart;
@@ -53,13 +57,16 @@ import com.sure.ai.model.ToolSpec;
  * @author sureai
  * @since 0.1.0
  */
-public class OpenAiCompatClient extends AbstractAiClient implements AiClient, EmbeddingClient {
+public class OpenAiCompatClient extends AbstractAiClient implements AiClient, EmbeddingClient, ImageClient {
 
 	/** 对话接口路径，子类可覆盖。 */
 	protected String chatPath = "/chat/completions";
 
 	/** 向量接口路径，子类可覆盖。 */
 	protected String embeddingsPath = "/embeddings";
+
+	/** 图像生成接口路径，子类可覆盖。 */
+	protected String imagesPath = "/images/generations";
 
 	/**
 	 * 构造客户端。
@@ -107,6 +114,47 @@ public class OpenAiCompatClient extends AbstractAiClient implements AiClient, Em
 		body.put("input", input);
 		JsonObject resp = doPost(this.embeddingsPath, body);
 		return parseEmbeddingResponse(resp);
+	}
+
+	@Override
+	public ImageResponse generate(ImageRequest request) {
+		JsonObject body = buildImageBody(request);
+		PostResult result = doPostRaw(this.imagesPath, body);
+		return parseImageResponse(result.json(), result.rawBody());
+	}
+
+	/** 构造图像生成请求体。 */
+	private JsonObject buildImageBody(ImageRequest req) {
+		JsonObject body = Json.object();
+		body.put("model", req.model());
+		body.put("prompt", req.prompt());
+		putIfNotNull(body, "n", req.n());
+		putIfNotNull(body, "size", req.size());
+		putIfNotNull(body, "quality", req.quality());
+		putIfNotNull(body, "style", req.style());
+		putIfNotNull(body, "response_format", req.responseFormat());
+		putIfNotNull(body, "user", req.user());
+		for (Map.Entry<String, Object> e : req.extra().entrySet()) {
+			body.put(e.getKey(), Json.toElement(e.getValue()));
+		}
+		return body;
+	}
+
+	/** 解析图像生成响应：{created, data:[{url, b64_json, revised_prompt}]}。 */
+	private ImageResponse parseImageResponse(JsonObject resp, String rawJson) {
+		long created = resp.optLong("created", 0L);
+		List<ImageResult> results = new ArrayList<>();
+		JsonArray data = resp.has("data") ? resp.getJsonArray("data") : null;
+		if (data != null) {
+			for (int i = 0; i < data.size(); i++) {
+				JsonObject d = data.getJsonObject(i);
+				results.add(ImageResult.of(
+					d.optString("url", null),
+					d.optString("b64_json", null),
+					d.optString("revised_prompt", null)));
+			}
+		}
+		return ImageResponse.of(created, results, rawJson);
 	}
 
 	/** 构造对话请求体。 */

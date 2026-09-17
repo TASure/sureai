@@ -17,6 +17,8 @@
 package com.sure.ai.gemini;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -42,6 +44,8 @@ import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.ImagePart;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
 import com.sure.ai.model.MessagePart;
 import com.sure.ai.model.TextPart;
 
@@ -236,6 +240,44 @@ public class GeminiClientTest {
 		assertTrue(body.contains("\"inline_data\""));
 		assertTrue(body.contains("\"mime_type\":\"image/png\""));
 		assertTrue(body.contains("aGVsbG8="));
+		client.close();
+	}
+
+	/** 图像生成：请求体含 responseModalities，响应提取 inlineData。 */
+	@Test
+	public void testImageGeneration() {
+		String b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+		String resp = "{\"candidates\":[{\"content\":{\"role\":\"model\","
+			+ "\"parts\":[{\"inlineData\":{\"mimeType\":\"image/png\",\"data\":\"" + b64 + "\"}}]},"
+			+ "\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"totalTokenCount\":100}}";
+		handle(200, resp);
+		GeminiClient client = newClient();
+		ImageResponse result = client.generate(
+			ImageRequest.of(GeminiModels.GEMINI_2_0_FLASH_EXP, "a cat"));
+		String body = this.lastBody.get();
+		assertTrue("body should set responseModalities",
+			body.contains("\"responseModalities\""));
+		assertTrue("body should request IMAGE modality", body.contains("\"IMAGE\""));
+		assertTrue("path should end with :generateContent",
+			this.lastPath.get().endsWith(":generateContent"));
+		assertEquals("base64 should match", b64, result.firstB64());
+		assertEquals(1, result.data().size());
+		assertNotNull(result.rawJson());
+		client.close();
+	}
+
+	/** 模型拒绝生成（仅 text part）：data 列表为空。 */
+	@Test
+	public void testImageGenerationNoImage() {
+		String resp = "{\"candidates\":[{\"content\":{\"role\":\"model\","
+			+ "\"parts\":[{\"text\":\"I cannot generate images for this request.\"}]},"
+			+ "\"finishReason\":\"SAFETY\"}]}";
+		handle(200, resp);
+		GeminiClient client = newClient();
+		ImageResponse result = client.generate(
+			ImageRequest.of(GeminiModels.GEMINI_2_0_FLASH_EXP, "bad prompt"));
+		assertTrue("no image part -> empty data", result.data().isEmpty());
+		assertNull(result.firstB64());
 		client.close();
 	}
 

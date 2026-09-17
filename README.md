@@ -26,25 +26,26 @@
 - **流式调用**：统一 SSE 流式接口，逐片回调
 - **Function Calling**：工具声明与调用闭环
 - **Embedding**：向量生成（支持平台见下表）
+- **图像生成**：`ImageClient` 统一抽象，支持 DALL·E / 通义万相 / CogView / 文心一格 / Gemini Imagen，异步平台内部轮询屏蔽，对外同步返回
 - **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（分块 / 向量存储 / 检索 / 增强生成）
 - **环境变量自动配置**：未显式 init 时自动从 `SURE_AI_*` 环境变量读取
 - **JDK 21**：record / pattern matching / switch 模式
 
 ## 模块与平台一览
 
-| 平台 | artifactId | 默认 baseUrl | 鉴权方式 | 流式 | Embedding | Function Calling |
-|------|-----------|-------------|---------|------|-----------|-----------------|
-| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ |
-| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key 头 | ✅ | ✅ | ✅ |
-| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key 头 | ✅ | ❌ | ✅ |
-| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= 查询参数 | ✅ | ✅ | ✅ |
-| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ✅ |
-| 通义千问 | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ |
-| 智谱 GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ |
-| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ✅ |
-| 豆包 | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ✅ |
-| 百度千帆 | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token（自动缓存） | ✅ | ✅ | ✅ |
-| Ollama | `sure-ai-ollama` | `http://localhost:11434` | 无（本地服务） | ✅ | ✅ | ✅ |
+| 平台 | artifactId | 默认 baseUrl | 鉴权方式 | 流式 | Embedding | 图像生成 | Function Calling |
+|------|-----------|-------------|---------|------|-----------|---------|-----------------|
+| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ DALL·E 3 | ✅ |
+| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key 头 | ✅ | ✅ | ✅ DALL·E 3 | ✅ |
+| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key 头 | ✅ | ❌ | ❌ | ✅ |
+| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= 查询参数 | ✅ | ✅ | ✅ Imagen | ✅ |
+| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ❌ | ✅ |
+| 通义千问 | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ 通义万相（异步） | ✅ |
+| 智谱 GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ CogView | ✅ |
+| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ❌ | ✅ |
+| 豆包 | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ |
+| 百度千帆 | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token（自动缓存） | ✅ | ✅ | ✅ 文心一格（异步） | ✅ |
+| Ollama | `sure-ai-ollama` | `http://localhost:11434` | 无（本地服务） | ✅ | ✅ | ❌ | ✅ |
 
 聚合模块：`sure-ai-all`（一个依赖引入全部平台）、`sure-ai-bom`（版本统一管理）。
 
@@ -58,6 +59,28 @@ import com.sure.ai.openai.OpenAiUtil;
 String reply = OpenAiUtil.chat("gpt-4o-mini", "你好！").firstText();
 System.out.println(reply);
 ```
+
+### 图像生成
+
+```java
+import com.sure.ai.openai.OpenAiUtil;
+import com.sure.ai.openai.OpenAiModels;
+import com.sure.ai.model.ImageRequest;
+
+// 同步返回（异步平台如通义万相/文心一格内部自动轮询）
+String imageUrl = OpenAiUtil.image(OpenAiModels.DALL_E_3, "一只可爱的小猫咪").firstUrl();
+
+// 或使用 Builder 配置尺寸/质量/数量
+ImageRequest req = ImageRequest.builder()
+    .model(OpenAiModels.DALL_E_3)
+    .prompt("赛博朋克风格的城市夜景")
+    .size("1024x1024")
+    .quality("hd")
+    .build();
+String url = OpenAiUtil.image(req).firstUrl();
+```
+
+更多平台配置与异步轮询说明见 [docs/images.md](docs/images.md)。
 
 ## Maven 依赖
 

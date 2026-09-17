@@ -86,6 +86,9 @@ public final class ExamplesRunner {
 			case "rag":
 				RagDemo.main(emptyArgs);
 				break;
+			case "image":
+				ImageDemo.main(emptyArgs);
+				break;
 			default:
 				System.out.println("未知平台：" + args[0]);
 				printUsage();
@@ -108,5 +111,6 @@ public final class ExamplesRunner {
 		System.out.println("  baidu      - 百度千帆文心");
 		System.out.println("  ollama     - Ollama 本地模型");
 		System.out.println("  rag        - RAG 检索增强问答（基于 OpenAI）");
+		System.out.println("  image      - 多平台图像生成演示（OpenAI/通义万相/智谱）");
 	}
 }

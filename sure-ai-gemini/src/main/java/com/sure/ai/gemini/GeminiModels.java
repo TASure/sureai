@@ -40,6 +40,12 @@ public final class GeminiModels {
 	/** Gemini 2.0 Flash — 上一代稳定快速模型。 */
 	public static final String GEMINI_2_0_FLASH = "gemini-2.0-flash";
 
+	/** Gemini 2.0 Flash Experimental — 支持文本生成图像（responseModalities=IMAGE）。 */
+	public static final String GEMINI_2_0_FLASH_EXP = "gemini-2.0-flash-exp";
+
+	/** Imagen 3 — 旗舰文生图模型（通过 Vertex AI 接入时可用）。 */
+	public static final String IMAGEN_3 = "imagen-3.0-generate-002";
+
 	/** Gemini Embedding — 向量嵌入模型。 */
 	public static final String GEMINI_EMBEDDING_001 = "gemini-embedding-001";
 

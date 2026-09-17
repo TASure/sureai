@@ -43,6 +43,8 @@ import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
 
 /**
  * {@link AzureClient} 与 {@link AzureUtil} 集成测试：本地 HttpServer mock。
@@ -184,6 +186,23 @@ public class AzureClientTest {
 		assertTrue(this.lastUri.get().contains("/openai/deployments/my-gpt4o/embeddings"));
 		assertTrue(this.lastUri.get().contains("api-version=2024-10-21"));
 		assertEquals(2, resp.embeddings().get(0).length, 0);
+		client.close();
+	}
+
+	/** 图像生成：URL 含 deployment/images/generations/api-version，响应解析正确。 */
+	@Test
+	public void testImageGeneration() {
+		handle(200, "{\"created\":1700000000,\"data\":["
+			+ "{\"url\":\"https://example.com/azure-img.png\",\"revised_prompt\":\"a flower\"}]}");
+		AzureClient client = newClient();
+		ImageResponse resp = client.generate(ImageRequest.builder()
+			.model("my-dalle3").prompt("a flower").build());
+		assertTrue(this.lastUri.get().contains("/openai/deployments/my-gpt4o/images/generations"));
+		assertTrue(this.lastUri.get().contains("api-version=2024-10-21"));
+		assertEquals("azure-key", this.lastApiKey.get());
+		assertNull("Azure 不应使用 Authorization Bearer 头", this.lastAuth.get());
+		assertEquals("https://example.com/azure-img.png", resp.firstUrl());
+		assertEquals(1700000000L, resp.created());
 		client.close();
 	}
 

@@ -49,4 +49,13 @@ public final class QwenModels {
 
 	/** text-embedding-v2：通用文本向量 v2。 */
 	public static final String TEXT_EMBEDDING_V2 = "text-embedding-v2";
+
+	/** wanx-v1：通义万相初代文生图模型。 */
+	public static final String WANX_V1 = "wanx-v1";
+
+	/** wan2.1-t2i-turbo：通义万相 2.1 文生图 Turbo，高并发低延迟。 */
+	public static final String WAN2_1_T2I_TURBO = "wan2.1-t2i-turbo";
+
+	/** wan2.1-t2i-plus：通义万相 2.1 文生图 Plus，质量更高。 */
+	public static final String WAN2_1_T2I_PLUS = "wan2.1-t2i-plus";
 }

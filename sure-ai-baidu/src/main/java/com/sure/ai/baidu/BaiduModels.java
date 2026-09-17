@@ -42,6 +42,9 @@ public final class BaiduModels {
 	/** embedding-v1：文心通用文本向量模型。 */
 	public static final String EMBEDDING_V1 = "embedding-v1";
 
+	/** ernie-vilg-v2：文心一格文生图模型（异步任务）。 */
+	public static final String ERNIE_VILG_V2 = "ernie-vilg-v2";
+
 	/** 工具类禁止实例化。 */
 	private BaiduModels() {
 		throw new AssertionError("No instances");

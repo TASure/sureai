@@ -43,6 +43,8 @@ import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
 
 /**
  * {@link OpenAiClient} 与 {@link OpenAiUtil} 集成测试：本地 HttpServer mock。
@@ -198,6 +200,36 @@ public class OpenAiClientTest {
 		assertEquals(1, resp.embeddings().size());
 		assertEquals(3, resp.embeddings().get(0).length, 0);
 		assertEquals(0.2f, resp.embeddings().get(0)[1], 1e-6);
+		client.close();
+	}
+
+	/** 图像生成（URL 格式）：请求体含 model/prompt，响应解析 firstUrl/revised_prompt/created。 */
+	@Test
+	public void testImageGeneration() {
+		handle(200, "{\"created\":1700000000,\"data\":["
+			+ "{\"url\":\"https://example.com/img.png\",\"revised_prompt\":\"a cat\"}]}");
+		OpenAiClient client = newClient();
+		ImageResponse resp = client.generate(ImageRequest.builder()
+			.model(OpenAiModels.DALL_E_3).prompt("a cat").build());
+		assertTrue(this.lastBody.get().contains("\"model\":\"dall-e-3\""));
+		assertTrue(this.lastBody.get().contains("\"prompt\":\"a cat\""));
+		assertEquals("https://example.com/img.png", resp.firstUrl());
+		assertEquals("a cat", resp.data().get(0).revisedPrompt());
+		assertEquals(1700000000L, resp.created());
+		client.close();
+	}
+
+	/** 图像生成（b64_json 格式）：解析 b64 字段。 */
+	@Test
+	public void testImageB64Response() {
+		handle(200, "{\"created\":1700000001,\"data\":["
+			+ "{\"b64_json\":\"iVBORw0KGgoAAAANSUhEUg==\"}]}");
+		OpenAiClient client = newClient();
+		ImageResponse resp = client.generate(OpenAiModels.DALL_E_2, "a dog");
+		assertTrue(this.lastBody.get().contains("\"model\":\"dall-e-2\""));
+		assertTrue(this.lastBody.get().contains("\"prompt\":\"a dog\""));
+		assertEquals("iVBORw0KGgoAAAANSUhEUg==", resp.firstB64());
+		assertEquals(1700000001L, resp.created());
 		client.close();
 	}
 

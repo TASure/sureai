@@ -24,6 +24,8 @@ import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
 
 /**
  * Google Gemini 静态入口工具类。
@@ -143,6 +145,27 @@ public final class GeminiUtil {
 	 */
 	public static EmbeddingResponse embed(EmbeddingRequest request) {
 		return client().embed(request);
+	}
+
+	/**
+	 * 便捷图像生成：仅模型与提示词。
+	 *
+	 * @param model  模型名（如 {@link GeminiModels#GEMINI_2_0_FLASH_EXP}）
+	 * @param prompt 提示词
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(String model, String prompt) {
+		return client().generate(model, prompt);
+	}
+
+	/**
+	 * 图像生成。
+	 *
+	 * @param request 图像请求
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(ImageRequest request) {
+		return client().generate(request);
 	}
 
 	/**

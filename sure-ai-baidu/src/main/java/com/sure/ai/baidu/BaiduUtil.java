@@ -25,6 +25,8 @@ import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
 
 /**
  * 百度千帆（文心 ERNIE）静态入口。
@@ -56,6 +58,12 @@ public final class BaiduUtil {
 
 	/** 初始化锁。 */
 	private static final Object LOCK = new Object();
+
+	/** 图像生成客户端单例。 */
+	private static volatile BaiduImageClient imageClient;
+
+	/** 图像客户端初始化锁。 */
+	private static final Object IMAGE_LOCK = new Object();
 
 	/** 工具类禁止实例化。 */
 	private BaiduUtil() {
@@ -168,5 +176,75 @@ public final class BaiduUtil {
 	 */
 	public static EmbeddingResponse embed(EmbeddingRequest request) {
 		return client().embed(request);
+	}
+
+	/**
+	 * 获取文心一格图像生成单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 图像客户端
+	 * @throws AiException 环境变量缺失时抛出
+	 */
+	public static BaiduImageClient imageClient() {
+		BaiduImageClient c = imageClient;
+		if (c == null) {
+			synchronized (IMAGE_LOCK) {
+				c = imageClient;
+				if (c == null) {
+					c = buildImageClientFromEnv();
+					imageClient = c;
+				}
+			}
+		}
+		return c;
+	}
+
+	/** 从环境变量构建图像客户端：apiKey + secretKey 放入 extraHeaders。 */
+	private static BaiduImageClient buildImageClientFromEnv() {
+		String key = System.getenv(ENV_API_KEY);
+		String secret = System.getenv(ENV_SECRET_KEY);
+		if (key == null || key.isBlank()) {
+			throw new AiException("env " + ENV_API_KEY + " is not set");
+		}
+		if (secret == null || secret.isBlank()) {
+			throw new AiException("env " + ENV_SECRET_KEY + " is not set");
+		}
+		AiConfig.Builder b = AiConfig.builder()
+			.apiKey(key)
+			.extraHeader(BaiduClient.SECRET_KEY_HEADER, secret);
+		String base = System.getenv(ENV_BASE_URL);
+		if (base != null && !base.isBlank()) {
+			b.baseUrl(base);
+		}
+		return new BaiduImageClient(b.build());
+	}
+
+	/**
+	 * 便捷文生图。
+	 *
+	 * @param model  模型 ID（如 {@link BaiduModels#ERNIE_VILG_V2}）
+	 * @param prompt 提示词
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(String model, String prompt) {
+		return imageClient().generate(model, prompt);
+	}
+
+	/**
+	 * 文生图。
+	 *
+	 * @param request 图像请求
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(ImageRequest request) {
+		return imageClient().generate(request);
+	}
+
+	/**
+	 * 重置图像单例客户端（测试清理用）。
+	 */
+	public static void resetImageClient() {
+		synchronized (IMAGE_LOCK) {
+			imageClient = null;
+		}
 	}
 }

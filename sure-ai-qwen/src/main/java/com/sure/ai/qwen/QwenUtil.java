@@ -25,6 +25,8 @@ import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
 
 /**
  * 阿里云百炼通义千问（DashScope）平台静态入口工具类。
@@ -51,6 +53,12 @@ public final class QwenUtil {
 
 	/** 初始化锁对象。 */
 	private static final Object LOCK = new Object();
+
+	/** 图像生成客户端单例。 */
+	private static volatile QwenImageClient imageClient;
+
+	/** 图像客户端初始化锁。 */
+	private static final Object IMAGE_LOCK = new Object();
 
 	private QwenUtil() {
 		throw new AssertionError("No instances");
@@ -173,5 +181,55 @@ public final class QwenUtil {
 	 */
 	public static EmbeddingResponse embed(EmbeddingRequest request) {
 		return client().embed(request);
+	}
+
+	/**
+	 * 获取通义万相图像生成单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 图像客户端
+	 * @throws AiException 未初始化且未设置 {@code SURE_AI_QWEN_API_KEY}
+	 */
+	public static QwenImageClient imageClient() {
+		QwenImageClient c = imageClient;
+		if (c == null) {
+			synchronized (IMAGE_LOCK) {
+				c = imageClient;
+				if (c == null) {
+					c = new QwenImageClient(buildConfigFromEnv());
+					imageClient = c;
+				}
+			}
+		}
+		return c;
+	}
+
+	/**
+	 * 便捷文生图。
+	 *
+	 * @param model  模型 ID（如 {@link QwenModels#WANX_V1}）
+	 * @param prompt 提示词
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(String model, String prompt) {
+		return imageClient().generate(model, prompt);
+	}
+
+	/**
+	 * 文生图。
+	 *
+	 * @param request 图像请求
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(ImageRequest request) {
+		return imageClient().generate(request);
+	}
+
+	/**
+	 * 重置图像单例客户端（测试清理用）。
+	 */
+	public static void resetImageClient() {
+		synchronized (IMAGE_LOCK) {
+			imageClient = null;
+		}
 	}
 }

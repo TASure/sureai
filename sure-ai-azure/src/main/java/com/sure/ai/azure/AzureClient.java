@@ -29,7 +29,8 @@ import com.sure.ai.client.compat.OpenAiCompatClient;
  * <ul>
  *   <li><b>鉴权</b>：使用 {@code api-key: <apiKey>} 头（而非 {@code Authorization: Bearer}）。</li>
  *   <li><b>URL</b>：对话为 {@code {baseUrl}/openai/deployments/{deployment}/chat/completions?api-version={apiVersion}}，
- *   向量为 {@code .../openai/deployments/{deployment}/embeddings?api-version={apiVersion}}。</li>
+ *   向量为 {@code .../openai/deployments/{deployment}/embeddings?api-version={apiVersion}}，
+ *   图像为 {@code .../openai/deployments/{deployment}/images/generations?api-version={apiVersion}}。</li>
  * </ul>
  *
  * <p>配置约定：</p>
@@ -78,6 +79,8 @@ public class AzureClient extends OpenAiCompatClient {
 			+ "/chat/completions?api-version=" + this.apiVersion;
 		this.embeddingsPath = "/openai/deployments/" + this.deployment
 			+ "/embeddings?api-version=" + this.apiVersion;
+		this.imagesPath = "/openai/deployments/" + this.deployment
+			+ "/images/generations?api-version=" + this.apiVersion;
 	}
 
 	@Override

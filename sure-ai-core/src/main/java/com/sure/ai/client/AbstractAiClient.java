@@ -184,6 +184,63 @@ public abstract class AbstractAiClient {
 		}
 	}
 
+	/**
+	 * JSON GET 并返回响应对象（用于异步任务轮询等场景）。
+	 *
+	 * <p>2xx 返回解析后的 JsonObject；非 2xx 经 {@link #mapError} 抛出；429/5xx 按 Retry-After
+	 * 或指数退避重试 maxRetries 次。</p>
+	 *
+	 * @param path 接口路径
+	 * @return 响应 JSON
+	 */
+	protected JsonObject doGet(String path) {
+		return doGetRaw(path).json();
+	}
+
+	/**
+	 * JSON GET 并返回解析结果与原始报文。
+	 *
+	 * @param path 接口路径
+	 * @return 解析结果（含原始报文）
+	 */
+	protected PostResult doGetRaw(String path) {
+		String url = resolveUrl(path);
+		int attempt = 0;
+		while (true) {
+			HttpRequest.Builder rb = HttpRequest.newBuilder()
+				.uri(URI.create(url))
+				.timeout(this.config.timeout())
+				.header("Accept", "application/json")
+				.GET();
+			applyAuth(rb, this.config);
+			for (java.util.Map.Entry<String, String> e : this.config.extraHeaders().entrySet()) {
+				rb.header(e.getKey(), e.getValue());
+			}
+			HttpRequest request = rb.build();
+			HttpResponse<String> resp;
+			try {
+				resp = this.httpClient.send(request, BodyHandlers.ofString(StandardCharsets.UTF_8));
+			} catch (IOException ex) {
+				throw new AiTimeoutException("request failed: " + ex.getMessage(), ex);
+			} catch (InterruptedException ex) {
+				Thread.currentThread().interrupt();
+				throw new AiException("request interrupted", ex);
+			}
+			int status = resp.statusCode();
+			if (status >= 200 && status < 300) {
+				return new PostResult(parseJson(resp.body()), resp.body());
+			}
+			String retryAfter = resp.headers().firstValue("Retry-After").orElse(null);
+			if (isRetriable(status) && attempt < this.config.maxRetries()) {
+				this.log.fine("retry " + (attempt + 1) + " after status " + status);
+				sleepBackoff(attempt, retryAfter);
+				attempt++;
+				continue;
+			}
+			throw mapError(status, resp.body(), parseRetryAfter(retryAfter));
+		}
+	}
+
 	/** 读取错误响应体。 */
 	private static String readAll(HttpResponse<java.io.InputStream> resp) {
 		try (java.io.InputStream in = resp.body()) {

@@ -47,4 +47,7 @@ public final class AzureModels {
 
 	/** text-embedding-3-large 部署参考名。 */
 	public static final String TEXT_EMBEDDING_3_LARGE = "text-embedding-3-large";
+
+	/** DALL·E 3 部署参考名。 */
+	public static final String DALL_E_3 = "dall-e-3";
 }

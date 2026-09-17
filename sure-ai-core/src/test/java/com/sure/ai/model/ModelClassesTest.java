@@ -17,6 +17,7 @@
 package com.sure.ai.model;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -136,5 +137,68 @@ public class ModelClassesTest {
 		ChatStreamChunk ch = ChatStreamChunk.of("id", Role.ASSISTANT, "hi", null, null);
 		assertEquals("hi", ch.deltaText());
 		assertEquals(Role.ASSISTANT, ch.role());
+	}
+
+	/** ImageRequest builder：必填校验与全字段。 */
+	@Test
+	public void testImageRequestBuilder() {
+		ImageRequest req = ImageRequest.builder()
+			.model("dall-e-3").prompt("a cat").n(2).size("1024x1024")
+			.quality("hd").style("vivid").responseFormat("url").user("u")
+			.extra("k", "v").build();
+		assertEquals("dall-e-3", req.model());
+		assertEquals("a cat", req.prompt());
+		assertEquals(Integer.valueOf(2), req.n());
+		assertEquals("1024x1024", req.size());
+		assertEquals("hd", req.quality());
+		assertEquals("vivid", req.style());
+		assertEquals("url", req.responseFormat());
+		assertEquals("u", req.user());
+		assertEquals("v", req.extra().get("k"));
+	}
+
+	/** ImageRequest.of 便捷构造。 */
+	@Test
+	public void testImageRequestOf() {
+		ImageRequest req = ImageRequest.of("m", "p");
+		assertEquals("m", req.model());
+		assertEquals("p", req.prompt());
+		assertNull(req.n());
+	}
+
+	/** ImageRequest 必填校验：model 为空抛异常。 */
+	@Test
+	public void testImageRequestValidation() {
+		assertThrows(Exception.class, () -> ImageRequest.builder().prompt("p").build());
+		assertThrows(Exception.class, () -> ImageRequest.builder().model("m").build());
+	}
+
+	/** ImageResult 工厂方法。 */
+	@Test
+	public void testImageResult() {
+		ImageResult r1 = ImageResult.of("http://x", "b64", "revised");
+		assertEquals("http://x", r1.url());
+		assertEquals("b64", r1.b64Json());
+		assertEquals("revised", r1.revisedPrompt());
+		ImageResult r2 = ImageResult.ofUrl("http://y");
+		assertEquals("http://y", r2.url());
+		assertNull(r2.b64Json());
+		ImageResult r3 = ImageResult.ofB64("abc");
+		assertEquals("abc", r3.b64Json());
+		assertNull(r3.url());
+	}
+
+	/** ImageResponse：of/firstUrl/firstB64/空列表防御性拷贝。 */
+	@Test
+	public void testImageResponse() {
+		ImageResult r = ImageResult.ofUrl("http://z");
+		ImageResponse resp = ImageResponse.of(123L, List.of(r), "{}");
+		assertEquals(123L, resp.created());
+		assertEquals(1, resp.data().size());
+		assertEquals("http://z", resp.firstUrl());
+		assertNull(resp.firstB64());
+		ImageResponse empty = ImageResponse.of(0, null, null);
+		assertTrue(empty.data().isEmpty());
+		assertNull(empty.firstUrl());
 	}
 }

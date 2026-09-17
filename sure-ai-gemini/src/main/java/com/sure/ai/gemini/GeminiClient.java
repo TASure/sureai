@@ -24,6 +24,7 @@ import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiClient;
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.EmbeddingClient;
+import com.sure.ai.client.ImageClient;
 import com.sure.ai.internal.json.Json;
 import com.sure.ai.internal.json.JsonArray;
 import com.sure.ai.internal.json.JsonObject;
@@ -35,6 +36,9 @@ import com.sure.ai.model.Choice;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.ImagePart;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.ImageResult;
 import com.sure.ai.model.MessagePart;
 import com.sure.ai.model.Role;
 import com.sure.ai.model.TextPart;
@@ -53,7 +57,7 @@ import com.sure.ai.model.ToolSpec;
  * @author sureai
  * @since 0.1.0
  */
-public class GeminiClient extends AbstractAiClient implements AiClient, EmbeddingClient {
+public class GeminiClient extends AbstractAiClient implements AiClient, EmbeddingClient, ImageClient {
 
 	/** 默认 baseUrl。 */
 	private static final String DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
@@ -99,6 +103,65 @@ public class GeminiClient extends AbstractAiClient implements AiClient, Embeddin
 			vectors.add(embedSingle(request.model(), text));
 		}
 		return EmbeddingResponse.of(request.model(), vectors, null);
+	}
+
+	@Override
+	public ImageResponse generate(ImageRequest request) {
+		String path = buildPath(request.model(), "generateContent");
+		JsonObject body = Json.object();
+		JsonArray contents = Json.array();
+		JsonObject content = Json.object();
+		content.put("role", "user");
+		JsonArray parts = Json.array();
+		JsonObject textPart = Json.object();
+		textPart.put("text", request.prompt());
+		parts.add(textPart);
+		content.put("parts", parts);
+		contents.add(content);
+		body.put("contents", contents);
+		JsonObject genConfig = Json.object();
+		JsonArray modalities = Json.array();
+		modalities.add("IMAGE");
+		modalities.add("TEXT");
+		genConfig.put("responseModalities", modalities);
+		JsonObject imageConfig = Json.object();
+		if (request.n() != null) {
+			imageConfig.put("numberOfImages", request.n());
+		}
+		if (request.size() != null && !request.size().isBlank()) {
+			imageConfig.put("imageSize", request.size());
+		}
+		if (imageConfig.size() > 0) {
+			genConfig.put("imageConfig", imageConfig);
+		}
+		body.put("generationConfig", genConfig);
+		PostResult result = doPostRaw(path, body);
+		return parseImageResponse(result.json(), result.rawBody());
+	}
+
+	/** 解析图像生成响应：从 candidates[0].content.parts 提取 inlineData。 */
+	private ImageResponse parseImageResponse(JsonObject resp, String rawJson) {
+		List<ImageResult> results = new ArrayList<>();
+		JsonArray candidates = resp.has("candidates") ? resp.getJsonArray("candidates") : null;
+		if (candidates != null && !candidates.isEmpty()) {
+			JsonObject cand = candidates.getJsonObject(0);
+			JsonObject content = cand.has("content") ? cand.getJsonObject("content") : null;
+			if (content != null && content.has("parts")) {
+				JsonArray parts = content.getJsonArray("parts");
+				for (int i = 0; i < parts.size(); i++) {
+					JsonObject p = parts.getJsonObject(i);
+					JsonObject inline = p.has("inlineData") ? p.getJsonObject("inlineData")
+						: (p.has("inline_data") ? p.getJsonObject("inline_data") : null);
+					if (inline != null) {
+						String data = inline.optString("data", null);
+						if (data != null && !data.isEmpty()) {
+							results.add(ImageResult.ofB64(data));
+						}
+					}
+				}
+			}
+		}
+		return ImageResponse.of(0, results, rawJson);
 	}
 
 	/** 单条文本向量。 */

@@ -17,7 +17,7 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 - [x] **RAG 组件**：`sure-ai-rag` 模块——文本分块（递归字符分块）、向量存储抽象（内置进程内实现）、向量化适配、向量检索器、端到端 `RagPipeline`（索引 → 检索 → 增强 → 生成）。见 [docs/rag.md](docs/rag.md)。
 - [ ] **Spring Boot Starter**：`sure-ai-spring-boot-starter`，自动配置 + `@Autowired` 注入，配置属性 `sure.ai.<platform>.api-key` 等。
 - [ ] **重试可观测性**：重试事件回调（RetryListener），指标埋点（Micrometer 可选适配，默认无依赖）。
-- [ ] **图像生成**：DALL·E / 通义万相 / 文心一格等图像生成接口抽象（`ImageClient`）。
+- [x] **图像生成**：`ImageClient` 抽象 + 6 平台接入（OpenAI DALL·E / Azure / 通义万相 / 智谱 CogView / 文心一格 / Gemini），异步平台内部轮询屏蔽，对外同步返回。见 [docs/images.md](docs/images.md)。
 - [ ] **音频**：Whisper / TTS 接口抽象（`AudioClient`）。
 - [ ] **Function Calling 增强**：自动参数校验（JSON Schema → Java Bean 校验）、工具注册中心。
 - [ ] **结构化输出**：JSON mode / response_format 统一抽象，支持强类型反序列化。

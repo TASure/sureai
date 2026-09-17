@@ -26,25 +26,26 @@
 - **Streaming**: unified SSE streaming interface with per-chunk callback
 - **Function Calling**: tool declaration and invocation closed loop
 - **Embedding**: vector generation (see table below for supported platforms)
+- **Image Generation**: unified `ImageClient` abstraction supporting DALL·E / Wanx / CogView / ERNIE-ViLG / Gemini Imagen; async platforms handle polling internally, exposing a synchronous API
 - **RAG**: end-to-end retrieval-augmented generation pipeline (`sure-ai-rag`)
 - **Environment variable auto-config**: lazy-loads from `SURE_AI_*` env vars when not explicitly initialized
 - **JDK 21**: records, pattern matching, switch patterns
 
 ## Modules & Platforms
 
-| Platform | artifactId | Default baseUrl | Auth | Streaming | Embedding | Function Calling |
-|----------|-----------|-----------------|------|-----------|-----------|-----------------|
-| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ |
-| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key header | ✅ | ✅ | ✅ |
-| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key header | ✅ | ❌ | ✅ |
-| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= query param | ✅ | ✅ | ✅ |
-| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ✅ |
-| Qwen | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ |
-| Zhipu GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ |
-| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ✅ |
-| Doubao | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ✅ |
-| Baidu Qianfan | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token (auto-cached) | ✅ | ✅ | ✅ |
-| Ollama | `sure-ai-ollama` | `http://localhost:11434` | None (local) | ✅ | ✅ | ✅ |
+| Platform | artifactId | Default baseUrl | Auth | Streaming | Embedding | Image Gen | Function Calling |
+|----------|-----------|-----------------|------|-----------|-----------|-----------|-----------------|
+| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ DALL·E 3 | ✅ |
+| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key header | ✅ | ✅ | ✅ DALL·E 3 | ✅ |
+| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key header | ✅ | ❌ | ❌ | ✅ |
+| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= query param | ✅ | ✅ | ✅ Imagen | ✅ |
+| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ❌ | ✅ |
+| Qwen | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ Wanx (async) | ✅ |
+| Zhipu GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ CogView | ✅ |
+| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ❌ | ✅ |
+| Doubao | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ |
+| Baidu Qianfan | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token (auto-cached) | ✅ | ✅ | ✅ ERNIE-ViLG (async) | ✅ |
+| Ollama | `sure-ai-ollama` | `http://localhost:11434` | None (local) | ✅ | ✅ | ❌ | ✅ |
 
 Aggregation modules: `sure-ai-all` (one dependency for all platforms), `sure-ai-bom` (version management).
 
@@ -58,6 +59,28 @@ import com.sure.ai.openai.OpenAiUtil;
 String reply = OpenAiUtil.chat("gpt-4o-mini", "Hello!").firstText();
 System.out.println(reply);
 ```
+
+### Image Generation
+
+```java
+import com.sure.ai.openai.OpenAiUtil;
+import com.sure.ai.openai.OpenAiModels;
+import com.sure.ai.model.ImageRequest;
+
+// Synchronous return (async platforms like Wanx/ERNIE-ViLG poll internally)
+String imageUrl = OpenAiUtil.image(OpenAiModels.DALL_E_3, "a cute kitten").firstUrl();
+
+// Or use Builder for size/quality/count
+ImageRequest req = ImageRequest.builder()
+    .model(OpenAiModels.DALL_E_3)
+    .prompt("cyberpunk city skyline at night")
+    .size("1024x1024")
+    .quality("hd")
+    .build();
+String url = OpenAiUtil.image(req).firstUrl();
+```
+
+See [docs/images.md](docs/images.md) for platform configuration and async polling details.
 
 ## Maven Dependencies
 

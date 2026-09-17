@@ -48,6 +48,8 @@ import com.sure.ai.internal.json.JsonObject;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
 
 /**
  * {@link ZhipuClient} 与 {@link ZhipuJwtGenerator} 测试：本地 HttpServer mock。
@@ -63,6 +65,7 @@ public class ZhipuClientTest {
 	private String baseUrl;
 	private final AtomicReference<String> lastAuth = new AtomicReference<>();
 	private final AtomicReference<String> lastBody = new AtomicReference<>();
+	private final AtomicReference<String> lastUri = new AtomicReference<>();
 	private final AtomicInteger requestCount = new AtomicInteger();
 
 	/** 启动本地服务。 */
@@ -74,6 +77,7 @@ public class ZhipuClientTest {
 		this.baseUrl = "http://127.0.0.1:" + port + "/api/paas/v4";
 		this.lastAuth.set(null);
 		this.lastBody.set(null);
+		this.lastUri.set(null);
 		this.requestCount.set(0);
 	}
 
@@ -98,6 +102,7 @@ public class ZhipuClientTest {
 	private void handle(Handler h) {
 		this.server.createContext("/", exchange -> {
 			this.requestCount.incrementAndGet();
+			this.lastUri.set(exchange.getRequestURI().toString());
 			this.lastAuth.set(exchange.getRequestHeaders().getFirst("Authorization"));
 			byte[] in = exchange.getRequestBody().readAllBytes();
 			this.lastBody.set(new String(in, StandardCharsets.UTF_8));
@@ -224,6 +229,25 @@ public class ZhipuClientTest {
 		ZhipuClient client = newClient();
 		assertEquals(1, client.embed("embedding-3", "你好").embeddings().size());
 		assertTrue(this.lastBody.get().contains("\"model\":\"embedding-3\""));
+		client.close();
+	}
+
+	/** 图像生成：JWT Bearer 鉴权头、请求路径 /images/generations、响应解析正确。 */
+	@Test
+	public void testImageGeneration() {
+		handle(200, "{\"created\":1700000000,\"data\":["
+			+ "{\"url\":\"https://img.example.com/1.png\"}]}");
+		ZhipuClient client = newClient();
+		ImageResponse resp = client.generate(ImageRequest.builder()
+			.model(ZhipuModels.COGVIEW_3).prompt("一只猫").build());
+		String auth = this.lastAuth.get();
+		assertTrue(auth.startsWith("Bearer "));
+		assertFalse("must not be raw apiKey", auth.equals("Bearer " + API_KEY));
+		assertTrue(this.lastUri.get().contains("/images/generations"));
+		assertTrue(this.lastBody.get().contains("\"model\":\"cogview-3\""));
+		assertTrue(this.lastBody.get().contains("\"prompt\":\"一只猫\""));
+		assertEquals("https://img.example.com/1.png", resp.firstUrl());
+		assertEquals(1700000000L, resp.created());
 		client.close();
 	}
 

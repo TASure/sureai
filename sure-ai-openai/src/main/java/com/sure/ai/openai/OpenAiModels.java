@@ -52,4 +52,10 @@ public final class OpenAiModels {
 
 	/** text-embedding-3-large：高精度向量模型。 */
 	public static final String TEXT_EMBEDDING_3_LARGE = "text-embedding-3-large";
+
+	/** DALL·E 3：旗舰文本生成图像模型（支持 revised_prompt）。 */
+	public static final String DALL_E_3 = "dall-e-3";
+
+	/** DALL·E 2：前代图像生成模型。 */
+	public static final String DALL_E_2 = "dall-e-2";
 }

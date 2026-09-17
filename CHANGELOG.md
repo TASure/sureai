@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `sure-ai-core`：图像生成抽象层——`ImageClient` 接口、`ImageRequest`/`ImageResponse`/`ImageResult` 通用模型，`AbstractAiClient` 新增 `doGet` 用于异步轮询，`OpenAiCompatClient` 内置 `/images/generations` 同步协议实现。
+- 6 个平台图像生成接入：
+  - `sure-ai-openai`：DALL·E 3 / DALL·E 2，同步 OpenAI 图像协议。
+  - `sure-ai-azure`：Azure OpenAI DALL·E 3，deployment 路径 + api-version 查询参数。
+  - `sure-ai-qwen`：通义万相（wanx-v1 / wan2.1），原生 DashScope 异步任务（提交 → 轮询 → 结果），`X-DashScope-Async: enable` 头。
+  - `sure-ai-zhipu`：CogView 3/4 / GLM-Image，OpenAI 兼容图像协议。
+  - `sure-ai-baidu`：文心一格 ERNIE-ViLG v2，异步任务轮询，复用 access_token 缓存机制。
+  - `sure-ai-gemini`：Gemini 图像生成（generateContent + responseModalities），同步返回 Base64 图像数据。
+- 各平台 `XxxUtil` 新增 `image(model, prompt)` / `image(ImageRequest)` 便捷入口与 `imageClient()` 单例（异步平台）。
+- 工程集成：examples 新增 `ImageDemo`（多平台图像生成演示，缺 Key 优雅跳过），`ExamplesRunner` 新增 `image` case。
+- 文档：新增 `docs/images.md`（架构图、快速上手、各平台配置、异步轮询说明、平台对比表）。
 - `sure-ai-rag`：RAG（检索增强生成）能力模块，仅依赖 sure-ai-core，与具体平台解耦：
   - 文本分块：`TextSplitter` 接口 + 递归字符分块器（块大小/重叠/分隔符优先级，参考 LangChain 思路的纯 JDK 实现）。
   - 向量存储：`VectorStore` 抽象 + 进程内实现 `InMemoryVectorStore`（余弦相似度、topK、相似度阈值），可实现接口接入 Milvus/FAISS/pgvector 等外部向量库。
