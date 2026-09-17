@@ -67,77 +67,77 @@ System.out.println(reply);
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-openai</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Azure OpenAI -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-azure</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Anthropic Claude -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-anthropic</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Google Gemini -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-gemini</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- DeepSeek -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-deepseek</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- 通义千问 DashScope -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-qwen</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- 智谱 GLM -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-zhipu</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Moonshot Kimi -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-moonshot</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- 火山引擎豆包 -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-doubao</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- 百度千帆 -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-baidu</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Ollama 本地模型 -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-ollama</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 ```
 
@@ -147,7 +147,7 @@ System.out.println(reply);
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-all</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
     <type>pom</type>
 </dependency>
 ```

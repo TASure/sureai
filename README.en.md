@@ -67,77 +67,77 @@ Pull individual platform modules:
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-openai</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Azure OpenAI -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-azure</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Anthropic Claude -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-anthropic</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Google Gemini -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-gemini</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- DeepSeek -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-deepseek</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Qwen DashScope -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-qwen</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Zhipu GLM -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-zhipu</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Moonshot Kimi -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-moonshot</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Doubao Volcano Engine -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-doubao</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Baidu Qianfan -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-baidu</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 
 <!-- Ollama Local -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-ollama</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 </dependency>
 ```
 
@@ -147,7 +147,7 @@ Pull all platforms at once:
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-all</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
     <type>pom</type>
 </dependency>
 ```
