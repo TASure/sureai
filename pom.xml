@@ -59,6 +59,7 @@
         <module>sure-ai-core</module>
         <module>sure-ai-rag</module>
         <module>sure-ai-agent</module>
+        <module>sure-ai-micrometer</module>
         <module>sure-ai-openai</module>
         <module>sure-ai-azure</module>
         <module>sure-ai-anthropic</module>
@@ -104,6 +105,11 @@
             <dependency>
                 <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-agent</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-micrometer</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

@@ -584,6 +584,8 @@ public class OpenAiCompatClient extends AbstractAiClient
 			JsonObject u = resp.getJsonObject("usage");
 			usage = TokenUsage.of(u.optInt("prompt_tokens", 0),
 				u.optInt("completion_tokens", 0), u.optInt("total_tokens", 0));
+			notifyTokenUsage(model, usage.promptTokens(), usage.completionTokens(),
+				usage.totalTokens());
 		}
 		return ChatResponse.of(id, model, choices, usage, groundingSources, rawJson);
 	}
@@ -683,6 +685,8 @@ public class OpenAiCompatClient extends AbstractAiClient
 			JsonObject u = resp.getJsonObject("usage");
 			usage = TokenUsage.of(u.optInt("prompt_tokens", 0),
 				u.optInt("completion_tokens", 0), u.optInt("total_tokens", 0));
+			notifyTokenUsage(model, usage.promptTokens(), usage.completionTokens(),
+				usage.totalTokens());
 		}
 		return EmbeddingResponse.of(model, embeddings, usage);
 	}

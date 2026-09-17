@@ -31,6 +31,7 @@
 - **Speech TTS/STT**: unified `AudioClient` abstraction (TTS synthesis + STT transcription) supporting OpenAI / CosyVoice / GLM-TTS / Doubao / Baidu / Azure Speech; binary audio / URL / Base64 response formats
 - **RAG**: end-to-end retrieval-augmented generation pipeline (`sure-ai-rag`) — document loaders (local file / URL), recursive / Markdown / fixed-size splitters, vector store, vector + BM25 keyword hybrid retrieval
 - **Agent orchestration (ReAct multi-tool loop)**: `sure-ai-agent` — tool registry + Function Calling argument validation + ReAct orchestrator, drivable by any `AiClient`, with exception / max-iteration / timeout guards
+- **Observability (retry callbacks / metrics / rate limit)**: `RetryListener` retry event callbacks + `MetricsCollector` metrics (built-in zero-dependency `AiMetrics`) + client-side QPS rate limiting (sure-core token bucket), optional `sure-ai-micrometer` Micrometer/Prometheus bridge; zero overhead when not mounted. See [docs/observability.md](docs/observability.md)
 - **Rerank**: unified `RerankClient` abstraction, Qwen qwen3-rerank integration, pluggable two-stage re-ranking in the RAG retrieval chain
 - **Structured Output**: unified `response_format` abstraction (json_object / JSON Schema), zero-dependency `JsonMapper` strong-typed record deserialization, adapted across 8 platforms
 - **Multimodal Image Understanding**: `MessagePart` content-block architecture (text + image), normalized image input across OpenAI-compatible / Gemini / Anthropic / Baidu
@@ -418,6 +419,7 @@ sureai enforces strict module-level isolation:
 sure-ai-core          ← common models/interfaces/HTTP/JSON (depended on by all platforms)
 sure-ai-rag           ← RAG pipeline (depends on core; platform-agnostic)
 sure-ai-agent         ← Agent ReAct multi-tool loop (depends on core; platform-agnostic)
+sure-ai-micrometer    ← observability Micrometer bridge (depends on core; micrometer-core is provided, not transitive)
   ├── sure-ai-openai
   ├── sure-ai-azure
   ├── sure-ai-anthropic

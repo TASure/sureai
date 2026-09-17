@@ -17,9 +17,13 @@
 package com.sure.ai.client;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
+import com.sure.ai.client.observability.MetricsCollector;
+import com.sure.ai.client.observability.RetryListener;
 import com.sure.tool.lang.Assert;
 
 /**
@@ -40,6 +44,9 @@ public final class AiConfig {
 	private final String organization;
 	private final Map<String, String> extraHeaders;
 	private final int maxRetries;
+	private final List<RetryListener> retryListeners;
+	private final MetricsCollector metricsCollector;
+	private final double rateLimitQps;
 
 	private AiConfig(Builder b) {
 		this.apiKey = b.apiKey;
@@ -50,6 +57,9 @@ public final class AiConfig {
 		this.organization = b.organization;
 		this.extraHeaders = b.extraHeaders == null ? Map.of() : Map.copyOf(b.extraHeaders);
 		this.maxRetries = b.maxRetries;
+		this.retryListeners = b.retryListeners == null ? List.of() : List.copyOf(b.retryListeners);
+		this.metricsCollector = b.metricsCollector;
+		this.rateLimitQps = b.rateLimitQps;
 	}
 
 	/**
@@ -84,6 +94,9 @@ public final class AiConfig {
 		private String organization;
 		private Map<String, String> extraHeaders;
 		private int maxRetries = 2;
+		private List<RetryListener> retryListeners;
+		private MetricsCollector metricsCollector;
+		private double rateLimitQps;
 
 		private Builder() {
 		}
@@ -181,6 +194,59 @@ public final class AiConfig {
 		}
 
 		/**
+		 * 追加一个重试事件监听器（可多次调用累加）。
+		 *
+		 * @param listener 重试监听器
+		 * @return this
+		 */
+		public Builder retryListener(RetryListener listener) {
+			if (this.retryListeners == null) {
+				this.retryListeners = new ArrayList<>();
+			}
+			this.retryListeners.add(listener);
+			return this;
+		}
+
+		/**
+		 * 批量追加重试事件监听器。
+		 *
+		 * @param listeners 重试监听器列表
+		 * @return this
+		 */
+		public Builder retryListeners(List<RetryListener> listeners) {
+			if (listeners == null) {
+				return this;
+			}
+			if (this.retryListeners == null) {
+				this.retryListeners = new ArrayList<>();
+			}
+			this.retryListeners.addAll(listeners);
+			return this;
+		}
+
+		/**
+		 * 挂载指标采集器（可选，不挂载时零开销）。
+		 *
+		 * @param metricsCollector 指标采集器
+		 * @return this
+		 */
+		public Builder metricsCollector(MetricsCollector metricsCollector) {
+			this.metricsCollector = metricsCollector;
+			return this;
+		}
+
+		/**
+		 * 客户端限流 QPS（&gt;0 启用令牌桶限流，0=关闭，默认 0）。
+		 *
+		 * @param qps 每秒放行请求数
+		 * @return this
+		 */
+		public Builder rateLimitQps(double qps) {
+			this.rateLimitQps = qps;
+			return this;
+		}
+
+		/**
 		 * 构建。
 		 *
 		 * @return 配置
@@ -229,5 +295,20 @@ public final class AiConfig {
 	/** 最大重试次数。 */
 	public int maxRetries() {
 		return this.maxRetries;
+	}
+
+	/** 已注册的重试监听器（不可变，默认空列表）。 */
+	public List<RetryListener> retryListeners() {
+		return this.retryListeners;
+	}
+
+	/** 指标采集器，未挂载时返回 null。 */
+	public MetricsCollector metricsCollector() {
+		return this.metricsCollector;
+	}
+
+	/** 限流 QPS，0 表示关闭。 */
+	public double rateLimitQps() {
+		return this.rateLimitQps;
 	}
 }

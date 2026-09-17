@@ -16,7 +16,7 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 
 - [x] **RAG 组件**：`sure-ai-rag` 模块——文本分块（递归字符分块）、向量存储抽象（内置进程内实现）、向量化适配、向量检索器、端到端 `RagPipeline`（索引 → 检索 → 增强 → 生成）。见 [docs/rag.md](docs/rag.md)。
 - [ ] **Spring Boot Starter**：`sure-ai-spring-boot-starter`，自动配置 + `@Autowired` 注入，配置属性 `sure.ai.<platform>.api-key` 等。
-- [ ] **重试可观测性**：重试事件回调（RetryListener），指标埋点（Micrometer 可选适配，默认无依赖）。
+- [x] **重试可观测性**：重试事件回调（RetryListener），指标埋点（内置零依赖 AiMetrics + Micrometer 可选适配），见 [docs/observability.md](docs/observability.md)。
 - [x] **图像生成**：`ImageClient` 抽象 + 6 平台接入（OpenAI DALL·E / Azure / 通义万相 / 智谱 CogView / 文心一格 / Gemini），异步平台内部轮询屏蔽，对外同步返回。见 [docs/images.md](docs/images.md)。
 - [x] **视频生成**：`VideoClient` 抽象 + 5 平台接入（OpenAI Sora / 通义万相 Wan / 智谱 CogVideoX / 火山 Seedance / Azure Sora 2），全平台异步任务轮询屏蔽，对外同步返回。见 [docs/video.md](docs/video.md)。
 - [x] **音频（TTS/STT）**：`AudioClient` 抽象（TTS synthesize + STT transcribe）+ 6 平台接入（OpenAI / 通义 CosyVoice / 智谱 GLM-TTS/ASR / 火山豆包 / 百度 / Azure Speech），支持二进制音频/URL/Base64 三种响应形态与 multipart/base64/二进制四种上传格式。见 [docs/audio.md](docs/audio.md)。
@@ -26,7 +26,7 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 - [x] **PDF 文档输入**：`DocumentPart` 内容块 + 5 平台适配（OpenAI/Azure/Gemini/Anthropic/Qwen；百度不支持抛 `AiException`）。
 - [x] **Prompt 缓存**：Anthropic `cache_control: ephemeral` + Gemini `cachedContent`（extra 传入）+ OpenAI 自动缓存（无需参数）。
 - [x] **Batches 批处理**：`BatchClient` 抽象 + OpenAI/Azure/智谱（OpenAI 协议族）+ Anthropic（内联 requests 不同协议）接入，内置 2s 轮询。见 [docs/batches.md](docs/batches.md)。
-- [ ] **Function Calling 增强**：自动参数校验（JSON Schema → Java Bean 校验）、工具注册中心。
+- [x] **Function Calling 增强**：自动参数校验（JSON Schema → Java Bean 校验）、工具注册中心（`sure-ai-agent`，见 [docs/agent.md](docs/agent.md)）。
 
 ## P2 — 实时语音与平台服务（0.2.0）
 
@@ -48,7 +48,7 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 - [ ] **Agent 编排——Plan-and-Execute**：`PlanExecuteAgent` 当前为骨架（run 抛 UnsupportedOperationException），待后续迭代实现「JSON 步骤列表 → 逐步执行 → 汇总」。
 - [ ] **更多平台**：xAI (Grok)、Mistral、Cohere、Bedrock（AWS SigV4）、本地 llama.cpp server。
 - [ ] **响应缓存**：基于 prompt hash 的本地 / Redis 缓存层。
-- [ ] **限流熔断**：平台级 QPS 限流与熔断（基于 sure-core RateLimiter 扩展）。
+- [x] **限流**：客户端 QPS 限流已完成（`AiConfig.rateLimitQps`，基于 sure-core `RateLimiter` 令牌桶，见 [docs/observability.md](docs/observability.md)）；熔断（circuit breaker）后续规划。
 - [ ] **Benchmark**：JMH 性能基准（序列化 / 反序列化 / 客户端吞吐）。
 
 ## 非目标

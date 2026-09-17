@@ -17,6 +17,7 @@
 package com.sure.ai.client;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.ProxySelector;
 import java.net.URI;
@@ -27,8 +28,15 @@ import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import com.sure.ai.client.observability.MetricsCollector;
+import com.sure.ai.client.observability.RetryListener;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiAuthException;
 import com.sure.ai.exception.AiException;
@@ -38,11 +46,16 @@ import com.sure.ai.internal.http.SseLineReader;
 import com.sure.ai.internal.json.Json;
 import com.sure.ai.internal.json.JsonElement;
 import com.sure.ai.internal.json.JsonObject;
+import com.sure.tool.thread.RateLimiter;
 
 /**
  * HTTP 客户端抽象基类：封装 JSON POST、SSE 流式 POST、重试与错误映射。
  *
  * <p>子类需实现 {@link #applyAuth} 添加鉴权头，并可覆盖 {@link #mapError} 定制错误映射。</p>
+ *
+ * <p>可观测性（迭代二）：所有 HTTP 发送路径统一走 {@link #executeWithRetry} 模板，
+ * 内置重试事件回调（{@link RetryListener}）、指标埋点（{@link MetricsCollector}）与
+ * 客户端限流（{@link RateLimiter}）。未挂载时行为与重构前完全一致。</p>
  *
  * @author sureai
  * @since 0.1.0
@@ -58,6 +71,9 @@ public abstract class AbstractAiClient {
 	/** HTTP 客户端 */
 	protected final HttpClient httpClient;
 
+	/** 客户端限流器，rateLimitQps &lt;= 0 时为 null（关闭，零开销） */
+	private final RateLimiter rateLimiter;
+
 	/**
 	 * 构造并根据配置构建 HttpClient。
 	 *
@@ -72,6 +88,7 @@ public abstract class AbstractAiClient {
 			cb.proxy(ProxySelector.of(parseProxy(config.proxy())));
 		}
 		this.httpClient = cb.build();
+		this.rateLimiter = config.rateLimitQps() > 0 ? new RateLimiter(config.rateLimitQps()) : null;
 	}
 
 	/** 解析 host:port 为 SocketAddress。 */
@@ -100,31 +117,11 @@ public abstract class AbstractAiClient {
 	protected PostResult doPostRaw(String path, JsonObject body) {
 		String url = resolveUrl(path);
 		String payload = Json.stringify(body);
-		int attempt = 0;
-		while (true) {
-			HttpRequest request = newRequest(url, payload).build();
-			HttpResponse<String> resp;
-			try {
-				resp = this.httpClient.send(request, BodyHandlers.ofString(StandardCharsets.UTF_8));
-			} catch (IOException ex) {
-				throw new AiTimeoutException("request failed: " + ex.getMessage(), ex);
-			} catch (InterruptedException ex) {
-				Thread.currentThread().interrupt();
-				throw new AiException("request interrupted", ex);
-			}
-			int status = resp.statusCode();
-			if (status >= 200 && status < 300) {
-				return new PostResult(parseJson(resp.body()), resp.body());
-			}
-			String retryAfter = resp.headers().firstValue("Retry-After").orElse(null);
-			if (isRetriable(status) && attempt < this.config.maxRetries()) {
-				this.log.fine("retry " + (attempt + 1) + " after status " + status);
-				sleepBackoff(attempt, retryAfter);
-				attempt++;
-				continue;
-			}
-			throw mapError(status, resp.body(), parseRetryAfter(retryAfter));
-		}
+		return executeWithRetry(path,
+			() -> newRequest(url, payload).build(),
+			BodyHandlers.ofString(StandardCharsets.UTF_8),
+			b -> new PostResult(parseJson(b), b),
+			(status, b) -> b);
 	}
 
 	/**
@@ -149,41 +146,22 @@ public abstract class AbstractAiClient {
 	 * @param chunkConsumer 每个 data 行解析出的 JSON 元素消费者
 	 */
 	protected void doPostStream(String path, JsonObject body,
-			java.util.function.Consumer<JsonElement> chunkConsumer) {
+			Consumer<JsonElement> chunkConsumer) {
 		String url = resolveUrl(path);
 		String payload = Json.stringify(body);
-		int attempt = 0;
-		while (true) {
-			HttpRequest request = newRequest(url, payload).build();
-			HttpResponse<java.io.InputStream> resp;
-			try {
-				resp = this.httpClient.send(request, BodyHandlers.ofInputStream());
-			} catch (IOException ex) {
-				throw new AiTimeoutException("stream request failed: " + ex.getMessage(), ex);
-			} catch (InterruptedException ex) {
-				Thread.currentThread().interrupt();
-				throw new AiException("stream request interrupted", ex);
-			}
-			int status = resp.statusCode();
-			if (status >= 200 && status < 300) {
-				SseLineReader.read(resp.body(), StandardCharsets.UTF_8, ev -> {
+		executeWithRetry(path,
+			() -> newRequest(url, payload).build(),
+			BodyHandlers.ofInputStream(),
+			(InputStream in) -> {
+				SseLineReader.read(in, StandardCharsets.UTF_8, ev -> {
 					if ("[DONE]".equals(ev.data())) {
 						return;
 					}
-					JsonElement el = Json.parse(ev.data());
-					chunkConsumer.accept(el);
+					chunkConsumer.accept(Json.parse(ev.data()));
 				});
-				return;
-			}
-			String retryAfter = resp.headers().firstValue("Retry-After").orElse(null);
-			String rawBody = readAll(resp);
-			if (isRetriable(status) && attempt < this.config.maxRetries()) {
-				sleepBackoff(attempt, retryAfter);
-				attempt++;
-				continue;
-			}
-			throw mapError(status, rawBody, parseRetryAfter(retryAfter));
-		}
+				return null;
+			},
+			(status, in) -> readAll(in));
 	}
 
 	/**
@@ -207,40 +185,11 @@ public abstract class AbstractAiClient {
 	 */
 	protected PostResult doGetRaw(String path) {
 		String url = resolveUrl(path);
-		int attempt = 0;
-		while (true) {
-			HttpRequest.Builder rb = HttpRequest.newBuilder()
-				.uri(URI.create(url))
-				.timeout(this.config.timeout())
-				.header("Accept", "application/json")
-				.GET();
-			applyAuth(rb, this.config);
-			for (java.util.Map.Entry<String, String> e : this.config.extraHeaders().entrySet()) {
-				rb.header(e.getKey(), e.getValue());
-			}
-			HttpRequest request = rb.build();
-			HttpResponse<String> resp;
-			try {
-				resp = this.httpClient.send(request, BodyHandlers.ofString(StandardCharsets.UTF_8));
-			} catch (IOException ex) {
-				throw new AiTimeoutException("request failed: " + ex.getMessage(), ex);
-			} catch (InterruptedException ex) {
-				Thread.currentThread().interrupt();
-				throw new AiException("request interrupted", ex);
-			}
-			int status = resp.statusCode();
-			if (status >= 200 && status < 300) {
-				return new PostResult(parseJson(resp.body()), resp.body());
-			}
-			String retryAfter = resp.headers().firstValue("Retry-After").orElse(null);
-			if (isRetriable(status) && attempt < this.config.maxRetries()) {
-				this.log.fine("retry " + (attempt + 1) + " after status " + status);
-				sleepBackoff(attempt, retryAfter);
-				attempt++;
-				continue;
-			}
-			throw mapError(status, resp.body(), parseRetryAfter(retryAfter));
-		}
+		return executeWithRetry(path,
+			() -> buildGetRequest(url).build(),
+			BodyHandlers.ofString(StandardCharsets.UTF_8),
+			b -> new PostResult(parseJson(b), b),
+			(status, b) -> b);
 	}
 
 	/**
@@ -253,32 +202,11 @@ public abstract class AbstractAiClient {
 	protected byte[] doPostBinary(String path, JsonObject body) {
 		String url = resolveUrl(path);
 		String payload = Json.stringify(body);
-		int attempt = 0;
-		while (true) {
-			HttpRequest request = newRequest(url, payload).build();
-			HttpResponse<byte[]> resp;
-			try {
-				resp = this.httpClient.send(request, BodyHandlers.ofByteArray());
-			} catch (IOException ex) {
-				throw new AiTimeoutException("request failed: " + ex.getMessage(), ex);
-			} catch (InterruptedException ex) {
-				Thread.currentThread().interrupt();
-				throw new AiException("request interrupted", ex);
-			}
-			int status = resp.statusCode();
-			if (status >= 200 && status < 300) {
-				return resp.body();
-			}
-			String retryAfter = resp.headers().firstValue("Retry-After").orElse(null);
-			if (isRetriable(status) && attempt < this.config.maxRetries()) {
-				this.log.fine("retry " + (attempt + 1) + " after status " + status);
-				sleepBackoff(attempt, retryAfter);
-				attempt++;
-				continue;
-			}
-			String rawBody = new String(resp.body(), StandardCharsets.UTF_8);
-			throw mapError(status, rawBody, parseRetryAfter(retryAfter));
-		}
+		return executeWithRetry(path,
+			() -> newRequest(url, payload).build(),
+			BodyHandlers.ofByteArray(),
+			b -> b,
+			(status, b) -> new String(b, StandardCharsets.UTF_8));
 	}
 
 	/**
@@ -296,41 +224,155 @@ public abstract class AbstractAiClient {
 			String fileField, String fileName, String fileContentType, byte[] fileData) {
 		String url = resolveUrl(path);
 		String boundary = "----sureai" + UUID.randomUUID().toString().replace("-", "");
-		byte[] body = buildMultipartBody(boundary, textFields, fileField, fileName, fileContentType, fileData);
+		byte[] body = buildMultipartBody(boundary, textFields, fileField, fileName, fileContentType,
+			fileData);
+		return executeWithRetry(path,
+			() -> buildMultipartRequest(url, boundary, body).build(),
+			BodyHandlers.ofString(StandardCharsets.UTF_8),
+			b -> new PostResult(parseJson(b), b),
+			(status, b) -> b);
+	}
+
+	/**
+	 * 统一重试执行模板：限流 → 指标开始 → 发送 → 2xx 成功 / 可重试退避 / 耗尽 mapError。
+	 *
+	 * <p>重试语义与重构前完全一致：429/500/502/503/504 可重试，Retry-After 优先、
+	 * 否则 1s/2s/4s 指数退避，最多 maxRetries 次。IO/中断异常不重试，直接映射抛出。</p>
+	 *
+	 * @param path            请求路径（回调与指标用）
+	 * @param requestSupplier 每次 attempt 构建一个新请求（含重试）
+	 * @param handler         响应体处理器
+	 * @param successMapper   2xx 时把响应体映射为最终结果
+	 * @param errorBodyReader 非 2xx 时把响应体读为错误字符串
+	 * @param <T>             响应体类型
+	 * @param <R>             最终结果类型
+	 * @return successMapper 的结果
+	 */
+	private <T, R> R executeWithRetry(String path, Supplier<HttpRequest> requestSupplier,
+			HttpResponse.BodyHandler<T> handler, Function<T, R> successMapper,
+			BiFunction<Integer, T, String> errorBodyReader) {
+		MetricsCollector mc = this.config.metricsCollector();
+		if (mc != null) {
+			safeMetrics(() -> mc.onRequestStart(path));
+		}
+		long startNanos = System.nanoTime();
 		int attempt = 0;
 		while (true) {
-			HttpRequest.Builder rb = HttpRequest.newBuilder()
-				.uri(URI.create(url))
-				.timeout(this.config.timeout())
-				.header("Content-Type", "multipart/form-data; boundary=" + boundary)
-				.header("Accept", "application/json")
-				.POST(HttpRequest.BodyPublishers.ofByteArray(body));
-			applyAuth(rb, this.config);
-			for (Map.Entry<String, String> e : this.config.extraHeaders().entrySet()) {
-				rb.header(e.getKey(), e.getValue());
-			}
-			HttpRequest request = rb.build();
-			HttpResponse<String> resp;
+			acquirePermit();
+			HttpRequest request = requestSupplier.get();
+			HttpResponse<T> resp;
 			try {
-				resp = this.httpClient.send(request, BodyHandlers.ofString(StandardCharsets.UTF_8));
+				resp = this.httpClient.send(request, handler);
 			} catch (IOException ex) {
+				long dur = elapsedMs(startNanos);
+				safeMetrics(() -> mcOnFailure(mc, path, -1, ex, dur));
 				throw new AiTimeoutException("request failed: " + ex.getMessage(), ex);
 			} catch (InterruptedException ex) {
 				Thread.currentThread().interrupt();
+				long dur = elapsedMs(startNanos);
+				safeMetrics(() -> mcOnFailure(mc, path, -1, ex, dur));
 				throw new AiException("request interrupted", ex);
 			}
 			int status = resp.statusCode();
 			if (status >= 200 && status < 300) {
-				return new PostResult(parseJson(resp.body()), resp.body());
+				long dur = elapsedMs(startNanos);
+				R result = successMapper.apply(resp.body());
+				if (mc != null) {
+					final long d = dur;
+					safeMetrics(() -> mc.onRequestSuccess(path, status, d));
+				}
+				return result;
 			}
 			String retryAfter = resp.headers().firstValue("Retry-After").orElse(null);
 			if (isRetriable(status) && attempt < this.config.maxRetries()) {
-				sleepBackoff(attempt, retryAfter);
+				long backoffMs = computeBackoffMillis(attempt, retryAfter);
+				fireOnRetry(attempt + 1, status, null, backoffMs, path);
+				if (mc != null) {
+					final int a = attempt + 1;
+					safeMetrics(() -> mc.onRetry(path, a, status));
+				}
+				this.log.fine("retry " + (attempt + 1) + " after status " + status);
+				sleepBackoff(backoffMs);
 				attempt++;
 				continue;
 			}
-			throw mapError(status, resp.body(), parseRetryAfter(retryAfter));
+			long dur = elapsedMs(startNanos);
+			String rawBody = errorBodyReader.apply(status, resp.body());
+			safeMetrics(() -> mcOnFailure(mc, path, status, null, dur));
+			fireOnRetryExhausted(attempt, status, null, path);
+			throw mapError(status, rawBody, parseRetryAfter(retryAfter));
 		}
+	}
+
+	/** 指标 onRequestFailure 辅助（mc 可能为 null）。 */
+	private static void mcOnFailure(MetricsCollector mc, String path, int status, Exception ex,
+			long dur) {
+		if (mc != null) {
+			mc.onRequestFailure(path, status, ex, dur);
+		}
+	}
+
+	/** 安全执行指标回调，异常仅记录 warning，不影响主流程。 */
+	private static void safeMetrics(Runnable r) {
+		try {
+			r.run();
+		} catch (RuntimeException ex) {
+			Logger.getLogger(AbstractAiClient.class.getName())
+				.log(Level.WARNING, "metrics callback failed: " + ex.getMessage(), ex);
+		}
+	}
+
+	/** 申请限流令牌（限流关闭时零开销）。 */
+	private void acquirePermit() {
+		if (this.rateLimiter == null) {
+			return;
+		}
+		try {
+			this.rateLimiter.acquire();
+		} catch (InterruptedException ex) {
+			Thread.currentThread().interrupt();
+			throw new AiException("rate limit acquire interrupted", ex);
+		}
+	}
+
+	/** 回调所有注册的 RetryListener.onRetry（listener 异常不影响主流程）。 */
+	private void fireOnRetry(int attempt, int status, Exception ex, long backoffMs, String path) {
+		for (RetryListener l : this.config.retryListeners()) {
+			try {
+				l.onRetry(attempt, status, ex, backoffMs, path);
+			} catch (RuntimeException e) {
+				this.log.log(Level.WARNING, "retryListener.onRetry failed: " + e.getMessage(), e);
+			}
+		}
+	}
+
+	/** 回调所有注册的 RetryListener.onRetryExhausted（listener 异常不影响主流程）。 */
+	private void fireOnRetryExhausted(int attempt, int status, Exception ex, String path) {
+		for (RetryListener l : this.config.retryListeners()) {
+			try {
+				l.onRetryExhausted(attempt, status, ex, path);
+			} catch (RuntimeException e) {
+				this.log.log(Level.WARNING,
+					"retryListener.onRetryExhausted failed: " + e.getMessage(), e);
+			}
+		}
+	}
+
+	/**
+	 * 子类解析到 Token 用量时调用，转发给已挂载的 MetricsCollector（未挂载零开销）。
+	 *
+	 * @param model            模型名
+	 * @param promptTokens     提示 token 数
+	 * @param completionTokens 补全 token 数
+	 * @param totalTokens      总 token 数
+	 */
+	protected void notifyTokenUsage(String model, long promptTokens, long completionTokens,
+			long totalTokens) {
+		MetricsCollector mc = this.config.metricsCollector();
+		if (mc == null) {
+			return;
+		}
+		safeMetrics(() -> mc.onTokenUsage(model, promptTokens, completionTokens, totalTokens));
 	}
 
 	/** 构造 multipart/form-data 请求体字节。 */
@@ -365,10 +407,39 @@ public abstract class AbstractAiClient {
 		return out.toByteArray();
 	}
 
+	/** 构造 multipart 请求构建器并应用鉴权与额外头。 */
+	private HttpRequest.Builder buildMultipartRequest(String url, String boundary, byte[] body) {
+		HttpRequest.Builder rb = HttpRequest.newBuilder()
+			.uri(URI.create(url))
+			.timeout(this.config.timeout())
+			.header("Content-Type", "multipart/form-data; boundary=" + boundary)
+			.header("Accept", "application/json")
+			.POST(HttpRequest.BodyPublishers.ofByteArray(body));
+		applyAuth(rb, this.config);
+		for (Map.Entry<String, String> e : this.config.extraHeaders().entrySet()) {
+			rb.header(e.getKey(), e.getValue());
+		}
+		return rb;
+	}
+
+	/** 构造 GET 请求构建器并应用鉴权与额外头。 */
+	private HttpRequest.Builder buildGetRequest(String url) {
+		HttpRequest.Builder rb = HttpRequest.newBuilder()
+			.uri(URI.create(url))
+			.timeout(this.config.timeout())
+			.header("Accept", "application/json")
+			.GET();
+		applyAuth(rb, this.config);
+		for (Map.Entry<String, String> e : this.config.extraHeaders().entrySet()) {
+			rb.header(e.getKey(), e.getValue());
+		}
+		return rb;
+	}
+
 	/** 读取错误响应体。 */
-	private static String readAll(HttpResponse<java.io.InputStream> resp) {
-		try (java.io.InputStream in = resp.body()) {
-			return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+	private static String readAll(InputStream in) {
+		try (InputStream s = in) {
+			return new String(s.readAllBytes(), StandardCharsets.UTF_8);
 		} catch (IOException ex) {
 			return "";
 		}
@@ -383,7 +454,7 @@ public abstract class AbstractAiClient {
 			.header("Accept", "application/json")
 			.POST(java.net.http.HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8));
 		applyAuth(b, this.config);
-		for (java.util.Map.Entry<String, String> e : this.config.extraHeaders().entrySet()) {
+		for (Map.Entry<String, String> e : this.config.extraHeaders().entrySet()) {
 			b.header(e.getKey(), e.getValue());
 		}
 		return b;
@@ -421,21 +492,28 @@ public abstract class AbstractAiClient {
 		}
 	}
 
-	/** 退避等待：Retry-After 优先，否则 1s/2s 指数。 */
-	private static void sleepBackoff(int attempt, String retryAfter) {
-		long ms;
+	/** 计算退避毫秒数：Retry-After 优先，否则 1s/2s 指数。 */
+	private static long computeBackoffMillis(int attempt, String retryAfter) {
 		Integer sec = parseRetryAfter(retryAfter);
 		if (sec != null) {
-			ms = sec.longValue() * 1000L;
-		} else {
-			ms = 1000L * (long) Math.pow(2, attempt);
+			return sec.longValue() * 1000L;
 		}
+		return 1000L * (long) Math.pow(2, attempt);
+	}
+
+	/** 退避等待指定毫秒。 */
+	private static void sleepBackoff(long ms) {
 		try {
 			Thread.sleep(ms);
 		} catch (InterruptedException ex) {
 			Thread.currentThread().interrupt();
 			throw new AiException("retry interrupted", ex);
 		}
+	}
+
+	/** 自 startNanos 起的耗时毫秒。 */
+	private static long elapsedMs(long startNanos) {
+		return (System.nanoTime() - startNanos) / 1_000_000L;
 	}
 
 	/**

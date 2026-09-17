@@ -159,4 +159,22 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- 不可变快照记录暴露集合/数组引用（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         AiMetrics.Snapshot 由 snapshot() 构造时已对 statusCodeCounts 做 Map.copyOf、
+         对 durationHistogram 做新数组拷贝，运行时不可变；SpotBugs 无法识别 record
+         构造期的防御性拷贝，与 ChatStreamChunk/PostResult 同类只读视图惯例。 -->
+    <Match>
+        <Class name="~com.sure.ai.client.observability.AiMetrics\$Snapshot"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Micrometer 适配器持有外部 MeterRegistry 引用（EI_EXPOSE_REP2）：
+         MeterRegistry 是调用方注入的共享注册表（如 SimpleMeterRegistry / Prometheus 实例），
+         本适配器只向其写入指标、不持有所有权，与 RagPipeline.Builder 暂存共享组件同类惯例；
+         调用方负责 Registry 的生命周期与跨指标共享。 -->
+    <Match>
+        <Class name="com.sure.ai.micrometer.MicrometerMetricsAdapter"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>

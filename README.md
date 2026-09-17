@@ -31,6 +31,7 @@
 - **语音 TTS/STT**：`AudioClient` 统一抽象（TTS 合成 + STT 转录），支持 OpenAI / CosyVoice / GLM-TTS / 豆包 / 百度 / Azure Speech，二进制音频 / URL / Base64 三种响应形态
 - **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（文档加载器：本地文件/URL；分块：递归字符/Markdown/固定大小；向量存储；检索：向量 + BM25 关键词混合加权融合；增强生成）
 - **Agent 编排（ReAct 多工具循环）**：`sure-ai-agent` 工具注册中心 + Function Calling 参数校验 + ReAct 编排器，任意 `AiClient` 可驱动，异常/超限/超时全防护
+- **可观测性（重试回调/指标/限流）**：`RetryListener` 重试事件回调 + `MetricsCollector` 指标埋点（内置零依赖 `AiMetrics`）+ 客户端 QPS 限流（sure-core 令牌桶），`sure-ai-micrometer` 可选 Micrometer/Prometheus 桥接，未挂载零开销。见 [docs/observability.md](docs/observability.md)
 - **Rerank 重排序**：`RerankClient` 统一抽象，通义千问 qwen3-rerank 接入，二阶段精排可无缝接入 RAG 检索链路
 - **结构化输出**：`response_format` 统一抽象（json_object / JSON Schema），`JsonMapper` 零依赖强类型 record 反序列化，8 平台适配
 - **多模态图像理解**：`MessagePart` 内容块架构（文本 + 图片），OpenAI 兼容 / Gemini / Anthropic / 百度 图片输入归一
@@ -417,6 +418,7 @@ sureai 采用严格的模块级隔离架构：
 sure-ai-core          ← 公共模型/接口/HTTP/JSON（所有平台依赖此模块）
 sure-ai-rag           ← RAG 检索增强生成（依赖 core，与平台解耦）
 sure-ai-agent         ← Agent 编排 ReAct 多工具循环（依赖 core，与平台解耦）
+sure-ai-micrometer    ← 可观测性 Micrometer 桥接（依赖 core，micrometer-core provided 不传递）
   ├── sure-ai-openai
   ├── sure-ai-azure
   ├── sure-ai-anthropic
