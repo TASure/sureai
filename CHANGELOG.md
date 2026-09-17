@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-17
+
 ### Added
 - 可观测性与重试（横切 core）——`com.sure.ai.client.observability`：
   - `RetryListener` 重试事件回调（`onRetry`/`onRetryExhausted`，全 default 空实现，listener 异常被吞仅记 warning，不影响主流程）。
