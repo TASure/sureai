@@ -19,6 +19,7 @@ package com.sure.ai.gemini;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.realtime.RealtimeEventListener;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
@@ -46,6 +47,12 @@ public final class GeminiUtil {
 
 	/** 初始化锁对象。 */
 	private static final Object LOCK = new Object();
+
+	/** Realtime 客户端单例（需事件监听，不提供静态便捷方法）。 */
+	private static volatile GeminiRealtimeClient realtimeClient;
+
+	/** Realtime 客户端初始化锁。 */
+	private static final Object REALTIME_LOCK = new Object();
 
 	private GeminiUtil() {
 		throw new AssertionError("No instances");
@@ -166,6 +173,43 @@ public final class GeminiUtil {
 	 */
 	public static ImageResponse image(ImageRequest request) {
 		return client().generate(request);
+	}
+
+	// ==================== Realtime（Gemini Live 全双工语音对话） ====================
+
+	/**
+	 * 获取 Realtime 单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * <p>Realtime 需要事件监听器，不提供静态便捷方法；单例首次以
+	 * {@code (model, listener)} 构造，之后重复调用返回同一实例。</p>
+	 *
+	 * @param model        实时模型 ID（不含 models/ 前缀）
+	 * @param eventListener 事件监听器
+	 * @return Realtime 客户端
+	 */
+	public static GeminiRealtimeClient realtimeClient(String model,
+			RealtimeEventListener eventListener) {
+		GeminiRealtimeClient c = realtimeClient;
+		if (c == null) {
+			synchronized (REALTIME_LOCK) {
+				c = realtimeClient;
+				if (c == null) {
+					String apiKey = System.getenv("SURE_AI_GEMINI_API_KEY");
+					c = new GeminiRealtimeClient(AiConfig.of(apiKey), model, eventListener);
+					realtimeClient = c;
+				}
+			}
+		}
+		return c;
+	}
+
+	/**
+	 * 重置 Realtime 单例客户端（测试清理用）。
+	 */
+	public static void resetRealtimeClient() {
+		synchronized (REALTIME_LOCK) {
+			realtimeClient = null;
+		}
 	}
 
 	/**

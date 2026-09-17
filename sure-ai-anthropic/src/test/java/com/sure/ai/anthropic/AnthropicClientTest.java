@@ -47,6 +47,7 @@ import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.ImagePart;
 import com.sure.ai.model.MessagePart;
+import com.sure.ai.model.Model;
 import com.sure.ai.model.TextPart;
 import com.sure.ai.model.ToolCall;
 import com.sure.ai.model.ToolFunction;
@@ -354,6 +355,45 @@ public class AnthropicClientTest {
 		assertNotNull(calls);
 		assertEquals("structured_output", calls.get(0).name());
 		assertTrue(calls.get(0).argumentsJson().contains("42"));
+		client.close();
+	}
+
+	/** 思考模式：thinkingConfig 写入请求体 thinking 字段，thinking block 解析为 reasoningContent。 */
+	@Test
+	public void testThinking() {
+		String resp = "{\"id\":\"msg_t\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"thinking\",\"thinking\":\"推理过程\"},"
+			+ "{\"type\":\"text\",\"text\":\"答案\"}],\"stop_reason\":\"end_turn\","
+			+ "\"usage\":{\"input_tokens\":5,\"output_tokens\":10}}";
+		handle(200, resp);
+		AnthropicClient client = newClient();
+		JsonObject thinking = Json.object();
+		thinking.put("type", "enabled");
+		thinking.put("budget_tokens", 4096);
+		ChatResponse result = client.chat(ChatRequest.builder().model("m")
+			.messages(ChatMessage.user("q"))
+			.thinkingConfig(thinking).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"thinking\""));
+		assertTrue(body.contains("\"budget_tokens\":4096"));
+		assertEquals("答案", result.firstText());
+		assertEquals("推理过程", result.choices().get(0).message().reasoningContent());
+		client.close();
+	}
+
+	/** 模型列表：GET /v1/models，解析 data[].id。 */
+	@Test
+	public void testListModels() {
+		String resp = "{\"data\":[{\"id\":\"claude-opus-4-2\",\"display_name\":\"Claude Opus 4.2\","
+			+ "\"created_at\":1700000000,\"type\":\"model\"},"
+			+ "{\"id\":\"claude-sonnet-4-6\",\"display_name\":\"Claude Sonnet 4.6\",\"type\":\"model\"}]}";
+		handle(200, resp);
+		AnthropicClient client = newClient();
+		List<Model> models = client.listModels();
+		assertEquals(2, models.size());
+		assertEquals("claude-opus-4-2", models.get(0).id());
+		assertEquals("Claude Opus 4.2", models.get(0).ownedBy());
+		assertEquals("claude-sonnet-4-6", models.get(1).id());
 		client.close();
 	}
 }

@@ -28,7 +28,16 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 - [x] **Batches 批处理**：`BatchClient` 抽象 + OpenAI/Azure/智谱（OpenAI 协议族）+ Anthropic（内联 requests 不同协议）接入，内置 2s 轮询。见 [docs/batches.md](docs/batches.md)。
 - [ ] **Function Calling 增强**：自动参数校验（JSON Schema → Java Bean 校验）、工具注册中心。
 
-## P2 — 规划中（0.3.0+）
+## P2 — 实时语音与平台服务（0.2.0）
+
+- [x] **Realtime 实时语音对话**：`RealtimeClient` 抽象 + 5 平台接入（OpenAI / Gemini / 通义千问 / 智谱 / 豆包），`RealtimeConnector` 连接器可注入便于 mock。见 [docs/realtime.md](docs/realtime.md)。
+- [x] **思考模式**：`reasoning_effort` / `thinkingConfig` 统一抽象 + 5 平台适配（OpenAI / Azure / Gemini / Anthropic / 通义千问），响应 `reasoningContent` 思维链解析。见 [docs/thinking.md](docs/thinking.md)。
+- [x] **Grounding 联网搜索**：`grounding` 统一抽象 + 工具式/布尔式双范式 + 6 平台适配（OpenAI / Azure / Gemini / 通义千问 / 智谱 / 豆包），响应引用来源解析。见 [docs/grounding.md](docs/grounding.md)。
+- [x] **微调**：`FineTuneClient` 抽象 + 3 平台接入（OpenAI / Azure / 百度千帆），训练文件上传 + 任务创建/异步轮询。见 [docs/fine-tuning.md](docs/fine-tuning.md)。
+- [x] **内容审核**：`ModerationClient` 抽象 + OpenAI / Azure 接入，类别与分数归一。见 [docs/moderation.md](docs/moderation.md)。
+- [x] **模型列表管理**：`ModelsClient` 抽象 + 5 平台接入（OpenAI / Azure / Gemini / Anthropic / 通义千问）；智谱 / 豆包无公开 REST API，抛 `AiException`。见 [docs/models.md](docs/models.md)。
+
+## P3 — 规划中（0.3.0+）
 
 - [ ] **RAG 增强**：文档加载器（URL / 文件 / 爬虫）、重排序（Rerank）、混合检索（BM25 + 向量）、外部向量库适配（Milvus / pgvector / Chroma）。
 - [ ] **Prompt 模板**：变量替换、few-shot 管理、模板热加载。

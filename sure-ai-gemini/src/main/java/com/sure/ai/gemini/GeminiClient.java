@@ -26,6 +26,7 @@ import com.sure.ai.client.AiClient;
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.EmbeddingClient;
 import com.sure.ai.client.ImageClient;
+import com.sure.ai.client.ModelsClient;
 import com.sure.ai.internal.json.Json;
 import com.sure.ai.internal.json.JsonArray;
 import com.sure.ai.internal.json.JsonElement;
@@ -38,11 +39,13 @@ import com.sure.ai.model.Choice;
 import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.GroundingSource;
 import com.sure.ai.model.ImagePart;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
 import com.sure.ai.model.ImageResult;
 import com.sure.ai.model.MessagePart;
+import com.sure.ai.model.Model;
 import com.sure.ai.model.Role;
 import com.sure.ai.model.TextPart;
 import com.sure.ai.model.TokenUsage;
@@ -71,7 +74,8 @@ import com.sure.ai.model.ToolSpec;
  * @author sureai
  * @since 0.1.0
  */
-public class GeminiClient extends AbstractAiClient implements AiClient, EmbeddingClient, ImageClient {
+public class GeminiClient extends AbstractAiClient
+		implements AiClient, EmbeddingClient, ImageClient, ModelsClient {
 
 	/** 默认 baseUrl。 */
 	private static final String DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
@@ -259,11 +263,14 @@ public class GeminiClient extends AbstractAiClient implements AiClient, Embeddin
 			genConfig.set("stopSequences", Json.toElement(req.stop()));
 		}
 		applyResponseFormat(genConfig, req.responseFormat());
+		if (req.thinkingConfig() != null) {
+			genConfig.set("thinkingConfig", Json.toElement(req.thinkingConfig()));
+		}
 		if (genConfig.size() > 0) {
 			body.put("generationConfig", genConfig);
 		}
+		JsonArray tools = Json.array();
 		if (req.tools() != null && !req.tools().isEmpty()) {
-			JsonArray tools = Json.array();
 			JsonObject tool = Json.object();
 			JsonArray decls = Json.array();
 			for (ToolSpec spec : req.tools()) {
@@ -271,6 +278,14 @@ public class GeminiClient extends AbstractAiClient implements AiClient, Embeddin
 			}
 			tool.put("function_declarations", decls);
 			tools.add(tool);
+		}
+		if (req.grounding() != null) {
+			JsonObject googleSearch = Json.object();
+			JsonObject tool = Json.object();
+			tool.set("googleSearch", googleSearch);
+			tools.add(tool);
+		}
+		if (!tools.isEmpty()) {
 			body.put("tools", tools);
 		}
 		for (Map.Entry<String, Object> e : req.extra().entrySet()) {
@@ -381,6 +396,7 @@ public class GeminiClient extends AbstractAiClient implements AiClient, Embeddin
 	private ChatResponse parseChatResponse(JsonObject resp, String rawJson) {
 		String model = resp.optString("modelVersion", null);
 		List<Choice> choices = new ArrayList<>();
+		List<GroundingSource> groundingSources = new ArrayList<>();
 		JsonArray candidates = resp.has("candidates") ? resp.getJsonArray("candidates") : null;
 		if (candidates != null && !candidates.isEmpty()) {
 			JsonObject cand = candidates.getJsonObject(0);
@@ -388,6 +404,7 @@ public class GeminiClient extends AbstractAiClient implements AiClient, Embeddin
 			JsonObject content = cand.has("content") ? cand.getJsonObject("content") : null;
 			ChatMessage message = parseContent(content);
 			choices.add(Choice.of(0, message, finishReason));
+			collectGroundingSources(cand, groundingSources);
 		}
 		TokenUsage usage = null;
 		if (resp.has("usageMetadata")) {
@@ -397,15 +414,63 @@ public class GeminiClient extends AbstractAiClient implements AiClient, Embeddin
 			int total = u.optInt("totalTokenCount", prompt + completion);
 			usage = TokenUsage.of(prompt, completion, total);
 		}
-		return ChatResponse.of(null, model, choices, usage, rawJson);
+		return ChatResponse.of(null, model, choices, usage, groundingSources, rawJson);
 	}
 
-	/** 解析 Content 对象为 ChatMessage。 */
+	/** 从 candidate.groundingMetadata 提取联网来源。 */
+	private static void collectGroundingSources(JsonObject cand, List<GroundingSource> out) {
+		if (!cand.has("groundingMetadata")) {
+			return;
+		}
+		JsonObject meta = cand.getJsonObject("groundingMetadata");
+		if (meta.has("groundingChunks")) {
+			JsonArray chunks = meta.getJsonArray("groundingChunks");
+			for (int i = 0; i < chunks.size(); i++) {
+				JsonObject chunk = chunks.getJsonObject(i);
+				if (chunk.has("web")) {
+					JsonObject web = chunk.getJsonObject("web");
+					out.add(GroundingSource.of(web.optString("title", null),
+						web.optString("uri", null), null));
+				}
+			}
+			return;
+		}
+		if (meta.has("groundingAttribution")) {
+			JsonArray arr = meta.getJsonArray("groundingAttribution");
+			for (int i = 0; i < arr.size(); i++) {
+				JsonObject attr = arr.getJsonObject(i);
+				out.add(GroundingSource.of(attr.optString("title", null),
+					attr.optString("uri", attr.optString("url", null)), null));
+			}
+		}
+	}
+
+	@Override
+	public List<Model> listModels() {
+		JsonObject resp = doGet("models");
+		List<Model> models = new ArrayList<>();
+		JsonArray arr = resp.has("models") ? resp.getJsonArray("models") : null;
+		if (arr != null) {
+			for (int i = 0; i < arr.size(); i++) {
+				JsonObject m = arr.getJsonObject(i);
+				String name = m.optString("name", null);
+				if (name != null && name.startsWith("models/")) {
+					name = name.substring("models/".length());
+				}
+				models.add(Model.of(name, null, m.optString("baseModelId", null),
+					m.optString("version", null), m.toString()));
+			}
+		}
+		return models;
+	}
+
+	/** 解析 Content 对象为 ChatMessage（提取 thought 为 reasoningContent）。 */
 	private ChatMessage parseContent(JsonObject content) {
 		if (content == null) {
-			return ChatMessage.of(Role.ASSISTANT, "", null, null, null, null);
+			return ChatMessage.of(Role.ASSISTANT, "", null, null, null, null, null);
 		}
 		StringBuilder text = new StringBuilder();
+		StringBuilder thought = new StringBuilder();
 		List<ToolCall> calls = null;
 		JsonArray parts = content.has("parts") ? content.getJsonArray("parts") : null;
 		if (parts != null) {
@@ -413,6 +478,9 @@ public class GeminiClient extends AbstractAiClient implements AiClient, Embeddin
 				JsonObject p = parts.getJsonObject(i);
 				if (p.has("text") && !p.get("text").isNull()) {
 					text.append(p.getString("text"));
+				}
+				if (p.has("thought") && !p.get("thought").isNull()) {
+					thought.append(p.getString("thought"));
 				}
 				if (p.has("functionCall")) {
 					if (calls == null) {
@@ -425,7 +493,7 @@ public class GeminiClient extends AbstractAiClient implements AiClient, Embeddin
 			}
 		}
 		return ChatMessage.of(Role.ASSISTANT, text.length() > 0 ? text.toString() : null,
-			null, null, null, calls);
+			null, null, null, calls, thought.length() > 0 ? thought.toString() : null);
 	}
 
 	/** 解析流式分片。 */

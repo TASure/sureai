@@ -17,6 +17,7 @@
 package com.sure.ai.qwen;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -304,5 +305,48 @@ public class QwenClientTest {
 		assertNotNull(QwenModels.COSYVOICE_V3_5_FLASH);
 		assertNotNull(QwenModels.QWEN_AUDIO_TTS_PLUS);
 		assertNotNull(QwenModels.QWEN3_ASR_FLASH);
+	}
+
+	/** 思考模式：reasoningEffort 映射为 enable_thinking=true + thinking_budget，不发送 reasoning_effort。 */
+	@Test
+	public void testThinkingEnable() {
+		handle(200, "{\"id\":\"q\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		QwenClient client = newClient();
+		client.chat(ChatRequest.builder().model(QwenModels.QWEN_PLUS)
+			.messages(ChatMessage.user("hi")).reasoningEffort("high").build());
+		String body = this.lastBody.get();
+		assertTrue("应启用思考模式", body.contains("\"enable_thinking\":true"));
+		assertTrue("high 应映射较大 thinking_budget", body.contains("\"thinking_budget\":16384"));
+		assertFalse("通义不支持 reasoning_effort，不应发送", body.contains("reasoning_effort"));
+		client.close();
+	}
+
+	/** 思考模式：thinkingConfig=true（Boolean）→ enable_thinking=true。 */
+	@Test
+	public void testThinkingConfigBoolean() {
+		handle(200, "{\"id\":\"q\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		QwenClient client = newClient();
+		client.chat(ChatRequest.builder().model(QwenModels.QWEN_PLUS)
+			.messages(ChatMessage.user("hi")).thinkingConfig(Boolean.TRUE).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"enable_thinking\":true"));
+		assertFalse(body.contains("reasoning_effort"));
+		client.close();
+	}
+
+	/** Grounding：grounding 非 null → enable_search=true，且不注入 web_search 工具。 */
+	@Test
+	public void testGroundingEnableSearch() {
+		handle(200, "{\"id\":\"q\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		QwenClient client = newClient();
+		client.chat(ChatRequest.builder().model(QwenModels.QWEN_PLUS)
+			.messages(ChatMessage.user("hi")).grounding("web_search").build());
+		String body = this.lastBody.get();
+		assertTrue("应开启联网搜索", body.contains("\"enable_search\":true"));
+		assertFalse("通义不用 web_search 工具", body.contains("web_search"));
+		client.close();
 	}
 }

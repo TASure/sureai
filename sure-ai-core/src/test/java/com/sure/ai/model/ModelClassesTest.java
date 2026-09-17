@@ -24,6 +24,8 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.junit.Test;
 
@@ -512,5 +514,147 @@ public class ModelClassesTest {
 		assertEquals("boom", failed.error());
 		// null requestCounts 归一化为 0
 		assertEquals(0, failed.requestCounts().total());
+	}
+
+	// ==================== P2：思考模式与联网 ====================
+
+	/** ChatRequest reasoningEffort / thinkingConfig / grounding 字段。 */
+	@Test
+	public void testChatRequestReasoningAndGrounding() {
+		ChatRequest req = ChatRequest.builder().model("gpt").messages(ChatMessage.user("q"))
+			.reasoningEffort("high").thinkingConfig(Map.of("budget_tokens", 2048))
+			.grounding("web_search").build();
+		assertEquals("high", req.reasoningEffort());
+		assertEquals(2048, ((Map<?, ?>) req.thinkingConfig()).get("budget_tokens"));
+		assertEquals("web_search", req.grounding());
+		// 默认未设置为 null
+		ChatRequest plain = ChatRequest.builder().model("g").messages(ChatMessage.user("q")).build();
+		assertNull(plain.reasoningEffort());
+		assertNull(plain.thinkingConfig());
+		assertNull(plain.grounding());
+	}
+
+	/** ChatMessage reasoningContent：7 参 of 与访问器。 */
+	@Test
+	public void testChatMessageReasoningContent() {
+		ChatMessage m = ChatMessage.of(Role.ASSISTANT, "answer", null, null, null, null, "let me think");
+		assertEquals("let me think", m.reasoningContent());
+		// 6 参 of 兼容，reasoningContent 为 null
+		assertNull(ChatMessage.assistant("hi").reasoningContent());
+	}
+
+	/** ChatResponse groundingSources：6 参 of 与防御性拷贝。 */
+	@Test
+	public void testChatResponseGroundingSources() {
+		GroundingSource s = GroundingSource.of("标题", "https://example.com", "片段");
+		assertEquals("标题", s.title());
+		assertEquals("https://example.com", s.url());
+		assertEquals("片段", s.content());
+		ChatResponse r = ChatResponse.of("id", "m", List.of(), null, List.of(s), "{}");
+		assertEquals(1, r.groundingSources().size());
+		assertEquals("标题", r.groundingSources().get(0).title());
+		// 5 参 of 兼容，groundingSources 为空
+		ChatResponse old = ChatResponse.of("id", "m", List.of(), null, "{}");
+		assertTrue(old.groundingSources().isEmpty());
+		// null 归一化
+		ChatResponse nullG = ChatResponse.of("id", "m", List.of(), null, null, "{}");
+		assertTrue(nullG.groundingSources().isEmpty());
+	}
+
+	// ==================== P2：微调模型 ====================
+
+	/** FineTuneRequest builder：全字段与必填校验。 */
+	@Test
+	public void testFineTuneRequestBuilder() {
+		FineTuneRequest req = FineTuneRequest.builder()
+			.model("gpt-4o-mini").trainingFileId("file-1")
+			.hyperparameters(Map.of("n_epochs", 3)).suffix("my-ft").extra("k", "v").build();
+		assertEquals("gpt-4o-mini", req.model());
+		assertEquals("file-1", req.trainingFileId());
+		assertEquals(3, ((Map<?, ?>) req.hyperparameters()).get("n_epochs"));
+		assertEquals("my-ft", req.suffix());
+		assertEquals("v", req.extra().get("k"));
+	}
+
+	/** FineTuneRequest 必填校验。 */
+	@Test
+	public void testFineTuneRequestValidation() {
+		assertThrows(Exception.class, () -> FineTuneRequest.builder().trainingFileId("f").build());
+		assertThrows(Exception.class, () -> FineTuneRequest.builder().model("m").build());
+	}
+
+	/** FineTuneResponse 状态便捷方法。 */
+	@Test
+	public void testFineTuneResponse() {
+		FineTuneResponse done = FineTuneResponse.of("job-1", "succeeded", "gpt", "ft-1", 1L, 2L, null, "{}");
+		assertTrue(done.isCompleted());
+		assertFalse(done.isFailed());
+		assertEquals("ft-1", done.fineTunedModel());
+		assertEquals(1L, done.createdAt().longValue());
+		assertEquals(2L, done.completedAt().longValue());
+		FineTuneResponse failed = FineTuneResponse.of("job-2", "failed", "gpt", null, 1L, null, "oom", "{}");
+		assertFalse(failed.isCompleted());
+		assertTrue(failed.isFailed());
+		assertEquals("oom", failed.error());
+		FineTuneResponse queued = FineTuneResponse.of("job-3", "queued", "gpt", null, null, null, null, "{}");
+		assertFalse(queued.isCompleted());
+		assertFalse(queued.isFailed());
+		assertNull(queued.createdAt());
+	}
+
+	// ==================== P2：内容审核模型 ====================
+
+	/** ModerationRequest builder：默认模型与必填校验。 */
+	@Test
+	public void testModerationRequest() {
+		ModerationRequest req = ModerationRequest.builder().model("text-moderation-stable")
+			.input("hello").extra("k", "v").build();
+		assertEquals("text-moderation-stable", req.model());
+		assertEquals("hello", req.input());
+		assertEquals("v", req.extra().get("k"));
+		// 默认模型
+		assertEquals(ModerationRequest.DEFAULT_MODEL, ModerationRequest.of("x").model());
+		assertThrows(Exception.class, () -> ModerationRequest.builder().build());
+	}
+
+	/** ModerationResult 常量与防御性拷贝。 */
+	@Test
+	public void testModerationResult() {
+		assertEquals("sexual", ModerationResult.CATEGORY_SEXUAL);
+		ModerationResult r = ModerationResult.of(true,
+			Map.of("violence", 0.95), Set.of("violence"));
+		assertTrue(r.flagged());
+		assertEquals(0.95, r.categoryScores().get("violence"), 1e-9);
+		assertTrue(r.categories().contains("violence"));
+		// null 归一化
+		ModerationResult empty = ModerationResult.of(false, null, null);
+		assertTrue(empty.categoryScores().isEmpty());
+		assertTrue(empty.categories().isEmpty());
+	}
+
+	/** ModerationResponse：flagged 聚合。 */
+	@Test
+	public void testModerationResponse() {
+		ModerationResult flagged = ModerationResult.of(true, Map.of(), Set.of("hate"));
+		ModerationResponse resp = ModerationResponse.of("mod-1", "text-moderation-latest",
+			List.of(flagged), "{}");
+		assertTrue(resp.flagged());
+		assertEquals(1, resp.results().size());
+		ModerationResponse clean = ModerationResponse.of("mod-2", "m",
+			List.of(ModerationResult.of(false, Map.of(), Set.of())), "{}");
+		assertFalse(clean.flagged());
+	}
+
+	// ==================== P2：模型列表模型 ====================
+
+	/** Model record。 */
+	@Test
+	public void testModelRecord() {
+		Model m = Model.of("gpt-4o", 1700000000L, "openai", "model", "{raw}");
+		assertEquals("gpt-4o", m.id());
+		assertEquals(1700000000L, m.created().longValue());
+		assertEquals("openai", m.ownedBy());
+		assertEquals("model", m.object());
+		assertEquals("{raw}", m.rawJson());
 	}
 }

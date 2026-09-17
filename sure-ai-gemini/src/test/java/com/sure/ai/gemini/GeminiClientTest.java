@@ -51,6 +51,7 @@ import com.sure.ai.model.ImagePart;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
 import com.sure.ai.model.MessagePart;
+import com.sure.ai.model.Model;
 import com.sure.ai.model.TextPart;
 
 /**
@@ -360,6 +361,62 @@ public class GeminiClientTest {
 			ImageRequest.of(GeminiModels.GEMINI_2_0_FLASH_EXP, "bad prompt"));
 		assertTrue("no image part -> empty data", result.data().isEmpty());
 		assertNull(result.firstB64());
+		client.close();
+	}
+
+	/** 思考模式：thinkingConfig 写入 generationConfig.thinkingConfig，thought 解析为 reasoningContent。 */
+	@Test
+	public void testThinkingConfig() {
+		String resp = "{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":["
+			+ "{\"thought\":\"推理过程\"},{\"text\":\"答案\"}]},\"finishReason\":\"STOP\"}]}";
+		handle(200, resp);
+		GeminiClient client = newClient();
+		JsonObject thinking = Json.object();
+		thinking.put("thinkingBudget", 8192);
+		ChatResponse result = client.chat(ChatRequest.builder().model("m")
+			.messages(ChatMessage.user("q"))
+			.thinkingConfig(thinking).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"thinkingConfig\""));
+		assertTrue(body.contains("\"thinkingBudget\":8192"));
+		assertEquals("答案", result.firstText());
+		assertEquals("推理过程", result.choices().get(0).message().reasoningContent());
+		client.close();
+	}
+
+	/** Grounding：grounding 非空注入 googleSearch 工具，groundingMetadata 解析为来源。 */
+	@Test
+	public void testGrounding() {
+		String resp = "{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":["
+			+ "{\"text\":\"结果\"}]},\"finishReason\":\"STOP\",\"groundingMetadata\":{"
+			+ "\"groundingChunks\":[{\"web\":{\"title\":\"来源A\",\"uri\":\"https://a.com\"}},"
+			+ "{\"web\":{\"title\":\"来源B\",\"uri\":\"https://b.com\"}}]}}]}";
+		handle(200, resp);
+		GeminiClient client = newClient();
+		ChatResponse result = client.chat(ChatRequest.builder().model("m")
+			.messages(ChatMessage.user("查一下"))
+			.grounding("web_search").build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"googleSearch\""));
+		assertEquals(2, result.groundingSources().size());
+		assertEquals("来源A", result.groundingSources().get(0).title());
+		assertEquals("https://b.com", result.groundingSources().get(1).url());
+		client.close();
+	}
+
+	/** 模型列表：GET models，name 去掉 models/ 前缀。 */
+	@Test
+	public void testListModels() {
+		String resp = "{\"models\":[{\"name\":\"models/gemini-2.5-flash\","
+			+ "\"baseModelId\":\"gemini-2.5\"},{\"name\":\"models/gemini-2.5-pro\"}]}";
+		handle(200, resp);
+		GeminiClient client = newClient();
+		List<Model> models = client.listModels();
+		assertTrue(this.lastPath.get().endsWith("/models"));
+		assertEquals(2, models.size());
+		assertEquals("gemini-2.5-flash", models.get(0).id());
+		assertEquals("gemini-2.5", models.get(0).ownedBy());
+		assertEquals("gemini-2.5-pro", models.get(1).id());
 		client.close();
 	}
 

@@ -18,8 +18,10 @@ package com.sure.ai.client.compat;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiClient;
@@ -27,7 +29,10 @@ import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AudioClient;
 import com.sure.ai.client.EmbeddingClient;
+import com.sure.ai.client.FineTuneClient;
 import com.sure.ai.client.ImageClient;
+import com.sure.ai.client.ModerationClient;
+import com.sure.ai.client.ModelsClient;
 import com.sure.ai.client.VideoClient;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.exception.AiTimeoutException;
@@ -43,11 +48,18 @@ import com.sure.ai.model.Choice;
 import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.FineTuneRequest;
+import com.sure.ai.model.FineTuneResponse;
+import com.sure.ai.model.GroundingSource;
 import com.sure.ai.model.ImagePart;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
 import com.sure.ai.model.ImageResult;
 import com.sure.ai.model.MessagePart;
+import com.sure.ai.model.Model;
+import com.sure.ai.model.ModerationRequest;
+import com.sure.ai.model.ModerationResponse;
+import com.sure.ai.model.ModerationResult;
 import com.sure.ai.model.Role;
 import com.sure.ai.model.Segment;
 import com.sure.ai.model.SttRequest;
@@ -74,7 +86,8 @@ import com.sure.ai.model.Word;
  * @since 0.1.0
  */
 public class OpenAiCompatClient extends AbstractAiClient
-		implements AiClient, EmbeddingClient, ImageClient, VideoClient, AudioClient {
+		implements AiClient, EmbeddingClient, ImageClient, VideoClient, AudioClient,
+		ModelsClient, ModerationClient, FineTuneClient {
 
 	/** 对话接口路径，子类可覆盖。 */
 	protected String chatPath = "/chat/completions";
@@ -93,6 +106,18 @@ public class OpenAiCompatClient extends AbstractAiClient
 
 	/** 语音识别接口路径，子类可覆盖。 */
 	protected String sttPath = "/audio/transcriptions";
+
+	/** 模型列表接口路径，子类可覆盖。 */
+	protected String modelsPath = "/models";
+
+	/** 内容审核接口路径，子类可覆盖。 */
+	protected String moderationsPath = "/moderations";
+
+	/** 微调任务接口路径，子类可覆盖。 */
+	protected String fineTunePath = "/fine_tuning/jobs";
+
+	/** 文件上传接口路径，子类可覆盖。 */
+	protected String filesPath = "/files";
 
 	/** 视频轮询间隔（毫秒），子类可覆盖。 */
 	protected long videoPollIntervalMs = 2000L;
@@ -367,8 +392,19 @@ public class OpenAiCompatClient extends AbstractAiClient
 		return SttResponse.of(text, language, duration, segments, words, rawJson);
 	}
 
-	/** 构造对话请求体。 */
-	private JsonObject buildChatBody(ChatRequest req, boolean stream) {
+	/**
+	 * 构造对话请求体。
+	 *
+	 * <p>子类可覆盖此方法对序列化结果做平台差异化后处理（例如通义将
+	 * {@code reasoning_effort} 改写为 {@code enable_thinking}、将 grounding 改写为
+	 * {@code enable_search}）。覆盖时应先调用 {@code super.buildChatBody(req, stream)}
+	 * 再做增删改。</p>
+	 *
+	 * @param req    对话请求
+	 * @param stream 是否流式
+	 * @return 请求体 JSON
+	 */
+	protected JsonObject buildChatBody(ChatRequest req, boolean stream) {
 		JsonObject body = Json.object();
 		body.put("model", req.model());
 		JsonArray messages = Json.array();
@@ -384,14 +420,17 @@ public class OpenAiCompatClient extends AbstractAiClient
 		}
 		body.put("stream", stream);
 		putIfNotNull(body, "user", req.user());
+		JsonArray tools = Json.array();
 		if (req.tools() != null && !req.tools().isEmpty()) {
-			JsonArray tools = Json.array();
 			for (ToolSpec spec : req.tools()) {
 				JsonObject t = Json.object();
 				t.put("type", "function");
 				t.set("function", serializeFunction(spec.function()));
 				tools.add(t);
 			}
+		}
+		injectGroundingTool(tools, req.grounding());
+		if (!tools.isEmpty()) {
 			body.put("tools", tools);
 		}
 		if (req.toolChoice() != null) {
@@ -403,10 +442,29 @@ public class OpenAiCompatClient extends AbstractAiClient
 		if (req.responseFormat() != null) {
 			body.put("response_format", Json.toElement(req.responseFormat()));
 		}
+		putIfNotNull(body, "reasoning_effort", req.reasoningEffort());
 		for (Map.Entry<String, Object> e : req.extra().entrySet()) {
 			body.put(e.getKey(), Json.toElement(e.getValue()));
 		}
 		return body;
+	}
+
+	/**
+	 * 注入联网 Grounding 工具：grounding 为 "web_search" 字符串时注入
+	 * {@code {"type":"web_search"}} 工具；为 JsonObject/Map 时直接作为工具注入；
+	 * 为 null 时不注入。
+	 */
+	private static void injectGroundingTool(JsonArray tools, Object grounding) {
+		if (grounding == null) {
+			return;
+		}
+		if ("web_search".equals(grounding)) {
+			JsonObject tool = Json.object();
+			tool.put("type", "web_search");
+			tools.add(tool);
+		} else {
+			tools.add(Json.toElement(grounding));
+		}
 	}
 
 	/** 序列化为 Map 形式的函数定义。 */
@@ -512,12 +570,14 @@ public class OpenAiCompatClient extends AbstractAiClient
 		String id = resp.optString("id", null);
 		String model = resp.optString("model", null);
 		List<Choice> choices = new ArrayList<>();
+		List<GroundingSource> groundingSources = new ArrayList<>();
 		JsonArray arr = resp.getJsonArray("choices");
 		for (int i = 0; i < arr.size(); i++) {
 			JsonObject c = arr.getJsonObject(i);
 			JsonObject msg = c.getJsonObject("message");
 			choices.add(Choice.of(c.optInt("index", 0), parseMessage(msg),
 				c.optString("finish_reason", null)));
+			collectGroundingSources(msg, groundingSources);
 		}
 		TokenUsage usage = null;
 		if (resp.has("usage")) {
@@ -525,7 +585,27 @@ public class OpenAiCompatClient extends AbstractAiClient
 			usage = TokenUsage.of(u.optInt("prompt_tokens", 0),
 				u.optInt("completion_tokens", 0), u.optInt("total_tokens", 0));
 		}
-		return ChatResponse.of(id, model, choices, usage, rawJson);
+		return ChatResponse.of(id, model, choices, usage, groundingSources, rawJson);
+	}
+
+	/** 从 message.annotations 中提取联网来源（url_citation / url）。 */
+	private static void collectGroundingSources(JsonObject msg, List<GroundingSource> out) {
+		if (msg == null || !msg.has("annotations")) {
+			return;
+		}
+		JsonArray annotations = msg.getJsonArray("annotations");
+		for (int i = 0; i < annotations.size(); i++) {
+			JsonObject ann = annotations.getJsonObject(i);
+			String type = ann.optString("type", null);
+			if ("url_citation".equals(type) && ann.has("url_citation")) {
+				JsonObject uc = ann.getJsonObject("url_citation");
+				out.add(GroundingSource.of(uc.optString("title", null),
+					uc.optString("url", null), ann.optString("quoted_text", null)));
+			} else if (ann.has("url")) {
+				out.add(GroundingSource.of(ann.optString("title", null),
+					ann.optString("url", null), ann.optString("quoted_text", null)));
+			}
+		}
 	}
 
 	/** 解析响应中的 message 对象。 */
@@ -533,6 +613,8 @@ public class OpenAiCompatClient extends AbstractAiClient
 		Role role = msg.has("role") ? Role.fromValue(msg.getString("role")) : null;
 		String content = msg.has("content") && !msg.get("content").isNull()
 			? msg.getString("content") : null;
+		String reasoning = msg.has("reasoning_content") && !msg.get("reasoning_content").isNull()
+			? msg.getString("reasoning_content") : null;
 		List<ToolCall> calls = null;
 		if (msg.has("tool_calls")) {
 			calls = new ArrayList<>();
@@ -544,7 +626,7 @@ public class OpenAiCompatClient extends AbstractAiClient
 					fn.optString("name", null), fn.optString("arguments", null)));
 			}
 		}
-		return ChatMessage.of(role, content, null, null, null, calls);
+		return ChatMessage.of(role, content, null, null, null, calls, reasoning);
 	}
 
 	/** 解析流式分片。 */
@@ -603,5 +685,125 @@ public class OpenAiCompatClient extends AbstractAiClient
 				u.optInt("completion_tokens", 0), u.optInt("total_tokens", 0));
 		}
 		return EmbeddingResponse.of(model, embeddings, usage);
+	}
+
+	// ==================== 模型列表 ====================
+
+	@Override
+	public List<Model> listModels() {
+		JsonObject resp = doGet(this.modelsPath);
+		List<Model> models = new ArrayList<>();
+		JsonArray data = resp.has("data") ? resp.getJsonArray("data") : null;
+		if (data != null) {
+			for (int i = 0; i < data.size(); i++) {
+				JsonObject d = data.getJsonObject(i);
+				Long created = d.has("created") ? d.get("created").getAsLong() : null;
+				models.add(Model.of(d.optString("id", null), created,
+					d.optString("owned_by", null), d.optString("object", null), d.toString()));
+			}
+		}
+		return models;
+	}
+
+	// ==================== 内容审核 ====================
+
+	@Override
+	public ModerationResponse moderate(ModerationRequest request) {
+		JsonObject body = Json.object();
+		body.put("model", request.model());
+		body.put("input", request.input());
+		for (Map.Entry<String, Object> e : request.extra().entrySet()) {
+			body.put(e.getKey(), Json.toElement(e.getValue()));
+		}
+		PostResult result = doPostRaw(this.moderationsPath, body);
+		JsonObject resp = result.json();
+		List<ModerationResult> results = new ArrayList<>();
+		JsonArray arr = resp.has("results") ? resp.getJsonArray("results") : null;
+		if (arr != null) {
+			for (int i = 0; i < arr.size(); i++) {
+				JsonObject r = arr.getJsonObject(i);
+				Map<String, Double> scores = new LinkedHashMap<>();
+				Set<String> categories = new LinkedHashSet<>();
+				if (r.has("category_scores")) {
+					JsonObject cs = r.getJsonObject("category_scores");
+					for (String key : cs.keySet()) {
+						scores.put(key, cs.get(key).getAsDouble());
+					}
+				}
+				if (r.has("categories")) {
+					JsonObject c = r.getJsonObject("categories");
+					for (String key : c.keySet()) {
+						if (c.get(key).getAsBoolean()) {
+							categories.add(key);
+						}
+					}
+				}
+				results.add(ModerationResult.of(r.has("flagged") && r.get("flagged").getAsBoolean(),
+					scores, categories));
+			}
+		}
+		return ModerationResponse.of(resp.optString("id", null), resp.optString("model", null),
+			results, result.rawBody());
+	}
+
+	// ==================== 微调 ====================
+
+	@Override
+	public FineTuneResponse createFineTune(FineTuneRequest request) {
+		JsonObject body = Json.object();
+		body.put("model", request.model());
+		body.put("training_file", request.trainingFileId());
+		if (request.hyperparameters() != null) {
+			body.put("hyperparameters", Json.toElement(request.hyperparameters()));
+		}
+		if (request.suffix() != null) {
+			body.put("suffix", request.suffix());
+		}
+		for (Map.Entry<String, Object> e : request.extra().entrySet()) {
+			body.put(e.getKey(), Json.toElement(e.getValue()));
+		}
+		PostResult result = doPostRaw(this.fineTunePath, body);
+		return parseFineTuneResponse(result.json(), result.rawBody());
+	}
+
+	@Override
+	public FineTuneResponse getFineTune(String jobId) {
+		PostResult result = doGetRaw(this.fineTunePath + "/" + jobId);
+		return parseFineTuneResponse(result.json(), result.rawBody());
+	}
+
+	@Override
+	public String uploadTrainingFile(String fileName, byte[] content) {
+		Map<String, String> fields = new LinkedHashMap<>();
+		fields.put("purpose", "fine-tune");
+		PostResult result = doPostMultipart(this.filesPath, fields,
+			"file", fileName, "application/octet-stream", content);
+		String id = result.json().optString("id", null);
+		if (id == null || id.isBlank()) {
+			throw new AiException("file id not found in upload response: " + result.rawBody());
+		}
+		return id;
+	}
+
+	/** 解析微调任务响应。 */
+	protected FineTuneResponse parseFineTuneResponse(JsonObject resp, String rawJson) {
+		Long createdAt = resp.has("created_at") ? resp.get("created_at").getAsLong() : null;
+		Long completedAt = null;
+		if (resp.has("finished_at")) {
+			completedAt = resp.get("finished_at").getAsLong();
+		} else if (resp.has("completed_at")) {
+			completedAt = resp.get("completed_at").getAsLong();
+		}
+		String error = null;
+		if (resp.has("error") && !resp.get("error").isNull()) {
+			JsonObject err = resp.getJsonObject("error");
+			error = err.optString("message", null);
+			if (error == null) {
+				error = resp.optString("error", null);
+			}
+		}
+		return FineTuneResponse.of(resp.optString("id", null), resp.optString("status", null),
+			resp.optString("model", null), resp.optString("fine_tuned_model", null),
+			createdAt, completedAt, error, rawJson);
 	}
 }

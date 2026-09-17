@@ -36,24 +36,30 @@
 - **PDF 文档输入**：`DocumentPart` 内容块，5 平台 PDF 文档理解适配
 - **Prompt 缓存**：Anthropic `cache_control` / Gemini `cachedContent` / OpenAI 自动缓存，降低长上下文重复前缀成本
 - **Batches 批处理**：`BatchClient` 统一抽象，OpenAI / Azure / 智谱 / Anthropic 异步批量推理，内置轮询
+- **Realtime 实时语音**：`RealtimeClient` 全双工 WebSocket 抽象，OpenAI / Gemini / 通义千问 / 智谱 / 豆包 5 平台接入，连接器可注入便于 mock
+- **思考模式**：`reasoningEffort` / `thinkingConfig` 统一抽象 + 思维链 `reasoningContent` 解析，OpenAI / Azure / Gemini / Anthropic / 通义千问 5 平台适配
+- **Grounding 联网**：`grounding` 统一开关，工具式（web_search / googleSearch）与布尔式（enable_search）双范式，OpenAI / Azure / Gemini / 通义千问 / 智谱 / 豆包 6 平台接入，引用来源解析
+- **微调**：`FineTuneClient` 统一抽象（上传训练文件 + 创建/查询任务），OpenAI / Azure / 百度千帆 3 平台接入
+- **内容审核**：`ModerationClient` 统一抽象，类别与分数归一，OpenAI / Azure 接入
+- **模型列表**：`ModelsClient` 统一抽象，OpenAI / Azure / Gemini / Anthropic / 通义千问 5 平台接入
 - **环境变量自动配置**：未显式 init 时自动从 `SURE_AI_*` 环境变量读取
 - **JDK 21**：record / pattern matching / switch 模式
 
 ## 模块与平台一览
 
-| 平台 | artifactId | 默认 baseUrl | 鉴权方式 | 流式 | Embedding | 图像生成 | 视频生成 | TTS | STT | Function Calling | Rerank | 结构化输出 | 多模态 | PDF | 缓存 | Batches |
-|------|-----------|-------------|---------|------|-----------|---------|---------|-----|-----|-----------------|--------|-----------|--------|-----|------|---------|
-| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ tts-1 | ✅ whisper-1 | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ 自动 | ✅ |
-| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key 头 | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ Speech | ✅ Speech | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ 自动 | ✅ |
-| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key 头 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ tool_use | ✅ | ✅ | ✅ cache_control | ✅ |
-| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= 查询参数 | ✅ | ✅ | ✅ Imagen | ❌ Veo(OAuth) | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ cachedContent | ❌ |
-| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| 通义千问 | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ 通义万相（异步） | ✅ Wan 2.6（异步） | ✅ CosyVoice | ✅ Qwen-ASR | ✅ | ✅ qwen3-rerank | ✅ | ✅ | ✅ | ❌ | ❌ |
-| 智谱 GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ CogView | ✅ CogVideoX（异步） | ✅ GLM-TTS | ✅ GLM-ASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ |
-| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| 豆包 | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ Seedance（异步） | ✅ seed-tts-2.0 | ✅ 录音文件识别 | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| 百度千帆 | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token（自动缓存） | ✅ | ✅ | ✅ 文心一格（异步） | ❌ | ✅ 度小美 | ✅ 短语音识别 | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Ollama | `sure-ai-ollama` | `http://localhost:11434` | 无（本地服务） | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 平台 | artifactId | 默认 baseUrl | 鉴权方式 | 流式 | Embedding | 图像生成 | 视频生成 | TTS | STT | Function Calling | Rerank | 结构化输出 | 多模态 | PDF | 缓存 | Batches | Realtime | 思考 | Grounding | 微调 | 审核 | 模型列表 |
+|------|-----------|-------------|---------|------|-----------|---------|---------|-----|-----|-----------------|--------|-----------|--------|-----|------|---------|---------|------|-----------|------|------|---------|
+| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ tts-1 | ✅ whisper-1 | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ 自动 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key 头 | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ Speech | ✅ Speech | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ 自动 | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key 头 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ tool_use | ✅ | ✅ | ✅ cache_control | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= 查询参数 | ✅ | ✅ | ✅ Imagen | ❌ Veo(OAuth) | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ cachedContent | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
+| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 通义千问 | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ 通义万相（异步） | ✅ Wan 2.6（异步） | ✅ CosyVoice | ✅ Qwen-ASR | ✅ | ✅ qwen3-rerank | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ 控制台 | ❌ | ✅ |
+| 智谱 GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ CogView | ✅ CogVideoX（异步） | ✅ GLM-TTS | ✅ GLM-ASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ 控制台 | ❌ | ❌ |
+| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 豆包 | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ Seedance（异步） | ✅ seed-tts-2.0 | ✅ 录音文件识别 | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ 控制台 | ❌ | ❌ |
+| 百度千帆 | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token（自动缓存） | ✅ | ✅ | ✅ 文心一格（异步） | ❌ | ✅ 度小美 | ✅ 短语音识别 | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Ollama | `sure-ai-ollama` | `http://localhost:11434` | 无（本地服务） | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 聚合模块：`sure-ai-all`（一个依赖引入全部平台）、`sure-ai-bom`（版本统一管理）。
 
@@ -175,6 +181,38 @@ String desc = OpenAiUtil.chat(ChatRequest.builder()
 
 内容块架构、PDF 文档输入与 Prompt 缓存见 [docs/multimodal.md](docs/multimodal.md)；
 Rerank 见 [docs/rerank.md](docs/rerank.md)；Batches 见 [docs/batches.md](docs/batches.md)。
+
+### 内容审核
+
+```java
+import com.sure.ai.model.ModerationRequest;
+import com.sure.ai.model.ModerationResponse;
+import com.sure.ai.openai.OpenAiUtil;
+
+ModerationResponse resp = OpenAiUtil.client()
+    .moderate(ModerationRequest.of("待审核文本"));
+
+System.out.println("flagged=" + resp.flagged());   // 任一结果命中即 true
+resp.results().forEach(r -> r.categoryScores()
+    .forEach((k, v) -> System.out.printf("%s=%.4f%n", k, v)));
+```
+
+详见 [docs/moderation.md](docs/moderation.md)。
+
+### 模型列表
+
+```java
+import com.sure.ai.model.Model;
+import com.sure.ai.openai.OpenAiUtil;
+
+for (Model m : OpenAiUtil.client().listModels()) {
+    System.out.println(m.id() + "  owned_by=" + m.ownedBy());
+}
+```
+
+详见 [docs/models.md](docs/models.md)；Realtime 见 [docs/realtime.md](docs/realtime.md)，
+思考模式见 [docs/thinking.md](docs/thinking.md)，Grounding 见 [docs/grounding.md](docs/grounding.md)，
+微调见 [docs/fine-tuning.md](docs/fine-tuning.md)。
 
 ## Maven 依赖
 

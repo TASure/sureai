@@ -68,6 +68,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `sure-ai-gemini` / `sure-ai-anthropic` / `sure-ai-baidu` 等：多模态（ImagePart/DocumentPart）、结构化输出（Gemini `responseMimeType`+`responseSchema`；Anthropic 注入 `structured_output` 工具；百度字符串取值）、PDF 输入、Prompt 缓存（Anthropic `cache_control`；Gemini `extra("cachedContent", name)`；OpenAI 自动缓存）全量适配。
 - 工程集成：examples 新增 `RerankDemo`（通义千问重排）、`StructuredOutputDemo`（OpenAI json_object + JsonMapper）、`MultimodalDemo`（OpenAI 视觉模型图片理解）、`BatchDemo`（OpenAI Batches 提交/查询，缺 Key 或 input_file_id 优雅跳过），`ExamplesRunner` 新增 `rerank`/`structured`/`multimodal`/`batch` case 与帮助行。
 - 文档：新增 `docs/rerank.md`（RerankClient 架构、Qwen 接入、RAG 集成、智谱未开放说明）、`docs/structured-output.md`（response_format 各平台差异、JsonMapper 用法、平台对比表）、`docs/multimodal.md`（内容块架构、图片/data URL 与裸 base64 对比、PDF 支持矩阵、Prompt 缓存）、`docs/batches.md`（BatchClient 架构、OpenAI 协议族与 Anthropic 协议族对比、异步轮询说明）。
+- `sure-ai-core`：P2 能力抽象层——
+  - Realtime 实时语音：`RealtimeClient` 接口（connect/sendAudio/sendText/close/isConnected）、`RealtimeEventListener`（onTranscript/onAudio/onError/onClose/onEvent）、`RealtimeConnector`（可注入 WebSocket 连接抽象）、`AbstractRealtimeClient`（通用 WebSocket 建连/帧分发，子类覆盖 `buildUri()`/`handleMessage()`）、`DefaultRealtimeConnector`（JDK `java.net.http.WebSocket` 默认实现）。
+  - 思考模式：`ChatRequest.reasoningEffort(String)` + `ChatRequest.thinkingConfig(Object)`；`ChatMessage.reasoningContent(String)` 统一思维链出口。
+  - Grounding 联网：`ChatRequest.grounding(Object)`；`ChatResponse.groundingSources(List<GroundingSource>)` + `GroundingSource` record（title/url/content）。
+  - 微调：`FineTuneClient` 接口（createFineTune/getFineTune/uploadTrainingFile）+ `FineTuneRequest`（model/trainingFileId/hyperparameters/suffix）+ `FineTuneResponse`（id/status/model/fineTunedModel/createdAt/completedAt/error/rawJson，`isCompleted()`/`isFailed()`）。
+  - 内容审核：`ModerationClient` 接口（moderate）+ `ModerationRequest`（model/input，默认 `text-moderation-latest`）+ `ModerationResponse`（id/model/results，`flagged()`）+ `ModerationResult`（flagged/categoryScores/categories，5 类别常量 sexual/hate/harassment/self-harm/violence）。
+  - 模型列表：`ModelsClient` 接口（listModels）+ `Model` record（id/created/ownedBy/object/rawJson）。
+- P2 平台接入：
+  - `sure-ai-openai`：`OpenAiRealtimeClient`（`wss://api.openai.com/v1/realtime?model=`，Bearer，`response.output_audio.delta` 路由）；思考模式 `reasoning_effort` 序列化 + `reasoning_content` 解析；Grounding `web_search` 工具注入 + annotations 解析；微调 `/v1/fine_tuning/jobs` + `/v1/files`（purpose=fine-tune）；审核 `/v1/moderations`；模型列表 `/v1/models`（后五项复用 `OpenAiCompatClient` 内置实现）。
+  - `sure-ai-gemini`：`GeminiRealtimeClient`（`?key=` 鉴权，首连发 setup，`serverContent` 路由）；思考模式 `thinkingConfig → generationConfig.thinkingConfig` + `parts[].thought` 解析；Grounding `googleSearch` 工具 + `groundingMetadata` 解析；模型列表 `GET /v1beta/models`（`models[].name` 去前缀）。
+  - `sure-ai-qwen`：`QwenRealtimeClient`（DashScope `wss .../api-ws/v1/inference`，Bearer，`output.*` 路由）；思考模式覆盖序列化（`enable_thinking` + `thinking_budget`，移除 `reasoning_effort`）；Grounding 覆盖序列化（`enable_search:true` 布尔，移除 web_search 工具）；模型列表走 OpenAI 兼容模式（继承 core）。
+  - `sure-ai-zhipu`：`ZhipuRealtimeClient`（JWT 鉴权签发 HS256）；Grounding 继承 core（web_search 工具）；模型列表无公开 REST API，`listModels()` 抛 `AiException`。
+  - `sure-ai-doubao`：`DoubaoRealtimeClient`（`X-Api-Key` + `X-Api-Resource-Id` 握手头，可 `extraHeaders` 覆盖）；Grounding 继承 core（web_search 工具）；模型列表无公开 REST API，`listModels()` 抛 `AiException`。
+  - `sure-ai-anthropic`：思考模式 `thinkingConfig → thinking` 字段 + `content[] type:thinking` block 解析；模型列表 `GET /v1/models`（`data[].id`）。
+  - `sure-ai-azure`：模型列表 `/openai/models?api-version=`（api-key 头）；审核 `/openai/moderations?api-version=`；微调 `/openai/fine_tuning/jobs?api-version=`；思考模式复用 core（`reasoning_effort`）。
+  - `sure-ai-baidu`：微调千帆 SFT 端点，access_token 鉴权，任务状态码映射。
+  - Qwen/Zhipu/Doubao 微调走控制台/Notebook，未单独适配（JavaDoc 注明）。
+  - 各平台 `XxxUtil` 新增 `realtimeClient(model, listener)` 单例与 `resetRealtimeClient()`。
+- 工程集成：examples 新增 `RealtimeDemo`（OpenAI Realtime API 用法演示，不实际建连）、`ThinkingDemo`（reasoningEffort=high + reasoningContent）、`GroundingDemo`（web_search + 来源打印）、`FineTuneDemo`（FineTuneRequest + createFineTune/getFineTune，缺 training_file_id 仅打印用法）、`ModerationDemo`（moderate + flagged/类别分数）、`ModelsDemo`（listModels 打印），`ExamplesRunner` 新增 `realtime`/`thinking`/`grounding`/`finetune`/`moderation`/`models` case 与帮助行；单平台异常 try/catch 不中断、缺 Key 优雅跳过。
+- 文档：新增 `docs/realtime.md`（连接器抽象架构图、5 平台 WSS 端点与鉴权对比、事件类型、FakeConnector 测试策略）、`docs/thinking.md`（各平台字段差异、reasoningContent 解析、对比表）、`docs/grounding.md`（工具式 vs 布尔式双范式、来源解析、对比表）、`docs/fine-tuning.md`（FineTuneClient 架构、文件上传、异步轮询、各平台端点与状态对比）、`docs/moderation.md`（ModerationClient 架构、类别常量、OpenAI/Azure 配置）、`docs/models.md`（ModelsClient 架构、各平台端点、不支持平台说明）。
 
 ## [0.1.0] - 2026-09-17
 

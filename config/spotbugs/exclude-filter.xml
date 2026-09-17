@@ -109,4 +109,13 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- Realtime 客户端单例字段未被 SpotBugs 识别（UUF_UNUSED_FIELD）：
+         QwenUtil.realtimeClient 为 volatile 字段，采用双检锁（double-checked locking）
+         懒加载并在 resetRealtimeClient() 中置空；SpotBugs 对该并发惯用法存在已知误报，
+         字段实际既被读（本地缓存命中）也被写（初始化与重置）。 -->
+    <Match>
+        <Class name="com.sure.ai.qwen.QwenUtil"/>
+        <Bug pattern="UUF_UNUSED_FIELD"/>
+    </Match>
+
 </FindBugsFilter>

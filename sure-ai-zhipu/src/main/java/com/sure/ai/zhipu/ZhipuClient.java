@@ -17,10 +17,13 @@
 package com.sure.ai.zhipu;
 
 import java.net.http.HttpRequest;
+import java.util.List;
 import java.util.Map;
 
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.compat.OpenAiCompatClient;
+import com.sure.ai.exception.AiException;
+import com.sure.ai.model.Model;
 
 /**
  * 智谱 AI 开放平台客户端。
@@ -30,6 +33,15 @@ import com.sure.ai.client.compat.OpenAiCompatClient;
  * HS256 JWT 作为 Bearer token，并在有效期内缓存复用。</p>
  *
  * <p>默认 baseUrl：{@code https://open.bigmodel.cn/api/paas/v4}。</p>
+ *
+ * <p>P2 平台特定能力：</p>
+ * <ul>
+ *   <li><b>模型列表</b>：智谱无公开 REST 模型列表 API，{@link #listModels()} 直接抛
+ *   {@link AiException}，模型 ID 见 {@link ZhipuModels}。</li>
+ *   <li><b>思考模式 / Grounding</b>：智谱 OpenAI 兼容模式与 OpenAI 协议高度相似，
+ *   {@code reasoning_effort} 与 {@code web_search} 工具由 core 序列化，无需额外改写。</li>
+ *   <li><b>微调</b>：智谱微调为独立控制台/工单流程，无稳定公开 REST 端点，本期未单独适配。</li>
+ * </ul>
  *
  * @author sureai
  * @since 0.1.0
@@ -63,6 +75,21 @@ public class ZhipuClient extends OpenAiCompatClient {
 	@Override
 	public String name() {
 		return "zhipu";
+	}
+
+	/**
+	 * 智谱不提供公开的 OpenAI 风格 {@code GET /models} 列表 API（模型仅在静态文档页概览）。
+	 *
+	 * <p>若沿用 core 的默认实现会对 {@code /models} 发请求并收到 404，故此处直接抛出
+	 * 业务异常，引导调用方使用 {@link ZhipuModels} 中的静态模型 ID 常量。</p>
+	 *
+	 * @return 从不正常返回
+	 * @throws AiException 始终抛出，说明智谱无公开模型列表 API
+	 */
+	@Override
+	public List<Model> listModels() {
+		throw new AiException("Zhipu does not provide a public models list API; "
+			+ "use static model IDs in ZhipuModels");
 	}
 
 	@Override

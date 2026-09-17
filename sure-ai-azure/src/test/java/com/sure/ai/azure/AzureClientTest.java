@@ -17,6 +17,7 @@
 package com.sure.ai.azure;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -43,8 +44,13 @@ import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.FineTuneRequest;
+import com.sure.ai.model.FineTuneResponse;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.Model;
+import com.sure.ai.model.ModerationRequest;
+import com.sure.ai.model.ModerationResponse;
 
 /**
  * {@link AzureClient} 与 {@link AzureUtil} 集成测试：本地 HttpServer mock。
@@ -253,6 +259,82 @@ public class AzureClientTest {
 		AiConfig withResource = AzureUtil.buildConfig("k", null, "myres");
 		assertEquals("myres", withResource.extraHeaders().get("resource"));
 		assertThrows(AiException.class, AzureUtil::buildConfigFromEnv);
+	}
+
+	/** 模型列表：GET /openai/models?api-version=...，api-key 头，解析 data[]。 */
+	@Test
+	public void testListModels() {
+		handle(200, "{\"object\":\"list\",\"data\":["
+			+ "{\"id\":\"gpt-4o\",\"created\":1700000000,\"owned_by\":\"azure\"},"
+			+ "{\"id\":\"gpt-4o-mini\",\"created\":1700000001,\"owned_by\":\"azure\"}]}");
+		AzureClient client = newClient();
+		List<Model> models = client.listModels();
+		assertEquals("azure-key", this.lastApiKey.get());
+		assertNull("Azure 不应使用 Authorization Bearer 头", this.lastAuth.get());
+		assertTrue(this.lastUri.get().contains("/openai/models"));
+		assertTrue(this.lastUri.get().contains("api-version=2024-10-21"));
+		assertEquals(2, models.size());
+		assertEquals("gpt-4o", models.get(0).id());
+		assertEquals("azure", models.get(0).ownedBy());
+		client.close();
+	}
+
+	/** 内容审核：POST /openai/moderations?api-version=...，api-key 头，解析 results。 */
+	@Test
+	public void testModeration() {
+		handle(200, "{\"id\":\"mod-1\",\"model\":\"text-moderation-latest\",\"results\":["
+			+ "{\"flagged\":false,\"categories\":{},\"category_scores\":{}}]}");
+		AzureClient client = newClient();
+		ModerationResponse resp = client.moderate(ModerationRequest.of("hi"));
+		assertEquals("azure-key", this.lastApiKey.get());
+		assertNull("Azure 不应使用 Authorization Bearer 头", this.lastAuth.get());
+		assertTrue(this.lastUri.get().contains("/openai/moderations"));
+		assertTrue(this.lastUri.get().contains("api-version=2024-10-21"));
+		assertEquals("mod-1", resp.id());
+		assertEquals(1, resp.results().size());
+		assertFalse(resp.flagged());
+		client.close();
+	}
+
+	/** 微调：createFineTune POST /openai/fine_tuning/jobs、getFineTune GET 正确拼接 api-version、uploadTrainingFile。 */
+	@Test
+	public void testFineTune() {
+		// 同一测试内顺序发起三类请求，用单一 handler 按 path 路由响应（"/" 上下文仅能注册一次）。
+		handle(ex -> {
+			String path = ex.getRequestURI().getPath();
+			String method = ex.getRequestMethod();
+			String body;
+			if ("GET".equals(method) && path.endsWith("/fine_tuning/jobs/ft-1")) {
+				body = "{\"id\":\"ft-1\",\"status\":\"succeeded\",\"fine_tuned_model\":\"gpt-4o.ft\"}";
+			} else if ("POST".equals(method) && path.endsWith("/files")) {
+				body = "{\"id\":\"file-9\",\"filename\":\"train.jsonl\"}";
+			} else {
+				body = "{\"id\":\"ft-1\",\"status\":\"queued\",\"model\":\"gpt-4o\"}";
+			}
+			respond(ex, 200, body);
+		});
+		AzureClient client = newClient();
+		FineTuneRequest req = FineTuneRequest.builder().model("gpt-4o").trainingFileId("file-1").build();
+		FineTuneResponse created = client.createFineTune(req);
+		assertEquals("ft-1", created.id());
+		assertEquals("queued", created.status());
+		assertTrue(this.lastUri.get().contains("/openai/fine_tuning/jobs"));
+		assertTrue(this.lastUri.get().contains("api-version=2024-10-21"));
+		assertEquals("azure-key", this.lastApiKey.get());
+		assertNull("Azure 不应使用 Authorization Bearer 头", this.lastAuth.get());
+
+		FineTuneResponse got = client.getFineTune("ft-1");
+		assertEquals("ft-1", got.id());
+		assertEquals("succeeded", got.status());
+		assertEquals("gpt-4o.ft", got.fineTunedModel());
+		assertTrue(this.lastUri.get(), this.lastUri.get().contains("/openai/fine_tuning/jobs/ft-1"));
+		assertTrue(this.lastUri.get().contains("api-version=2024-10-21"));
+
+		String fileId = client.uploadTrainingFile("train.jsonl", "{\"x\":1}".getBytes(StandardCharsets.UTF_8));
+		assertEquals("file-9", fileId);
+		assertTrue(this.lastUri.get().contains("/openai/files"));
+		assertTrue(this.lastUri.get().contains("api-version=2024-10-21"));
+		client.close();
 	}
 
 	/** Models 私有构造器。 */

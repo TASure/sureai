@@ -17,6 +17,7 @@
 package com.sure.ai.client.compat;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
@@ -47,10 +48,16 @@ import com.sure.ai.model.CacheControl;
 import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.FineTuneRequest;
+import com.sure.ai.model.FineTuneResponse;
+import com.sure.ai.model.GroundingSource;
 import com.sure.ai.model.ImagePart;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
 import com.sure.ai.model.MessagePart;
+import com.sure.ai.model.Model;
+import com.sure.ai.model.ModerationRequest;
+import com.sure.ai.model.ModerationResponse;
 import com.sure.ai.model.SttRequest;
 import com.sure.ai.model.SttResponse;
 import com.sure.ai.model.TextPart;
@@ -671,6 +678,179 @@ public class OpenAiCompatClientTest {
 		assertTrue(body.contains("\"cache_control\":{\"type\":\"ephemeral\"}"));
 		// 普通文本片段不应带 cache_control
 		assertTrue(body.indexOf("cache_control") < body.length() - 1);
+		client.close();
+	}
+
+	// ==================== P2：reasoning / grounding ====================
+
+	/** reasoning_effort 序列化为请求体字段。 */
+	@Test
+	public void testReasoningEffortSerialized() {
+		handle(200, "{\"id\":\"c\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		OpenAiCompatClient client = newClient();
+		client.chat(ChatRequest.builder().model("o-series").messages(ChatMessage.user("q"))
+			.reasoningEffort("high").build());
+		assertTrue(this.lastBody.get().contains("\"reasoning_effort\":\"high\""));
+		client.close();
+	}
+
+	/** 未设置 reasoningEffort 时请求体不含该字段。 */
+	@Test
+	public void testNoReasoningEffortByDefault() {
+		handle(200, "{\"id\":\"c\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		OpenAiCompatClient client = newClient();
+		client.chat(ChatRequest.builder().model("gpt").messages(ChatMessage.user("q")).build());
+		assertTrue(!this.lastBody.get().contains("reasoning_effort"));
+		client.close();
+	}
+
+	/** grounding 字符串 "web_search" 注入 web_search 工具。 */
+	@Test
+	public void testGroundingWebSearchInjected() {
+		handle(200, "{\"id\":\"c\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		OpenAiCompatClient client = newClient();
+		client.chat(ChatRequest.builder().model("gpt").messages(ChatMessage.user("今天天气"))
+			.grounding("web_search").build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"tools\""));
+		assertTrue(body.contains("\"type\":\"web_search\""));
+		client.close();
+	}
+
+	/** grounding 自定义对象直接作为工具注入，并与已有 function 工具共存。 */
+	@Test
+	public void testGroundingCustomToolAppended() {
+		handle(200, "{\"id\":\"c\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		JsonObject webSearch = new JsonObject();
+		webSearch.put("type", "web_search_preview");
+		webSearch.put("search_context_size", "high");
+		OpenAiCompatClient client = newClient();
+		ToolFunction fn = ToolFunction.of("getWeather", "天气", "{}");
+		client.chat(ChatRequest.builder().model("gpt").messages(ChatMessage.user("q"))
+			.tools(List.of(ToolSpec.of(fn))).grounding(webSearch).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("getWeather"));
+		assertTrue(body.contains("web_search_preview"));
+		assertTrue(body.contains("search_context_size"));
+		client.close();
+	}
+
+	/** reasoning_content 响应解析：写入 ChatMessage.reasoningContent。 */
+	@Test
+	public void testReasoningContentParsed() {
+		handle(200, "{\"id\":\"c\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"answer\","
+			+ "\"reasoning_content\":\"thinking step\"},\"finish_reason\":\"stop\"}]}");
+		OpenAiCompatClient client = newClient();
+		ChatResponse resp = client.chat(ChatRequest.builder().model("o-series")
+			.messages(ChatMessage.user("q")).build());
+		assertEquals("answer", resp.firstText());
+		assertEquals("thinking step", resp.choices().get(0).message().reasoningContent());
+		client.close();
+	}
+
+	/** grounding 来源解析：annotations.url_citation 提取为 GroundingSource。 */
+	@Test
+	public void testGroundingSourcesParsed() {
+		handle(200, "{\"id\":\"c\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"见引用\","
+			+ "\"annotations\":[{\"type\":\"url_citation\","
+			+ "\"url_citation\":{\"url\":\"https://a.com\",\"title\":\"A 站\"},"
+			+ "\"quoted_text\":\"引用片段\"}]},"
+			+ "\"finish_reason\":\"stop\"}]}");
+		OpenAiCompatClient client = newClient();
+		ChatResponse resp = client.chat(ChatRequest.builder().model("gpt")
+			.messages(ChatMessage.user("q")).grounding("web_search").build());
+		List<GroundingSource> sources = resp.groundingSources();
+		assertEquals(1, sources.size());
+		assertEquals("A 站", sources.get(0).title());
+		assertEquals("https://a.com", sources.get(0).url());
+		assertEquals("引用片段", sources.get(0).content());
+		client.close();
+	}
+
+	// ==================== P2：模型列表 / 审核 / 微调 ====================
+
+	/** listModels：GET /models 解析 data[]。 */
+	@Test
+	public void testListModels() {
+		handle(200, "{\"object\":\"list\",\"data\":["
+			+ "{\"id\":\"gpt-4o\",\"object\":\"model\",\"created\":1700000000,\"owned_by\":\"openai\"},"
+			+ "{\"id\":\"gpt-4o-mini\",\"object\":\"model\",\"created\":1700000001,\"owned_by\":\"openai\"}]}");
+		OpenAiCompatClient client = newClient();
+		List<Model> models = client.listModels();
+		assertEquals(2, models.size());
+		assertEquals("gpt-4o", models.get(0).id());
+		assertEquals(1700000000L, models.get(0).created().longValue());
+		assertEquals("openai", models.get(0).ownedBy());
+		assertEquals("model", models.get(0).object());
+		client.close();
+	}
+
+	/** moderate：POST /moderations 解析 results。 */
+	@Test
+	public void testModerate() {
+		handle(200, "{\"id\":\"mod-1\",\"model\":\"text-moderation-latest\","
+			+ "\"results\":[{\"flagged\":true,"
+			+ "\"categories\":{\"sexual\":false,\"violence\":true,\"hate\":false},"
+			+ "\"category_scores\":{\"sexual\":0.01,\"violence\":0.99,\"hate\":0.05}}]}");
+		OpenAiCompatClient client = newClient();
+		ModerationResponse resp = client.moderate(ModerationRequest.of("暴力内容"));
+		assertTrue(this.lastBody.get().contains("\"input\":\"暴力内容\""));
+		assertTrue(this.lastBody.get().contains("\"model\":\"text-moderation-latest\""));
+		assertEquals("mod-1", resp.id());
+		assertTrue(resp.flagged());
+		assertEquals(1, resp.results().size());
+		assertTrue(resp.results().get(0).flagged());
+		assertTrue(resp.results().get(0).categories().contains("violence"));
+		assertEquals(0.99, resp.results().get(0).categoryScores().get("violence"), 1e-9);
+		client.close();
+	}
+
+	/** createFineTune：POST /fine_tuning/jobs 解析任务。 */
+	@Test
+	public void testCreateFineTune() {
+		handle(200, "{\"id\":\"ftjob-1\",\"status\":\"queued\",\"model\":\"gpt-4o-mini\","
+			+ "\"created_at\":1000,\"training_file\":\"file-1\"}");
+		OpenAiCompatClient client = newClient();
+		FineTuneResponse resp = client.createFineTune(FineTuneRequest.builder()
+			.model("gpt-4o-mini").trainingFileId("file-1").suffix("my").build());
+		assertTrue(this.lastBody.get().contains("\"training_file\":\"file-1\""));
+		assertTrue(this.lastBody.get().contains("\"model\":\"gpt-4o-mini\""));
+		assertTrue(this.lastBody.get().contains("\"suffix\":\"my\""));
+		assertEquals("ftjob-1", resp.id());
+		assertEquals("queued", resp.status());
+		assertEquals(1000L, resp.createdAt().longValue());
+		assertFalse(resp.isCompleted());
+		client.close();
+	}
+
+	/** getFineTune：GET /fine_tuning/jobs/{id} 解析完成状态与错误。 */
+	@Test
+	public void testGetFineTune() {
+		handle(200, "{\"id\":\"ftjob-2\",\"status\":\"succeeded\",\"model\":\"gpt\","
+			+ "\"fine_tuned_model\":\"ft-2024\",\"finished_at\":2000}");
+		OpenAiCompatClient client = newClient();
+		FineTuneResponse resp = client.getFineTune("ftjob-2");
+		assertEquals("succeeded", resp.status());
+		assertTrue(resp.isCompleted());
+		assertEquals("ft-2024", resp.fineTunedModel());
+		assertEquals(2000L, resp.completedAt().longValue());
+		client.close();
+	}
+
+	/** uploadTrainingFile：multipart /files 返回 file_id。 */
+	@Test
+	public void testUploadTrainingFile() {
+		handle(200, "{\"id\":\"file-9\",\"object\":\"file\",\"purpose\":\"fine-tune\"}");
+		OpenAiCompatClient client = newClient();
+		String id = client.uploadTrainingFile("train.jsonl", "{\"x\":1}".getBytes(StandardCharsets.UTF_8));
+		assertEquals("file-9", id);
+		assertTrue(this.lastBody.get().contains("purpose"));
 		client.close();
 	}
 }

@@ -34,18 +34,20 @@ public final class ChatMessage {
 	private final String name;
 	private final String toolCallId;
 	private final List<ToolCall> toolCalls;
+	private final String reasoningContent;
 
 	/**
 	 * 私有全参构造器。
 	 */
 	private ChatMessage(Role role, String content, List<MessagePart> parts,
-			String name, String toolCallId, List<ToolCall> toolCalls) {
+			String name, String toolCallId, List<ToolCall> toolCalls, String reasoningContent) {
 		this.role = role;
 		this.content = content;
 		this.parts = parts == null ? null : List.copyOf(parts);
 		this.name = name;
 		this.toolCallId = toolCallId;
 		this.toolCalls = toolCalls == null ? null : List.copyOf(toolCalls);
+		this.reasoningContent = reasoningContent;
 	}
 
 	/**
@@ -55,7 +57,7 @@ public final class ChatMessage {
 	 * @return 消息
 	 */
 	public static ChatMessage system(String content) {
-		return new ChatMessage(Role.SYSTEM, content, null, null, null, null);
+		return new ChatMessage(Role.SYSTEM, content, null, null, null, null, null);
 	}
 
 	/**
@@ -65,7 +67,7 @@ public final class ChatMessage {
 	 * @return 消息
 	 */
 	public static ChatMessage user(String content) {
-		return new ChatMessage(Role.USER, content, null, null, null, null);
+		return new ChatMessage(Role.USER, content, null, null, null, null, null);
 	}
 
 	/**
@@ -75,7 +77,7 @@ public final class ChatMessage {
 	 * @return 消息
 	 */
 	public static ChatMessage user(List<MessagePart> parts) {
-		return new ChatMessage(Role.USER, null, parts, null, null, null);
+		return new ChatMessage(Role.USER, null, parts, null, null, null, null);
 	}
 
 	/**
@@ -85,7 +87,7 @@ public final class ChatMessage {
 	 * @return 消息
 	 */
 	public static ChatMessage assistant(String content) {
-		return new ChatMessage(Role.ASSISTANT, content, null, null, null, null);
+		return new ChatMessage(Role.ASSISTANT, content, null, null, null, null, null);
 	}
 
 	/**
@@ -95,7 +97,7 @@ public final class ChatMessage {
 	 * @return 消息
 	 */
 	public static ChatMessage assistant(List<ToolCall> toolCalls) {
-		return new ChatMessage(Role.ASSISTANT, null, null, null, null, toolCalls);
+		return new ChatMessage(Role.ASSISTANT, null, null, null, null, toolCalls, null);
 	}
 
 	/**
@@ -106,7 +108,7 @@ public final class ChatMessage {
 	 * @return 消息
 	 */
 	public static ChatMessage tool(String toolCallId, String content) {
-		return new ChatMessage(Role.TOOL, content, null, null, toolCallId, null);
+		return new ChatMessage(Role.TOOL, content, null, null, toolCallId, null, null);
 	}
 
 	/**
@@ -122,7 +124,24 @@ public final class ChatMessage {
 	 */
 	public static ChatMessage of(Role role, String content, List<MessagePart> parts,
 			String name, String toolCallId, List<ToolCall> toolCalls) {
-		return new ChatMessage(role, content, parts, name, toolCallId, toolCalls);
+		return new ChatMessage(role, content, parts, name, toolCallId, toolCalls, null);
+	}
+
+	/**
+	 * 全参构造器（含思考内容）。
+	 *
+	 * @param role             角色
+	 * @param content          文本内容
+	 * @param parts            多模态片段
+	 * @param name             名称
+	 * @param toolCallId       工具调用 ID
+	 * @param toolCalls        工具调用
+	 * @param reasoningContent 思考内容（OpenAI reasoning_content / Gemini thinking）
+	 * @return 消息
+	 */
+	public static ChatMessage of(Role role, String content, List<MessagePart> parts,
+			String name, String toolCallId, List<ToolCall> toolCalls, String reasoningContent) {
+		return new ChatMessage(role, content, parts, name, toolCallId, toolCalls, reasoningContent);
 	}
 
 	/**
@@ -177,5 +196,14 @@ public final class ChatMessage {
 	 */
 	public List<ToolCall> toolCalls() {
 		return this.toolCalls;
+	}
+
+	/**
+	 * 思考内容（OpenAI reasoning_content / Gemini thinking 部分）。
+	 *
+	 * @return 思考内容，普通模型不返回时为 null
+	 */
+	public String reasoningContent() {
+		return this.reasoningContent;
 	}
 }

@@ -35,6 +35,7 @@ import com.sure.ai.model.TtsRequest;
 import com.sure.ai.model.TtsResponse;
 import com.sure.ai.model.VideoRequest;
 import com.sure.ai.model.VideoResponse;
+import com.sure.ai.client.realtime.RealtimeEventListener;
 
 /**
  * OpenAI 平台静态入口工具类。
@@ -67,6 +68,12 @@ public final class OpenAiUtil {
 
 	/** 批处理客户端初始化锁。 */
 	private static final Object BATCH_LOCK = new Object();
+
+	/** Realtime 客户端单例（需事件监听，不提供静态便捷方法）。 */
+	private static volatile OpenAiRealtimeClient realtimeClient;
+
+	/** Realtime 客户端初始化锁。 */
+	private static final Object REALTIME_LOCK = new Object();
 
 	private OpenAiUtil() {
 		throw new AssertionError("No instances");
@@ -334,6 +341,43 @@ public final class OpenAiUtil {
 	public static void resetBatchClient() {
 		synchronized (BATCH_LOCK) {
 			batchClient = null;
+		}
+	}
+
+	// ==================== Realtime（全双工语音对话） ====================
+
+	/**
+	 * 获取 Realtime 单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * <p>Realtime 需要事件监听器，不提供静态便捷方法；单例首次以
+	 * {@code (model, listener)} 构造，之后重复调用返回同一实例。</p>
+	 *
+	 * @param model        实时模型 ID
+	 * @param eventListener 事件监听器
+	 * @return Realtime 客户端
+	 * @throws AiException 未初始化且未设置 {@code SURE_AI_OPENAI_API_KEY}
+	 */
+	public static OpenAiRealtimeClient realtimeClient(String model,
+			RealtimeEventListener eventListener) {
+		OpenAiRealtimeClient c = realtimeClient;
+		if (c == null) {
+			synchronized (REALTIME_LOCK) {
+				c = realtimeClient;
+				if (c == null) {
+					c = new OpenAiRealtimeClient(buildConfigFromEnv(), model, eventListener);
+					realtimeClient = c;
+				}
+			}
+		}
+		return c;
+	}
+
+	/**
+	 * 重置 Realtime 单例客户端（测试清理用）。
+	 */
+	public static void resetRealtimeClient() {
+		synchronized (REALTIME_LOCK) {
+			realtimeClient = null;
 		}
 	}
 }

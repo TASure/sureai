@@ -30,6 +30,7 @@ import java.util.function.Consumer;
 import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiClient;
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.ModelsClient;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.internal.http.SseEvent;
 import com.sure.ai.internal.http.SseLineReader;
@@ -45,6 +46,7 @@ import com.sure.ai.model.Choice;
 import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.ImagePart;
 import com.sure.ai.model.MessagePart;
+import com.sure.ai.model.Model;
 import com.sure.ai.model.Role;
 import com.sure.ai.model.TextPart;
 import com.sure.ai.model.TokenUsage;
@@ -74,10 +76,13 @@ import com.sure.ai.model.ToolSpec;
  * @author sureai
  * @since 0.1.0
  */
-public class AnthropicClient extends AbstractAiClient implements AiClient {
+public class AnthropicClient extends AbstractAiClient implements AiClient, ModelsClient {
 
 	/** Messages 接口路径。 */
 	private static final String CHAT_PATH = "/messages";
+
+	/** 模型列表接口路径。 */
+	private static final String MODELS_PATH = "/models";
 
 	/** 默认 anthropic-version 头值。 */
 	private static final String DEFAULT_API_VERSION = "2023-06-01";
@@ -156,6 +161,9 @@ public class AnthropicClient extends AbstractAiClient implements AiClient {
 			body.put("stop_sequences", Json.toElement(req.stop()));
 		}
 		body.put("stream", stream);
+		if (req.thinkingConfig() != null) {
+			body.set("thinking", Json.toElement(req.thinkingConfig()));
+		}
 		JsonArray tools = Json.array();
 		if (req.tools() != null) {
 			for (ToolSpec spec : req.tools()) {
@@ -316,6 +324,7 @@ public class AnthropicClient extends AbstractAiClient implements AiClient {
 		String id = resp.optString("id", null);
 		String model = resp.optString("model", null);
 		StringBuilder text = new StringBuilder();
+		StringBuilder thinking = new StringBuilder();
 		List<ToolCall> toolCalls = new ArrayList<>();
 		if (resp.has("content")) {
 			JsonArray content = resp.getJsonArray("content");
@@ -324,6 +333,12 @@ public class AnthropicClient extends AbstractAiClient implements AiClient {
 				String type = block.optString("type", "");
 				if ("text".equals(type) && block.has("text")) {
 					text.append(block.getString("text"));
+				} else if ("thinking".equals(type)) {
+					if (block.has("thinking") && !block.get("thinking").isNull()) {
+						thinking.append(block.getString("thinking"));
+					} else if (block.has("text") && !block.get("text").isNull()) {
+						thinking.append(block.getString("text"));
+					}
 				} else if ("tool_use".equals(type)) {
 					String args = block.has("input") ? block.get("input").toString() : "{}";
 					toolCalls.add(ToolCall.of(block.optString("id", null),
@@ -333,7 +348,8 @@ public class AnthropicClient extends AbstractAiClient implements AiClient {
 		}
 		String stopReason = resp.optString("stop_reason", null);
 		ChatMessage message = ChatMessage.of(Role.ASSISTANT, text.length() > 0 ? text.toString() : null,
-			null, null, null, toolCalls.isEmpty() ? null : toolCalls);
+			null, null, null, toolCalls.isEmpty() ? null : toolCalls,
+			thinking.length() > 0 ? thinking.toString() : null);
 		List<Choice> choices = List.of(Choice.of(0, message, stopReason));
 		TokenUsage usage = null;
 		if (resp.has("usage")) {
@@ -343,6 +359,24 @@ public class AnthropicClient extends AbstractAiClient implements AiClient {
 			usage = TokenUsage.of(in, out, in + out);
 		}
 		return ChatResponse.of(id, model, choices, usage, rawJson);
+	}
+
+	// ==================== 模型列表 ====================
+
+	@Override
+	public List<Model> listModels() {
+		JsonObject resp = doGet(MODELS_PATH);
+		List<Model> models = new ArrayList<>();
+		JsonArray data = resp.has("data") ? resp.getJsonArray("data") : null;
+		if (data != null) {
+			for (int i = 0; i < data.size(); i++) {
+				JsonObject d = data.getJsonObject(i);
+				models.add(Model.of(d.optString("id", null),
+					d.has("created_at") ? d.get("created_at").getAsLong() : null,
+					d.optString("display_name", null), d.optString("type", null), d.toString()));
+			}
+		}
+		return models;
 	}
 
 	// ---------------------------------------------------------------------

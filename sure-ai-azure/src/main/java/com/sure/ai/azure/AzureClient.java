@@ -21,6 +21,7 @@ import java.util.Map;
 
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.compat.OpenAiCompatClient;
+import com.sure.ai.model.FineTuneResponse;
 
 /**
  * Azure OpenAI（Azure AI Foundry）客户端。
@@ -44,6 +45,16 @@ import com.sure.ai.client.compat.OpenAiCompatClient;
  * <p>官方文档：<a href="https://learn.microsoft.com/en-us/azure/ai-foundry/openai/reference">REST API reference</a>；
  * <a href="https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle">api-version 生命周期</a>
  * （2024-10-21 为当前最新 GA 版本）。</p>
+ *
+ * <p>P2 平台特定能力：</p>
+ * <ul>
+ *   <li>{@code GET /openai/models?api-version=}：模型列表（继承 core 的 data[] 解析）；</li>
+ *   <li>{@code POST /openai/moderations?api-version=}：内容审核；</li>
+ *   <li>{@code POST /openai/fine_tuning/jobs?api-version=}、
+ *   {@code GET /openai/fine_tuning/jobs/{id}?api-version=}、
+ *   {@code POST /openai/files?api-version=}：微调与训练文件上传；</li>
+ *   <li>reasoning_effort 与 grounding web_search 工具与 OpenAI 协议一致，由 core 序列化。</li>
+ * </ul>
  *
  * @author sureai
  * @since 0.1.0
@@ -81,6 +92,12 @@ public class AzureClient extends OpenAiCompatClient {
 			+ "/embeddings?api-version=" + this.apiVersion;
 		this.imagesPath = "/openai/deployments/" + this.deployment
 			+ "/images/generations?api-version=" + this.apiVersion;
+		// 平台特定能力：模型列表 / 内容审核 / 微调 / 文件上传均走 /openai/* 根路径，
+		// 鉴权由 applyAuth 的 api-key 头完成，端点统一拼接 api-version 查询参数。
+		this.modelsPath = "/openai/models?api-version=" + this.apiVersion;
+		this.moderationsPath = "/openai/moderations?api-version=" + this.apiVersion;
+		this.fineTunePath = "/openai/fine_tuning/jobs?api-version=" + this.apiVersion;
+		this.filesPath = "/openai/files?api-version=" + this.apiVersion;
 	}
 
 	@Override
@@ -91,6 +108,21 @@ public class AzureClient extends OpenAiCompatClient {
 	@Override
 	protected void applyAuth(HttpRequest.Builder requestBuilder, AiConfig cfg) {
 		requestBuilder.header("api-key", cfg.apiKey());
+	}
+
+	/**
+	 * 查询微调任务详情：Azure 的任务详情端点为
+	 * {@code /openai/fine_tuning/jobs/{id}?api-version=...}，不能直接复用带查询串的
+	 * {@link #fineTunePath} 后再追加 {@code /{id}}（否则查询串会落到 path 中间）。
+	 *
+	 * @param jobId 微调任务 ID
+	 * @return 微调任务响应
+	 */
+	@Override
+	public FineTuneResponse getFineTune(String jobId) {
+		PostResult result = doGetRaw("/openai/fine_tuning/jobs/" + jobId
+			+ "?api-version=" + this.apiVersion);
+		return parseFineTuneResponse(result.json(), result.rawBody());
 	}
 
 	/** 部署名。 */

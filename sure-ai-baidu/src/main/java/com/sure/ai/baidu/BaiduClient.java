@@ -35,6 +35,7 @@ import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AudioClient;
 import com.sure.ai.client.EmbeddingClient;
+import com.sure.ai.client.FineTuneClient;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiAuthException;
 import com.sure.ai.exception.AiException;
@@ -51,6 +52,8 @@ import com.sure.ai.model.Choice;
 import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.FineTuneRequest;
+import com.sure.ai.model.FineTuneResponse;
 import com.sure.ai.model.ImagePart;
 import com.sure.ai.model.MessagePart;
 import com.sure.ai.model.Role;
@@ -92,7 +95,13 @@ import com.sure.ai.model.TtsResponse;
  * @author sureai
  * @since 0.1.0
  */
-public class BaiduClient extends AbstractAiClient implements AiClient, EmbeddingClient, AudioClient {
+public class BaiduClient extends AbstractAiClient implements AiClient, EmbeddingClient, AudioClient, FineTuneClient {
+
+	/** 千帆微调接口相对路径（拼到 baseUrl 后）。 */
+	public static final String FINETUNE_BASE = "/rpc/2.0/ai_custom/v1/wenxinworkshop/finetune";
+
+	/** 千帆文件上传接口相对路径。 */
+	public static final String FILE_UPLOAD_PATH = "/rpc/2.0/ai_custom/v1/wenxinworkshop/files/upload";
 
 	/** 默认 baseUrl。 */
 	public static final String DEFAULT_BASE_URL = "https://aip.baidubce.com";
@@ -578,6 +587,120 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 			// 错误体不是 JSON，原样抛出
 		}
 		return ex;
+	}
+
+	// ==================== 微调（Fine-tuning） ====================
+
+	/**
+	 * 创建 SFT 微调任务（基础框架）。
+	 *
+	 * <p>调用千帆 {@code /finetune/create} 端点，使用 access_token 鉴权。
+	 * 请求体映射：{@code baseModel=model}、{@code trainDataset=trainingFileId}、
+	 * {@code modelName=suffix}，超参数透传到 {@code hyperParameters}。</p>
+	 *
+	 * <p><b>限制：</b>千帆微调任务的完整超参数 schema（多任务类型、评测集、模型续训等）
+	 * 随官方文档演进，本方法实现常用 SFT 子集；若官方协议更新，请通过
+	 * {@link FineTuneRequest.Builder#extra(String, Object)} 追加字段或联系维护方扩展。</p>
+	 *
+	 * @param request 微调请求
+	 * @return 任务响应
+	 */
+	@Override
+	public FineTuneResponse createFineTune(FineTuneRequest request) {
+		String token = getAccessToken();
+		JsonObject body = Json.object();
+		body.put("baseModel", request.model());
+		body.put("trainType", "sft");
+		body.put("trainDataset", request.trainingFileId());
+		if (request.suffix() != null) {
+			body.put("modelName", request.suffix());
+		}
+		if (request.hyperparameters() != null) {
+			body.set("hyperParameters", Json.toElement(request.hyperparameters()));
+		}
+		PostResult pr = doPostRaw(FINETUNE_BASE + "/create?access_token=" + token, body);
+		return parseFineTune(pr.rawBody(), request.model());
+	}
+
+	/**
+	 * 查询微调任务状态。
+	 *
+	 * @param jobId 任务 ID（千帆 taskId）
+	 * @return 任务响应
+	 */
+	@Override
+	public FineTuneResponse getFineTune(String jobId) {
+		String token = getAccessToken();
+		JsonObject body = Json.object();
+		body.put("taskId", jobId);
+		PostResult pr = doPostRaw(FINETUNE_BASE + "/get?access_token=" + token, body);
+		return parseFineTune(pr.rawBody(), null);
+	}
+
+	/**
+	 * 上传训练数据文件，返回 file_id（基础框架）。
+	 *
+	 * <p><b>限制：</b>千帆文件上传为 multipart/form-data 协议，且需先在控制台开通
+	 * 数据集；本方法以 JSON 形式提交文件名与 base64 内容作为框架实现，
+	 * 生产环境如需严格对齐 multipart 协议请联系维护方扩展。</p>
+	 *
+	 * @param fileName 文件名
+	 * @param content  文件二进制内容（JSONL）
+	 * @return file_id
+	 */
+	@Override
+	public String uploadTrainingFile(String fileName, byte[] content) {
+		String token = getAccessToken();
+		JsonObject body = Json.object();
+		body.put("fileName", fileName);
+		body.put("fileType", "jsonl");
+		body.put("content", Base64.getEncoder().encodeToString(content));
+		PostResult pr = doPostRaw(FILE_UPLOAD_PATH + "?access_token=" + token, body);
+		JsonObject resp = pr.json();
+		String id = resp.optString("fileId", resp.optString("id", null));
+		if (id == null) {
+			throw new AiException("baidu uploadTrainingFile: no fileId in response: " + pr.rawBody());
+		}
+		return id;
+	}
+
+	/** 解析千帆微调任务响应，把百度状态映射为规范状态。 */
+	private static FineTuneResponse parseFineTune(String rawJson, String defaultModel) {
+		JsonObject o = Json.parse(rawJson).getAsJsonObject();
+		String id = o.optString("taskId", o.optString("id", null));
+		String rawStatus = o.optString("status", "");
+		String status = mapStatus(rawStatus);
+		String fineTuned = o.optString("fineTunedModel",
+			o.optString("outputModel", o.optString("modelName", null)));
+		String model = o.optString("baseModel", o.optString("model", defaultModel));
+		String error = o.optString("errorMsg", o.optString("message", null));
+		return FineTuneResponse.of(id, status, model, fineTuned, null, null, error, rawJson);
+	}
+
+	/** 千帆状态 → 规范状态。 */
+	private static String mapStatus(String raw) {
+		switch (raw) {
+			case "Running":
+			case "RUNNING":
+			case "running":
+				return "running";
+			case "Pending":
+			case "WAITING":
+			case "Queued":
+				return "queued";
+			case "Done":
+			case "Success":
+			case "SUCCEEDED":
+				return "succeeded";
+			case "Failed":
+			case "FAILURE":
+				return "failed";
+			case "Cancelled":
+			case "Canceled":
+				return "cancelled";
+			default:
+				return raw.isBlank() ? "unknown" : raw;
+		}
 	}
 
 	/** baseUrl 为空时补默认地址，其余配置原样保留。 */

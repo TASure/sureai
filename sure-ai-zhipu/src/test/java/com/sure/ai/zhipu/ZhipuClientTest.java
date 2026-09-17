@@ -43,6 +43,7 @@ import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.exception.AiAuthException;
+import com.sure.ai.exception.AiException;
 import com.sure.ai.internal.json.Json;
 import com.sure.ai.internal.json.JsonObject;
 import com.sure.ai.model.ChatMessage;
@@ -325,6 +326,16 @@ public class ZhipuClientTest {
 	@Test
 	public void testName() {
 		assertEquals("zhipu", newClient().name());
+	}
+
+	/** 智谱无公开模型列表 API：listModels() 应直接抛 AiException，不发网络请求。 */
+	@Test
+	public void testListModelsThrows() {
+		ZhipuClient client = newClient();
+		AiException e = assertThrows(AiException.class, client::listModels);
+		assertTrue(e.getMessage().contains("models list"));
+		assertEquals(0, this.requestCount.get());
+		client.close();
 	}
 
 	/** Models 常量非空。 */

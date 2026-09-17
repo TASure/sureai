@@ -107,6 +107,24 @@ public final class ExamplesRunner {
 			case "batch":
 				BatchDemo.main(emptyArgs);
 				break;
+			case "realtime":
+				RealtimeDemo.main(emptyArgs);
+				break;
+			case "thinking":
+				ThinkingDemo.main(emptyArgs);
+				break;
+			case "grounding":
+				GroundingDemo.main(emptyArgs);
+				break;
+			case "finetune":
+				FineTuneDemo.main(emptyArgs);
+				break;
+			case "moderation":
+				ModerationDemo.main(emptyArgs);
+				break;
+			case "models":
+				ModelsDemo.main(emptyArgs);
+				break;
 			default:
 				System.out.println("未知平台：" + args[0]);
 				printUsage();
@@ -136,5 +154,11 @@ public final class ExamplesRunner {
 		System.out.println("  structured - 结构化输出演示（OpenAI json_object + JsonMapper）");
 		System.out.println("  multimodal - 多模态图像理解演示（OpenAI 视觉模型）");
 		System.out.println("  batch      - 批处理演示（OpenAI Batches 提交/查询）");
+		System.out.println("  realtime   - Realtime 实时语音对话演示（OpenAI，仅展示 API 用法）");
+		System.out.println("  thinking   - 思考模式演示（OpenAI reasoningEffort + reasoningContent）");
+		System.out.println("  grounding  - Grounding 联网搜索演示（OpenAI web_search + 来源解析）");
+		System.out.println("  finetune   - 微调演示（OpenAI FineTune 提交/查询任务）");
+		System.out.println("  moderation - 内容审核演示（OpenAI Moderation 类别与分数）");
+		System.out.println("  models     - 模型列表演示（OpenAI listModels）");
 	}
 }

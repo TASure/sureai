@@ -36,24 +36,30 @@
 - **PDF Document Input**: `DocumentPart` content block, PDF document understanding adapted across 5 platforms
 - **Prompt Caching**: Anthropic `cache_control` / Gemini `cachedContent` / OpenAI automatic caching, cutting repeated-prefix cost for long contexts
 - **Batches**: unified `BatchClient` abstraction, async batch inference across OpenAI / Azure / Zhipu / Anthropic, built-in polling
+- **Realtime Voice**: unified `RealtimeClient` full-duplex WebSocket abstraction across 5 platforms (OpenAI / Gemini / Qwen / Zhipu / Doubao), injectable connector for easy mocking
+- **Reasoning / Thinking**: unified `reasoningEffort` / `thinkingConfig` abstraction with `reasoningContent` chain-of-thought parsing, adapted across 5 platforms (OpenAI / Azure / Gemini / Anthropic / Qwen)
+- **Grounding / Web Search**: unified `grounding` toggle with both tool-style (web_search / googleSearch) and boolean-style (enable_search) paradigms, 6 platforms (OpenAI / Azure / Gemini / Qwen / Zhipu / Doubao), source citation parsing
+- **Fine-tuning**: unified `FineTuneClient` abstraction (upload training file + create/query jobs), 3 platforms (OpenAI / Azure / Baidu Qianfan)
+- **Moderation**: unified `ModerationClient` abstraction with normalized categories and scores, OpenAI / Azure
+- **Model Listing**: unified `ModelsClient` abstraction across 5 platforms (OpenAI / Azure / Gemini / Anthropic / Qwen)
 - **Environment variable auto-config**: lazy-loads from `SURE_AI_*` env vars when not explicitly initialized
 - **JDK 21**: records, pattern matching, switch patterns
 
 ## Modules & Platforms
 
-| Platform | artifactId | Default baseUrl | Auth | Streaming | Embedding | Image Gen | Video Gen | TTS | STT | Function Calling | Rerank | Structured | Multimodal | PDF | Cache | Batches |
-|----------|-----------|-----------------|------|-----------|-----------|-----------|-----------|-----|-----|-----------------|--------|-----------|------------|-----|-------|---------|
-| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ tts-1 | ✅ whisper-1 | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ auto | ✅ |
-| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key header | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ Speech | ✅ Speech | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ auto | ✅ |
-| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key header | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ tool_use | ✅ | ✅ | ✅ cache_control | ✅ |
-| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= query param | ✅ | ✅ | ✅ Imagen | ❌ Veo(OAuth) | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ cachedContent | ❌ |
-| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Qwen | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ Wanx (async) | ✅ Wan 2.6 (async) | ✅ CosyVoice | ✅ Qwen-ASR | ✅ | ✅ qwen3-rerank | ✅ | ✅ | ✅ | ❌ | ❌ |
-| Zhipu GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ CogView | ✅ CogVideoX (async) | ✅ GLM-TTS | ✅ GLM-ASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ |
-| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Doubao | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ Seedance (async) | ✅ seed-tts-2.0 | ✅ BigASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Baidu Qianfan | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token (auto-cached) | ✅ | ✅ | ✅ ERNIE-ViLG (async) | ❌ | ✅ DuXiaomei | ✅ Short ASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Ollama | `sure-ai-ollama` | `http://localhost:11434` | None (local) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Platform | artifactId | Default baseUrl | Auth | Streaming | Embedding | Image Gen | Video Gen | TTS | STT | Function Calling | Rerank | Structured | Multimodal | PDF | Cache | Batches | Realtime | Reasoning | Grounding | Fine-tune | Moderation | Models |
+|----------|-----------|-----------------|------|-----------|-----------|-----------|-----------|-----|-----|-----------------|--------|-----------|------------|-----|-------|---------|----------|-----------|-----------|-----------|------------|--------|
+| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ tts-1 | ✅ whisper-1 | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ auto | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key header | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ Speech | ✅ Speech | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ auto | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key header | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ tool_use | ✅ | ✅ | ✅ cache_control | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= query param | ✅ | ✅ | ✅ Imagen | ❌ Veo(OAuth) | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ cachedContent | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
+| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Qwen | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ Wanx (async) | ✅ Wan 2.6 (async) | ✅ CosyVoice | ✅ Qwen-ASR | ✅ | ✅ qwen3-rerank | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ console | ❌ | ✅ |
+| Zhipu GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ CogView | ✅ CogVideoX (async) | ✅ GLM-TTS | ✅ GLM-ASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ console | ❌ | ❌ |
+| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Doubao | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ Seedance (async) | ✅ seed-tts-2.0 | ✅ BigASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ console | ❌ | ❌ |
+| Baidu Qianfan | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token (auto-cached) | ✅ | ✅ | ✅ ERNIE-ViLG (async) | ❌ | ✅ DuXiaomei | ✅ Short ASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Ollama | `sure-ai-ollama` | `http://localhost:11434` | None (local) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 Aggregation modules: `sure-ai-all` (one dependency for all platforms), `sure-ai-bom` (version management).
 
@@ -175,6 +181,38 @@ String desc = OpenAiUtil.chat(ChatRequest.builder()
 
 Content-block architecture, PDF input and prompt caching see [docs/multimodal.md](docs/multimodal.md);
 Rerank see [docs/rerank.md](docs/rerank.md); Batches see [docs/batches.md](docs/batches.md).
+
+### Moderation
+
+```java
+import com.sure.ai.model.ModerationRequest;
+import com.sure.ai.model.ModerationResponse;
+import com.sure.ai.openai.OpenAiUtil;
+
+ModerationResponse resp = OpenAiUtil.client()
+    .moderate(ModerationRequest.of("text to moderate"));
+
+System.out.println("flagged=" + resp.flagged());   // true if any result is flagged
+resp.results().forEach(r -> r.categoryScores()
+    .forEach((k, v) -> System.out.printf("%s=%.4f%n", k, v)));
+```
+
+See [docs/moderation.md](docs/moderation.md).
+
+### Model Listing
+
+```java
+import com.sure.ai.model.Model;
+import com.sure.ai.openai.OpenAiUtil;
+
+for (Model m : OpenAiUtil.client().listModels()) {
+    System.out.println(m.id() + "  owned_by=" + m.ownedBy());
+}
+```
+
+See [docs/models.md](docs/models.md); Realtime see [docs/realtime.md](docs/realtime.md),
+Reasoning see [docs/thinking.md](docs/thinking.md), Grounding see [docs/grounding.md](docs/grounding.md),
+Fine-tuning see [docs/fine-tuning.md](docs/fine-tuning.md).
 
 ## Maven Dependencies
 

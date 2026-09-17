@@ -46,6 +46,9 @@ public final class ChatRequest {
 	private final Double frequencyPenalty;
 	private final Integer seed;
 	private final Object responseFormat;
+	private final String reasoningEffort;
+	private final Object thinkingConfig;
+	private final Object grounding;
 	private final Map<String, Object> extra;
 
 	private ChatRequest(Builder b) {
@@ -63,6 +66,9 @@ public final class ChatRequest {
 		this.frequencyPenalty = b.frequencyPenalty;
 		this.seed = b.seed;
 		this.responseFormat = b.responseFormat;
+		this.reasoningEffort = b.reasoningEffort;
+		this.thinkingConfig = b.thinkingConfig;
+		this.grounding = b.grounding;
 		this.extra = b.extra == null ? Map.of() : Map.copyOf(b.extra);
 	}
 
@@ -94,6 +100,9 @@ public final class ChatRequest {
 		private Double frequencyPenalty;
 		private Integer seed;
 		private Object responseFormat;
+		private String reasoningEffort;
+		private Object thinkingConfig;
+		private Object grounding;
 		private Map<String, Object> extra;
 
 		private Builder() {
@@ -280,6 +289,42 @@ public final class ChatRequest {
 		}
 
 		/**
+		 * 设置推理强度（OpenAI reasoning_effort：minimal/low/medium/high）。
+		 *
+		 * @param reasoningEffort 推理强度
+		 * @return this
+		 */
+		public Builder reasoningEffort(String reasoningEffort) {
+			this.reasoningEffort = reasoningEffort;
+			return this;
+		}
+
+		/**
+		 * 设置思考模式配置（平台差异透传：Gemini thinkingConfig、Claude budget_tokens 等）。
+		 *
+		 * @param thinkingConfig 思考配置（String/Map/JsonObject）
+		 * @return this
+		 */
+		public Builder thinkingConfig(Object thinkingConfig) {
+			this.thinkingConfig = thinkingConfig;
+			return this;
+		}
+
+		/**
+		 * 设置联网 Grounding 配置。
+		 *
+		 * <p>取值可为字符串 {@code "web_search"}，或平台特定配置对象（OpenAI
+		 * {@code {"type":"web_search"}}、Gemini googleSearch 工具、通义 enable_search 等）。</p>
+		 *
+		 * @param grounding 联网配置
+		 * @return this
+		 */
+		public Builder grounding(Object grounding) {
+			this.grounding = grounding;
+			return this;
+		}
+
+		/**
 		 * 追加透传字段。
 		 *
 		 * @param key   键
@@ -374,6 +419,21 @@ public final class ChatRequest {
 	/** 响应格式（String 或 JsonObject/Map），未设置时为 null。 */
 	public Object responseFormat() {
 		return this.responseFormat;
+	}
+
+	/** 推理强度（minimal/low/medium/high），未设置时为 null。 */
+	public String reasoningEffort() {
+		return this.reasoningEffort;
+	}
+
+	/** 思考模式配置（平台差异透传），未设置时为 null。 */
+	public Object thinkingConfig() {
+		return this.thinkingConfig;
+	}
+
+	/** 联网 Grounding 配置（String "web_search" 或配置对象），未设置时为 null。 */
+	public Object grounding() {
+		return this.grounding;
 	}
 
 	/** 透传字段。 */

@@ -19,6 +19,7 @@ package com.sure.ai.zhipu;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.realtime.RealtimeEventListener;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.BatchRequest;
 import com.sure.ai.model.BatchResponse;
@@ -77,6 +78,12 @@ public final class ZhipuUtil {
 
 	/** 批处理客户端初始化锁。 */
 	private static final Object BATCH_LOCK = new Object();
+
+	/** Realtime 客户端单例（需事件监听，不提供静态便捷方法）。 */
+	private static volatile ZhipuRealtimeClient realtimeClient;
+
+	/** Realtime 客户端初始化锁。 */
+	private static final Object REALTIME_LOCK = new Object();
 
 	/** 工具类禁止实例化。 */
 	private ZhipuUtil() {
@@ -370,6 +377,43 @@ public final class ZhipuUtil {
 	public static void resetBatchClient() {
 		synchronized (BATCH_LOCK) {
 			batchClient = null;
+		}
+	}
+
+	// ==================== Realtime（GLM 全双工语音对话） ====================
+
+	/**
+	 * 获取 Realtime 单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * <p>Realtime 需要事件监听器，不提供静态便捷方法；单例首次以
+	 * {@code (model, listener)} 构造，之后重复调用返回同一实例。</p>
+	 *
+	 * @param model        实时模型 ID
+	 * @param eventListener 事件监听器
+	 * @return Realtime 客户端
+	 * @throws AiException 环境变量缺失时抛出
+	 */
+	public static ZhipuRealtimeClient realtimeClient(String model,
+			RealtimeEventListener eventListener) {
+		ZhipuRealtimeClient c = realtimeClient;
+		if (c == null) {
+			synchronized (REALTIME_LOCK) {
+				c = realtimeClient;
+				if (c == null) {
+					c = new ZhipuRealtimeClient(buildBatchConfigFromEnv(), model, eventListener);
+					realtimeClient = c;
+				}
+			}
+		}
+		return c;
+	}
+
+	/**
+	 * 重置 Realtime 单例客户端（测试清理用）。
+	 */
+	public static void resetRealtimeClient() {
+		synchronized (REALTIME_LOCK) {
+			realtimeClient = null;
 		}
 	}
 }

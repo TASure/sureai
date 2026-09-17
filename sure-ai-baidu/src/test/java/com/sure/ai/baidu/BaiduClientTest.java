@@ -47,6 +47,8 @@ import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.FineTuneRequest;
+import com.sure.ai.model.FineTuneResponse;
 import com.sure.ai.model.ImagePart;
 import com.sure.ai.model.MessagePart;
 import com.sure.ai.model.SttRequest;
@@ -178,6 +180,23 @@ public class BaiduClientTest {
 				}
 				respond(exchange, 200,
 					"{\"err_no\":0,\"err_msg\":\"success.\",\"result\":[\"你好世界\"]}", "application/json");
+				return;
+			}
+			if (path.contains("/finetune/create")) {
+				byte[] in = exchange.getRequestBody().readAllBytes();
+				this.lastChatBody.set(new String(in, StandardCharsets.UTF_8));
+				respond(exchange, 200, "{\"taskId\":\"ft-1\",\"status\":\"Running\",\"baseModel\":\"ernie-4.5\"}",
+					"application/json");
+				return;
+			}
+			if (path.contains("/finetune/get")) {
+				respond(exchange, 200, "{\"taskId\":\"ft-1\",\"status\":\"Done\","
+					+ "\"baseModel\":\"ernie-4.5\",\"fineTunedModel\":\"ernie-4.5-sft-1\"}", "application/json");
+				return;
+			}
+			if (path.contains("/files/upload")) {
+				respond(exchange, 200, "{\"fileId\":\"file-123\",\"fileName\":\"train.jsonl\"}",
+					"application/json");
 				return;
 			}
 			respond(exchange, 404, "{}", "application/json");
@@ -453,5 +472,40 @@ public class BaiduClientTest {
 		assertTrue(tts.audioLength() > 0);
 		SttResponse stt = BaiduUtil.stt("baidu", new byte[] { 1, 2 });
 		assertEquals("你好世界", stt.text());
+	}
+
+	/** 创建微调任务：POST finetune/create，映射 Running→running。 */
+	@Test
+	public void testCreateFineTune() {
+		BaiduClient client = newClient();
+		FineTuneResponse resp = client.createFineTune(FineTuneRequest.builder()
+			.model("ernie-4.5").trainingFileId("file-123").suffix("sft-1").build());
+		assertEquals("ft-1", resp.id());
+		assertEquals("running", resp.status());
+		assertEquals("ernie-4.5", resp.model());
+		assertTrue(this.lastChatBody.get().contains("\"baseModel\":\"ernie-4.5\""));
+		assertTrue(this.lastChatBody.get().contains("file-123"));
+		client.close();
+	}
+
+	/** 查询微调任务：Done→succeeded，产出模型解析。 */
+	@Test
+	public void testGetFineTune() {
+		BaiduClient client = newClient();
+		FineTuneResponse resp = client.getFineTune("ft-1");
+		assertEquals("ft-1", resp.id());
+		assertEquals("succeeded", resp.status());
+		assertEquals("ernie-4.5-sft-1", resp.fineTunedModel());
+		assertTrue(resp.isCompleted());
+		client.close();
+	}
+
+	/** 上传训练文件返回 file_id。 */
+	@Test
+	public void testUploadTrainingFile() {
+		BaiduClient client = newClient();
+		String fileId = client.uploadTrainingFile("train.jsonl", "{\"q\":\"a\"}".getBytes(StandardCharsets.UTF_8));
+		assertEquals("file-123", fileId);
+		client.close();
 	}
 }

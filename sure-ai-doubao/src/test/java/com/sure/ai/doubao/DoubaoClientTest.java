@@ -242,4 +242,15 @@ public class DoubaoClientTest {
 		DoubaoUtil.init("ark-key");
 		assertNotNull(DoubaoUtil.client());
 	}
+
+	/** 方舟模型列表需 IAMS 签名：listModels() 应直接抛 AiException，不发网络请求。 */
+	@Test
+	public void testListModelsThrows() {
+		DoubaoClient client = newClient();
+		com.sure.ai.exception.AiException e = assertThrows(com.sure.ai.exception.AiException.class,
+			client::listModels);
+		assertTrue(e.getMessage().contains("IAMS"));
+		assertTrue(this.lastPath.get() == null);
+		client.close();
+	}
 }

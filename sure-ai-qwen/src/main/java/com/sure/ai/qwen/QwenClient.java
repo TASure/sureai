@@ -33,7 +33,9 @@ import com.sure.ai.exception.AiException;
 import com.sure.ai.exception.AiTimeoutException;
 import com.sure.ai.internal.json.Json;
 import com.sure.ai.internal.json.JsonArray;
+import com.sure.ai.internal.json.JsonElement;
 import com.sure.ai.internal.json.JsonObject;
+import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.Segment;
 import com.sure.ai.model.SttRequest;
 import com.sure.ai.model.SttResponse;
@@ -53,6 +55,19 @@ import com.sure.ai.model.Word;
  *
  * <p>官方文档：
  * <a href="https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope">通过 OpenAI 接口调用千问模型</a></p>
+ *
+ * <p>P2 平台特定能力：</p>
+ * <ul>
+ *   <li><b>思考模式</b>：用 {@code enable_thinking}（布尔）+ {@code thinking_budget}（int），
+ *   不支持 OpenAI 的 {@code reasoning_effort}；{@code reasoningEffort} 会被近似映射为
+ *   {@code enable_thinking=true} 与对应预算。思考内容仍在 {@code reasoning_content}，core 已解析。</li>
+ *   <li><b>Grounding 联网</b>：用顶层 {@code enable_search: true} 布尔开关，不注入
+ *   {@code web_search} 工具；联网来源在 {@code message.annotations}，core 已解析。</li>
+ *   <li><b>模型列表</b>：兼容模式 {@code GET /compatible-mode/v1/models} 支持，直接继承 core。</li>
+ *   <li><b>微调</b>：DashScope 原生微调协议（{@code /api/v1/fine-tunes}）与 OpenAI
+ *   fine_tuning/jobs 请求/响应差异较大，本期未单独适配；可通过 {@code extra()} 透传或后续
+ *   按原生协议扩展。</li>
+ * </ul>
  *
  * @author sureai
  * @since 0.1.0
@@ -77,6 +92,124 @@ public class QwenClient extends OpenAiCompatClient implements EmbeddingClient {
 	@Override
 	public String name() {
 		return "qwen";
+	}
+
+	// ==================== 思考模式与 Grounding 联网（通义协议差异） ====================
+
+	/**
+	 * 通义对话请求序列化：在 core 的 OpenAI 兼容序列化基础上做两处平台改写。
+	 *
+	 * <ol>
+	 *   <li><b>思考模式</b>：通义用 {@code enable_thinking: true}（布尔）与
+	 *   {@code thinking_budget: int}（思考 token 预算），<b>不支持</b> OpenAI 的
+	 *   {@code reasoning_effort}。因此先移除 core 写入的 {@code reasoning_effort}，
+	 *   再按 {@link ChatRequest#thinkingConfig()} 或 {@code reasoningEffort} 映射。</li>
+	 *   <li><b>联网 Grounding</b>：通义用顶层 {@code enable_search: true} 布尔开关，
+	 *   <b>不支持</b> OpenAI 的 {@code web_search} 工具。因此 grounding 非 null 时，
+	 *   移除 core 自动注入的 {@code {"type":"web_search"}} 工具，改写为 {@code enable_search}。</li>
+	 * </ol>
+	 *
+	 * <p>响应侧无需改动：通义思考内容在 {@code choices[].message.reasoning_content}、
+	 * 联网来源在 {@code message.annotations}，均由 core 解析。</p>
+	 *
+	 * @param req    对话请求
+	 * @param stream 是否流式
+	 * @return 通义协议请求体
+	 */
+	@Override
+	protected JsonObject buildChatBody(ChatRequest req, boolean stream) {
+		JsonObject body = super.buildChatBody(req, stream);
+		applyThinking(body, req);
+		applyGrounding(body, req);
+		return body;
+	}
+
+	/** 思考模式改写：移除 reasoning_effort，按 thinkingConfig/reasoningEffort 写入通义字段。 */
+	private void applyThinking(JsonObject body, ChatRequest req) {
+		Object thinkingCfg = req.thinkingConfig();
+		String effort = req.reasoningEffort();
+		if (thinkingCfg == null && effort == null) {
+			return;
+		}
+		// 通义不支持 reasoning_effort，core 已写入则移除。
+		body.remove("reasoning_effort");
+		if (thinkingCfg != null) {
+			applyThinkingConfig(body, thinkingCfg);
+			return;
+		}
+		// reasoningEffort 非 null：近似映射为 enable_thinking=true + thinking_budget。
+		body.put("enable_thinking", true);
+		Integer budget = effortToBudget(effort);
+		if (budget != null) {
+			body.put("thinking_budget", budget);
+		}
+	}
+
+	/** 解析 thinkingConfig：Boolean true / String "true" → enable_thinking=true；JsonObject/Map 含 thinking_budget 则写入。 */
+	private static void applyThinkingConfig(JsonObject body, Object cfg) {
+		if (Boolean.TRUE.equals(cfg)) {
+			body.put("enable_thinking", true);
+			return;
+		}
+		if (cfg instanceof String s) {
+			if ("true".equalsIgnoreCase(s)) {
+				body.put("enable_thinking", true);
+			}
+			return;
+		}
+		Integer budget = null;
+		if (cfg instanceof JsonObject jo) {
+			if (jo.has("thinking_budget")) {
+				budget = jo.getInt("thinking_budget");
+			}
+		} else if (cfg instanceof Map<?, ?> m && m.get("thinking_budget") instanceof Number n) {
+			budget = n.intValue();
+		}
+		body.put("enable_thinking", true);
+		if (budget != null) {
+			body.put("thinking_budget", budget);
+		}
+	}
+
+	/** OpenAI reasoning_effort → 通义 thinking_budget（token 数近似映射）。 */
+	private static Integer effortToBudget(String effort) {
+		if (effort == null) {
+			return null;
+		}
+		return switch (effort) {
+			case "minimal" -> 512;
+			case "low" -> 1024;
+			case "high" -> 16384;
+			default -> 4096; // medium 及未知值
+		};
+	}
+
+	/** Grounding 改写：grounding 非 null 时写入 enable_search=true，并移除 core 注入的 web_search 工具。 */
+	private static void applyGrounding(JsonObject body, ChatRequest req) {
+		if (req.grounding() == null) {
+			return;
+		}
+		body.put("enable_search", true);
+		if (!body.has("tools")) {
+			return;
+		}
+		JsonArray tools = body.getJsonArray("tools");
+		JsonArray filtered = Json.array();
+		for (int i = 0; i < tools.size(); i++) {
+			JsonElement el = tools.get(i);
+			if (el.isObject()) {
+				JsonObject t = el.getAsJsonObject();
+				if ("web_search".equals(t.optString("type", null))) {
+					continue;
+				}
+			}
+			filtered.add(el);
+		}
+		if (filtered.isEmpty()) {
+			body.remove("tools");
+		} else {
+			body.put("tools", filtered);
+		}
 	}
 
 	// ==================== 语音合成 TTS（CosyVoice，返回音频 URL） ====================
