@@ -48,11 +48,15 @@ import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
 import com.sure.ai.model.Choice;
+import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.ImagePart;
+import com.sure.ai.model.MessagePart;
 import com.sure.ai.model.Role;
 import com.sure.ai.model.SttRequest;
 import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TextPart;
 import com.sure.ai.model.TokenUsage;
 import com.sure.ai.model.TtsRequest;
 import com.sure.ai.model.TtsResponse;
@@ -70,6 +74,16 @@ import com.sure.ai.model.TtsResponse;
  * </ul>
  *
  * <p>默认 baseUrl：{@code https://aip.baidubce.com}。</p>
+ *
+ * <p>P1 能力：</p>
+ * <ul>
+ *   <li>多模态：{@link ImagePart} 序列化为 {@code image_url}（data URL 形式，与 OpenAI
+ *       兼容）；{@link DocumentPart} 百度千帆对话接口不支持 PDF 输入，直接抛
+ *       {@link AiException}；</li>
+ *   <li>结构化输出：百度的 {@code response_format} 是<b>字符串取值</b>
+ *       （{@code "json_object"}/{@code "text"}），而非对象；传入 String 时直接透传，
+ *       传入含 {@code type} 的对象时提取该字符串。</li>
+ * </ul>
  *
  * <p>TTS / STT 使用百度语音开放平台（{@code tsn.baidu.com} / {@code vop.baidu.com}），与对话服务
  * 不同域，端点默认硬编码，可用 {@code extraHeaders("ttsUrl", ...)} / {@code extraHeaders("sttUrl", ...)}
@@ -420,7 +434,15 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 		for (ChatMessage m : req.messages()) {
 			JsonObject o = Json.object();
 			o.put("role", m.role().value());
-			o.put("content", m.content() == null ? "" : m.content());
+			if (m.parts() != null && !m.parts().isEmpty()) {
+				JsonArray content = Json.array();
+				for (MessagePart part : m.parts()) {
+					content.add(serializePart(part));
+				}
+				o.set("content", content);
+			} else {
+				o.put("content", m.content() == null ? "" : m.content());
+			}
 			messages.add(o);
 		}
 		body.put("messages", messages);
@@ -434,7 +456,57 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 		if (req.maxTokens() != null) {
 			body.put("max_output_tokens", req.maxTokens());
 		}
+		applyResponseFormat(body, req.responseFormat());
 		return body;
+	}
+
+	/**
+	 * 序列化多模态片段：text / image_url(data URL)。
+	 *
+	 * @param part 消息片段
+	 * @return 内容块
+	 * @throws AiException 遇到 DocumentPart 时抛出（百度不支持 PDF）
+	 */
+	private static JsonObject serializePart(MessagePart part) {
+		JsonObject o = Json.object();
+		if (part instanceof TextPart tp) {
+			o.put("type", "text");
+			o.put("text", tp.text());
+		} else if (part instanceof ImagePart ip) {
+			o.put("type", "image_url");
+			JsonObject imageUrl = Json.object();
+			imageUrl.put("url", ip.resolvedUrl());
+			o.set("image_url", imageUrl);
+		} else if (part instanceof DocumentPart) {
+			throw new AiException("Baidu does not support document/PDF input");
+		}
+		return o;
+	}
+
+	/**
+	 * 写入 response_format（百度为字符串取值）。
+	 *
+	 * <p>String 直接透传；含 {@code type} 的对象提取其字符串；其余忽略。</p>
+	 *
+	 * @param body           请求体
+	 * @param responseFormat 响应格式
+	 */
+	private static void applyResponseFormat(JsonObject body, Object responseFormat) {
+		if (responseFormat == null) {
+			return;
+		}
+		String value = null;
+		if (responseFormat instanceof String s) {
+			value = s;
+		} else {
+			JsonElement el = Json.toElement(responseFormat);
+			if (el.isObject()) {
+				value = el.getAsJsonObject().optString("type", null);
+			}
+		}
+		if (value != null) {
+			body.put("response_format", value);
+		}
 	}
 
 	/** 获取有效 access_token：缓存未过期复用，否则双检锁重新换取。 */

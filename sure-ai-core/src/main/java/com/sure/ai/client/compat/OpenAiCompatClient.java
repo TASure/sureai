@@ -38,7 +38,9 @@ import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
+import com.sure.ai.model.CacheControl;
 import com.sure.ai.model.Choice;
+import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.ImagePart;
@@ -398,6 +400,9 @@ public class OpenAiCompatClient extends AbstractAiClient
 		putIfNotNull(body, "presence_penalty", req.presencePenalty());
 		putIfNotNull(body, "frequency_penalty", req.frequencyPenalty());
 		putIfNotNull(body, "seed", req.seed());
+		if (req.responseFormat() != null) {
+			body.put("response_format", Json.toElement(req.responseFormat()));
+		}
 		for (Map.Entry<String, Object> e : req.extra().entrySet()) {
 			body.put(e.getKey(), Json.toElement(e.getValue()));
 		}
@@ -459,11 +464,38 @@ public class OpenAiCompatClient extends AbstractAiClient
 		if (p instanceof TextPart tp) {
 			o.put("type", "text");
 			o.put("text", tp.text());
+			CacheControl cc = tp.cacheControl();
+			if (cc != null && cc.type() != null) {
+				JsonObject ccObj = Json.object();
+				ccObj.put("type", cc.type());
+				o.put("cache_control", ccObj);
+			}
 		} else if (p instanceof ImagePart ip) {
 			o.put("type", "image_url");
 			JsonObject inner = Json.object();
 			inner.put("url", ip.resolvedUrl());
 			o.put("image_url", inner);
+		} else if (p instanceof DocumentPart dp) {
+			if (dp.fileId() != null) {
+				o.put("type", "input_file");
+				JsonObject inner = Json.object();
+				inner.put("file_id", dp.fileId());
+				o.put("input_file", inner);
+			} else {
+				o.put("type", "input_file");
+				JsonObject inner = Json.object();
+				if (dp.name() != null) {
+					inner.put("filename", dp.name());
+				}
+				if (dp.mimeType() != null) {
+					inner.put("mime_type", dp.mimeType());
+				}
+				if (dp.data() != null) {
+					String mime = dp.mimeType() == null ? "application/pdf" : dp.mimeType();
+					inner.put("file_data", "data:" + mime + ";base64," + dp.data());
+				}
+				o.put("input_file", inner);
+			}
 		}
 		return o;
 	}

@@ -18,6 +18,7 @@ package com.sure.ai.gemini;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AbstractAiClient;
@@ -27,12 +28,14 @@ import com.sure.ai.client.EmbeddingClient;
 import com.sure.ai.client.ImageClient;
 import com.sure.ai.internal.json.Json;
 import com.sure.ai.internal.json.JsonArray;
+import com.sure.ai.internal.json.JsonElement;
 import com.sure.ai.internal.json.JsonObject;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
 import com.sure.ai.model.Choice;
+import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.ImagePart;
@@ -53,6 +56,17 @@ import com.sure.ai.model.ToolSpec;
  * <p>非 OpenAI 兼容协议：API Key 作为 {@code ?key=} 查询参数鉴权；请求体使用
  * {@code contents/parts} 结构；system 消息映射为顶级 {@code systemInstruction} 字段；
  * 流式使用 {@code streamGenerateContent?alt=sse}。</p>
+ *
+ * <p>P1 能力：</p>
+ * <ul>
+ *   <li>多模态：{@link ImagePart}/{@link DocumentPart} 序列化为 {@code inlineData}
+ *       （裸 base64，camelCase 字段名）；</li>
+ *   <li>结构化输出：{@code responseFormat} 为 {@code "json_object"} 或含
+ *       {@code json_schema} 时，写入 {@code generationConfig.responseMimeType} /
+ *       {@code responseSchema}；</li>
+ *   <li>Prompt 缓存：{@code extra("cachedContent", ...)} 作为顶级 {@code cachedContent}
+ *       字段透传（需先调 cachedContents.create 建缓存资源）。</li>
+ * </ul>
  *
  * @author sureai
  * @since 0.1.0
@@ -244,6 +258,7 @@ public class GeminiClient extends AbstractAiClient implements AiClient, Embeddin
 		if (req.stop() != null) {
 			genConfig.set("stopSequences", Json.toElement(req.stop()));
 		}
+		applyResponseFormat(genConfig, req.responseFormat());
 		if (genConfig.size() > 0) {
 			body.put("generationConfig", genConfig);
 		}
@@ -258,7 +273,47 @@ public class GeminiClient extends AbstractAiClient implements AiClient, Embeddin
 			tools.add(tool);
 			body.put("tools", tools);
 		}
+		for (Map.Entry<String, Object> e : req.extra().entrySet()) {
+			body.put(e.getKey(), Json.toElement(e.getValue()));
+		}
 		return body;
+	}
+
+	/**
+	 * 将 responseFormat 映射到 generationConfig。
+	 *
+	 * <p>字符串 {@code "json_object"} → {@code responseMimeType="application/json"}；
+	 * 含 {@code json_schema} 的对象 → 提取内层 schema 写入 {@code responseSchema}，
+	 * 并同时设置 {@code responseMimeType="application/json"}。</p>
+	 *
+	 * @param genConfig     generationConfig 对象
+	 * @param responseFormat 响应格式（String 或 JsonObject/Map），可为 null
+	 */
+	private void applyResponseFormat(JsonObject genConfig, Object responseFormat) {
+		if (responseFormat == null) {
+			return;
+		}
+		if (responseFormat instanceof String s) {
+			if ("json_object".equals(s)) {
+				genConfig.put("responseMimeType", "application/json");
+			}
+			return;
+		}
+		JsonElement el = Json.toElement(responseFormat);
+		if (!(el instanceof JsonObject jo)) {
+			return;
+		}
+		if (jo.has("json_schema")) {
+			JsonElement js = jo.get("json_schema");
+			JsonElement schema = js;
+			if (js.isObject() && js.getAsJsonObject().has("schema")) {
+				schema = js.getAsJsonObject().get("schema");
+			}
+			genConfig.set("responseSchema", schema);
+			genConfig.put("responseMimeType", "application/json");
+		} else if ("json_object".equals(jo.optString("type", null))) {
+			genConfig.put("responseMimeType", "application/json");
+		}
 	}
 
 	/** 序列化单条消息为 Gemini Content 对象。 */
@@ -286,12 +341,23 @@ public class GeminiClient extends AbstractAiClient implements AiClient, Embeddin
 		if (p instanceof TextPart tp) {
 			o.put("text", tp.text());
 		} else if (p instanceof ImagePart ip) {
-			JsonObject inline = Json.object();
-			inline.put("mime_type", ip.mimeType() != null ? ip.mimeType() : "image/png");
-			inline.put("data", ip.base64() != null ? ip.base64() : "");
-			o.put("inline_data", inline);
+			o.set("inlineData", buildInlineData(
+				ip.mimeType() != null ? ip.mimeType() : "image/png",
+				ip.base64() != null ? ip.base64() : ""));
+		} else if (p instanceof DocumentPart dp) {
+			o.set("inlineData", buildInlineData(
+				dp.mimeType() != null ? dp.mimeType() : "application/pdf",
+				dp.data() != null ? dp.data() : ""));
 		}
 		return o;
+	}
+
+	/** 构造 inlineData 对象（裸 base64，camelCase 字段名）。 */
+	private static JsonObject buildInlineData(String mimeType, String data) {
+		JsonObject inline = Json.object();
+		inline.put("mimeType", mimeType);
+		inline.put("data", data);
+		return inline;
 	}
 
 	/** 序列化函数声明。 */

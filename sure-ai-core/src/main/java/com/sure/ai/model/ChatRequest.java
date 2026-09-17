@@ -45,6 +45,7 @@ public final class ChatRequest {
 	private final Double presencePenalty;
 	private final Double frequencyPenalty;
 	private final Integer seed;
+	private final Object responseFormat;
 	private final Map<String, Object> extra;
 
 	private ChatRequest(Builder b) {
@@ -61,6 +62,7 @@ public final class ChatRequest {
 		this.presencePenalty = b.presencePenalty;
 		this.frequencyPenalty = b.frequencyPenalty;
 		this.seed = b.seed;
+		this.responseFormat = b.responseFormat;
 		this.extra = b.extra == null ? Map.of() : Map.copyOf(b.extra);
 	}
 
@@ -91,6 +93,7 @@ public final class ChatRequest {
 		private Double presencePenalty;
 		private Double frequencyPenalty;
 		private Integer seed;
+		private Object responseFormat;
 		private Map<String, Object> extra;
 
 		private Builder() {
@@ -262,6 +265,21 @@ public final class ChatRequest {
 		}
 
 		/**
+		 * 设置 responseFormat。
+		 *
+		 * <p>支持字符串形式（{@code "json_object"} / {@code "text"}），或 JsonObject /
+		 * Map 形式的 JSON Schema 约束，例如
+		 * {@code {"type":"json_schema","json_schema":{...}}}。</p>
+		 *
+		 * @param responseFormat 响应格式
+		 * @return this
+		 */
+		public Builder responseFormat(Object responseFormat) {
+			this.responseFormat = responseFormat;
+			return this;
+		}
+
+		/**
 		 * 追加透传字段。
 		 *
 		 * @param key   键
@@ -351,6 +369,11 @@ public final class ChatRequest {
 	/** seed。 */
 	public Integer seed() {
 		return this.seed;
+	}
+
+	/** 响应格式（String 或 JsonObject/Map），未设置时为 null。 */
+	public Object responseFormat() {
+		return this.responseFormat;
 	}
 
 	/** 透传字段。 */

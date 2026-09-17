@@ -16,6 +16,7 @@
 
 package com.sure.ai.qwen;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
@@ -27,6 +28,8 @@ import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.RerankRequest;
+import com.sure.ai.model.RerankResponse;
 import com.sure.ai.model.SttRequest;
 import com.sure.ai.model.SttResponse;
 import com.sure.ai.model.TtsRequest;
@@ -71,6 +74,12 @@ public final class QwenUtil {
 
 	/** 视频客户端初始化锁。 */
 	private static final Object VIDEO_LOCK = new Object();
+
+	/** 重排客户端单例。 */
+	private static volatile QwenRerankClient rerankClient;
+
+	/** 重排客户端初始化锁。 */
+	private static final Object RERANK_LOCK = new Object();
 
 	private QwenUtil() {
 		throw new AssertionError("No instances");
@@ -336,5 +345,61 @@ public final class QwenUtil {
 	 */
 	public static SttResponse stt(SttRequest request) {
 		return client().transcribe(request);
+	}
+
+	// ==================== 重排（Rerank） ====================
+
+	/**
+	 * 获取重排单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 重排客户端
+	 * @throws AiException 未初始化且未设置 {@code SURE_AI_QWEN_API_KEY}
+	 */
+	public static QwenRerankClient rerankClient() {
+		QwenRerankClient c = rerankClient;
+		if (c == null) {
+			synchronized (RERANK_LOCK) {
+				c = rerankClient;
+				if (c == null) {
+					c = new QwenRerankClient(buildConfigFromEnv());
+					rerankClient = c;
+				}
+			}
+		}
+		return c;
+	}
+
+	/**
+	 * 便捷重排：查询 + 候选文档，默认模型 {@link QwenModels#QWEN3_RERANK}。
+	 *
+	 * @param query     查询文本
+	 * @param documents 候选文档列表
+	 * @return 重排响应
+	 */
+	public static RerankResponse rerank(String query, List<String> documents) {
+		return rerank(RerankRequest.builder()
+			.model(QwenModels.QWEN3_RERANK)
+			.query(query)
+			.documents(documents)
+			.build());
+	}
+
+	/**
+	 * 重排。
+	 *
+	 * @param request 重排请求
+	 * @return 重排响应
+	 */
+	public static RerankResponse rerank(RerankRequest request) {
+		return rerankClient().rerank(request);
+	}
+
+	/**
+	 * 重置重排单例客户端（测试清理用）。
+	 */
+	public static void resetRerankClient() {
+		synchronized (RERANK_LOCK) {
+			rerankClient = null;
+		}
 	}
 }

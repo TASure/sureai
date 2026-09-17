@@ -35,13 +35,18 @@ import com.sure.ai.internal.http.SseEvent;
 import com.sure.ai.internal.http.SseLineReader;
 import com.sure.ai.internal.json.Json;
 import com.sure.ai.internal.json.JsonArray;
+import com.sure.ai.internal.json.JsonElement;
 import com.sure.ai.internal.json.JsonObject;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
 import com.sure.ai.model.Choice;
+import com.sure.ai.model.DocumentPart;
+import com.sure.ai.model.ImagePart;
+import com.sure.ai.model.MessagePart;
 import com.sure.ai.model.Role;
+import com.sure.ai.model.TextPart;
 import com.sure.ai.model.TokenUsage;
 import com.sure.ai.model.ToolCall;
 import com.sure.ai.model.ToolFunction;
@@ -53,6 +58,18 @@ import com.sure.ai.model.ToolSpec;
  * <p>非 OpenAI 兼容协议：system 消息为顶级字段，max_tokens 必填，流式 SSE 带命名事件
  * （message_start / content_block_start / content_block_delta / content_block_stop /
  * message_delta / message_stop）。</p>
+ *
+ * <p>P1 能力：</p>
+ * <ul>
+ *   <li>多模态：{@link ImagePart}/{@link DocumentPart} 序列化为
+ *       {@code type=image/document} 且 {@code source.type=base64} 的内容块；</li>
+ *   <li>结构化输出：<b>Anthropic 无原生 response_format 字段</b>，本客户端通过强制
+ *       {@code tool_use} 模拟——自动追加名为 {@code structured_output} 的工具并锁定
+ *       {@code tool_choice}；模型返回的结构化 JSON 位于该 tool_use 块的 {@code input}，
+ *       由响应解析器映射为 {@link ToolCall#argumentsJson()}；</li>
+ *   <li>Prompt 缓存：{@link TextPart#cacheControl()} 非空时输出
+ *       {@code cache_control} 断点；{@code extra("cache_control", ...)} 作为顶级字段透传。</li>
+ * </ul>
  *
  * @author sureai
  * @since 0.1.0
@@ -139,14 +156,25 @@ public class AnthropicClient extends AbstractAiClient implements AiClient {
 			body.put("stop_sequences", Json.toElement(req.stop()));
 		}
 		body.put("stream", stream);
-		if (req.tools() != null && !req.tools().isEmpty()) {
-			JsonArray tools = Json.array();
+		JsonArray tools = Json.array();
+		if (req.tools() != null) {
 			for (ToolSpec spec : req.tools()) {
 				tools.add(serializeTool(spec.function()));
 			}
+		}
+		boolean structured = req.responseFormat() != null;
+		if (structured) {
+			tools.add(buildStructuredOutputTool(req.responseFormat()));
+		}
+		if (!tools.isEmpty()) {
 			body.put("tools", tools);
 		}
-		if (req.toolChoice() != null) {
+		if (structured) {
+			JsonObject toolChoice = Json.object();
+			toolChoice.put("type", "tool");
+			toolChoice.put("name", "structured_output");
+			body.set("tool_choice", toolChoice);
+		} else if (req.toolChoice() != null) {
 			body.put("tool_choice", Json.toElement(req.toolChoice()));
 		}
 		for (Map.Entry<String, Object> e : req.extra().entrySet()) {
@@ -155,11 +183,54 @@ public class AnthropicClient extends AbstractAiClient implements AiClient {
 		return body;
 	}
 
+	/**
+	 * 构造强制结构化输出工具：{@code name=structured_output}，{@code input_schema}
+	 * 取自 responseFormat 中的 json_schema（OpenAI 风格包装则提取内层 schema）。
+	 *
+	 * @param responseFormat 响应格式
+	 * @return 工具定义
+	 */
+	static JsonObject buildStructuredOutputTool(Object responseFormat) {
+		JsonObject tool = Json.object();
+		tool.put("name", "structured_output");
+		tool.put("description", "Structured output requested via responseFormat");
+		tool.set("input_schema", extractInputSchema(responseFormat));
+		return tool;
+	}
+
+	/** 从 responseFormat 提取 JSON Schema 对象。 */
+	private static JsonObject extractInputSchema(Object responseFormat) {
+		JsonElement el = Json.toElement(responseFormat);
+		if (el.isObject()) {
+			JsonObject jo = el.getAsJsonObject();
+			if (jo.has("json_schema")) {
+				JsonElement js = jo.get("json_schema");
+				if (js.isObject()) {
+					JsonObject jso = js.getAsJsonObject();
+					if (jso.has("schema") && jso.get("schema").isObject()) {
+						return jso.get("schema").getAsJsonObject();
+					}
+					return jso;
+				}
+			}
+			return jo;
+		}
+		JsonObject fallback = Json.object();
+		fallback.put("type", "object");
+		return fallback;
+	}
+
 	/** 序列化单条消息。 */
-	private JsonObject serializeMessage(ChatMessage m) {
+	static JsonObject serializeMessage(ChatMessage m) {
 		JsonObject o = Json.object();
 		o.put("role", m.role().value());
-		if (m.content() != null) {
+		if (m.parts() != null && !m.parts().isEmpty()) {
+			JsonArray blocks = Json.array();
+			for (MessagePart part : m.parts()) {
+				blocks.add(serializeContentBlock(part));
+			}
+			o.put("content", blocks);
+		} else if (m.content() != null) {
 			o.put("content", m.content());
 		}
 		if (m.toolCalls() != null && !m.toolCalls().isEmpty()) {
@@ -184,6 +255,43 @@ public class AnthropicClient extends AbstractAiClient implements AiClient {
 			o.put("content", blocks);
 		}
 		return o;
+	}
+
+	/**
+	 * 序列化多模态内容块。
+	 *
+	 * <p>TextPart 带 {@code cache_control} 断点；ImagePart/DocumentPart 用
+	 * {@code source.type=base64} 内联（裸 base64）。</p>
+	 *
+	 * @param part 消息片段
+	 * @return 内容块
+	 */
+	static JsonObject serializeContentBlock(MessagePart part) {
+		JsonObject b = Json.object();
+		if (part instanceof TextPart tp) {
+			b.put("type", "text");
+			b.put("text", tp.text());
+			if (tp.cacheControl() != null) {
+				JsonObject cc = Json.object();
+				cc.put("type", tp.cacheControl().type());
+				b.set("cache_control", cc);
+			}
+		} else if (part instanceof ImagePart ip) {
+			b.put("type", "image");
+			JsonObject src = Json.object();
+			src.put("type", "base64");
+			src.put("media_type", ip.mimeType() != null ? ip.mimeType() : "image/png");
+			src.put("data", ip.base64() != null ? ip.base64() : "");
+			b.set("source", src);
+		} else if (part instanceof DocumentPart dp) {
+			b.put("type", "document");
+			JsonObject src = Json.object();
+			src.put("type", "base64");
+			src.put("media_type", dp.mimeType() != null ? dp.mimeType() : "application/pdf");
+			src.put("data", dp.data() != null ? dp.data() : "");
+			b.set("source", src);
+		}
+		return b;
 	}
 
 	/** 序列化工具定义。 */

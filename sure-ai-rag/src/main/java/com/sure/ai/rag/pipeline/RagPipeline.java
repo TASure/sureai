@@ -27,6 +27,7 @@ import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.rag.embedding.ClientEmbeddingProvider;
 import com.sure.ai.rag.embedding.EmbeddingProvider;
+import com.sure.ai.rag.Reranker;
 import com.sure.ai.rag.model.Document;
 import com.sure.ai.rag.model.SimilaritySearchResult;
 import com.sure.ai.rag.retriever.Retriever;
@@ -302,6 +303,7 @@ public class RagPipeline {
 		private String systemPromptTemplate = DEFAULT_SYSTEM_PROMPT_TEMPLATE;
 		private int defaultTopK = DEFAULT_TOP_K;
 		private double minScore = Double.NEGATIVE_INFINITY;
+		private Reranker reranker;
 
 		private Builder() {
 		}
@@ -417,6 +419,19 @@ public class RagPipeline {
 		}
 
 		/**
+		 * 设置重排器（可选，仅默认向量检索器生效）。
+		 *
+		 * <p>向量召回后调用重排器重新排序；为 null 时不重排。</p>
+		 *
+		 * @param reranker 重排器
+		 * @return this
+		 */
+		public Builder reranker(Reranker reranker) {
+			this.reranker = reranker;
+			return this;
+		}
+
+		/**
 		 * 构建管线。
 		 *
 		 * @return RagPipeline
@@ -432,7 +447,14 @@ public class RagPipeline {
 			this.embeddingProvider = new ClientEmbeddingProvider(embeddingClient,
 					embeddingModel);
 			if (retriever == null) {
-				this.retriever = new VectorRetriever(vectorStore, embeddingProvider, minScore);
+				VectorRetriever.Builder vrBuilder = VectorRetriever.builder()
+						.store(vectorStore)
+						.embeddingProvider(embeddingProvider)
+						.minScore(minScore);
+				if (reranker != null) {
+					vrBuilder.reranker(reranker);
+				}
+				this.retriever = vrBuilder.build();
 			}
 			return new RagPipeline(this);
 		}

@@ -20,8 +20,13 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 - [x] **图像生成**：`ImageClient` 抽象 + 6 平台接入（OpenAI DALL·E / Azure / 通义万相 / 智谱 CogView / 文心一格 / Gemini），异步平台内部轮询屏蔽，对外同步返回。见 [docs/images.md](docs/images.md)。
 - [x] **视频生成**：`VideoClient` 抽象 + 5 平台接入（OpenAI Sora / 通义万相 Wan / 智谱 CogVideoX / 火山 Seedance / Azure Sora 2），全平台异步任务轮询屏蔽，对外同步返回。见 [docs/video.md](docs/video.md)。
 - [x] **音频（TTS/STT）**：`AudioClient` 抽象（TTS synthesize + STT transcribe）+ 6 平台接入（OpenAI / 通义 CosyVoice / 智谱 GLM-TTS/ASR / 火山豆包 / 百度 / Azure Speech），支持二进制音频/URL/Base64 三种响应形态与 multipart/base64/二进制四种上传格式。见 [docs/audio.md](docs/audio.md)。
+- [x] **Rerank 重排序**：`RerankClient` 抽象 + 通义千问 qwen3-rerank 接入 + RAG 检索链路二阶段精排集成（`Reranker`/`ClientReranker`/`VectorRetriever.reranker`）。见 [docs/rerank.md](docs/rerank.md)。
+- [x] **结构化输出**：`response_format` 统一抽象 + `JsonMapper` 强类型 record 反序列化 + 8 平台适配（Anthropic 自动 tool_use 模拟、Gemini responseSchema、百度字符串取值）。见 [docs/structured-output.md](docs/structured-output.md)。
+- [x] **多模态图像理解**：`MessagePart` 内容块架构（TextPart/ImagePart）+ 8 平台图片输入适配（data URL vs 裸 base64 自动转换）。见 [docs/multimodal.md](docs/multimodal.md)。
+- [x] **PDF 文档输入**：`DocumentPart` 内容块 + 5 平台适配（OpenAI/Azure/Gemini/Anthropic/Qwen；百度不支持抛 `AiException`）。
+- [x] **Prompt 缓存**：Anthropic `cache_control: ephemeral` + Gemini `cachedContent`（extra 传入）+ OpenAI 自动缓存（无需参数）。
+- [x] **Batches 批处理**：`BatchClient` 抽象 + OpenAI/Azure/智谱（OpenAI 协议族）+ Anthropic（内联 requests 不同协议）接入，内置 2s 轮询。见 [docs/batches.md](docs/batches.md)。
 - [ ] **Function Calling 增强**：自动参数校验（JSON Schema → Java Bean 校验）、工具注册中心。
-- [ ] **结构化输出**：JSON mode / response_format 统一抽象，支持强类型反序列化。
 
 ## P2 — 规划中（0.3.0+）
 

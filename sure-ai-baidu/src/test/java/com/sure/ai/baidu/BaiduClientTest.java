@@ -40,13 +40,18 @@ import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.exception.AiApiException;
+import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
+import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.ImagePart;
+import com.sure.ai.model.MessagePart;
 import com.sure.ai.model.SttRequest;
 import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TextPart;
 import com.sure.ai.model.TtsRequest;
 import com.sure.ai.model.TtsResponse;
 
@@ -283,6 +288,60 @@ public class BaiduClientTest {
 		EmbeddingResponse resp = client.embed(new EmbeddingRequest("embedding-v1", List.of("hi")));
 		assertEquals(1, resp.embeddings().size());
 		assertEquals(3, resp.embeddings().get(0).length, 0);
+		client.close();
+	}
+
+	/** 多模态：ImagePart 映射为 image_url（data URL 形式）。 */
+	@Test
+	public void testMultimodalImage() {
+		BaiduClient client = newClient();
+		List<MessagePart> parts = List.of(TextPart.of("看图"),
+			ImagePart.ofBase64("aW1n", "image/png"));
+		client.chat(ChatRequest.builder().model("ernie-4.0-turbo-8k")
+			.messages(ChatMessage.user(parts)).build());
+		String body = this.lastChatBody.get();
+		assertTrue(body.contains("\"type\":\"image_url\""));
+		assertTrue(body.contains("\"image_url\""));
+		assertTrue(body.contains("\"url\":\"data:image/png;base64,aW1n\""));
+		client.close();
+	}
+
+	/** 多模态：DocumentPart 直接抛 AiException（百度不支持 PDF）。 */
+	@Test
+	public void testDocumentPartThrows() {
+		BaiduClient client = newClient();
+		List<MessagePart> parts = List.of(
+			DocumentPart.ofBase64("a.pdf", "application/pdf", "UE9E"));
+		AiException e = assertThrows(AiException.class, () -> client.chat(
+			ChatRequest.builder().model("ernie-4.0-turbo-8k")
+				.messages(ChatMessage.user(parts)).build()));
+		assertTrue(e.getMessage().contains("Baidu does not support document/PDF"));
+		client.close();
+	}
+
+	/** 结构化输出：responseFormat 为字符串时直接透传 response_format。 */
+	@Test
+	public void testStructuredOutputString() {
+		BaiduClient client = newClient();
+		client.chat(ChatRequest.builder().model("ernie-4.0-turbo-8k")
+			.messages(ChatMessage.user("json"))
+			.responseFormat("json_object").build());
+		String body = this.lastChatBody.get();
+		assertTrue(body.contains("\"response_format\":\"json_object\""));
+		client.close();
+	}
+
+	/** 结构化输出：含 type 的对象提取 type 字符串。 */
+	@Test
+	public void testStructuredOutputObject() {
+		BaiduClient client = newClient();
+		java.util.Map<String, Object> format = new java.util.LinkedHashMap<>();
+		format.put("type", "json_object");
+		client.chat(ChatRequest.builder().model("ernie-4.0-turbo-8k")
+			.messages(ChatMessage.user("json"))
+			.responseFormat(format).build());
+		String body = this.lastChatBody.get();
+		assertTrue(body.contains("\"response_format\":\"json_object\""));
 		client.close();
 	}
 

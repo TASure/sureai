@@ -43,6 +43,8 @@ import com.sure.ai.exception.AiAuthException;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
+import com.sure.ai.model.CacheControl;
+import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.ImagePart;
@@ -576,6 +578,99 @@ public class OpenAiCompatClientTest {
 		assertEquals(2, resp.segments().get(0).words().size());
 		assertEquals("a", resp.segments().get(0).words().get(0).word());
 		assertEquals(1, resp.words().size());
+		client.close();
+	}
+
+	// ==================== P1：responseFormat / DocumentPart / 缓存控制 ====================
+
+	/** responseFormat 字符串形式：序列化为 response_format 字段。 */
+	@Test
+	public void testResponseFormatString() {
+		handle(200, "{\"id\":\"c\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"{}\"},\"finish_reason\":\"stop\"}]}");
+		OpenAiCompatClient client = newClient();
+		client.chat(ChatRequest.builder().model("gpt").messages(ChatMessage.user("q"))
+			.responseFormat("json_object").build());
+		assertTrue(this.lastBody.get().contains("\"response_format\":\"json_object\""));
+		client.close();
+	}
+
+	/** responseFormat 对象形式（JSON Schema）：序列化为嵌套对象。 */
+	@Test
+	public void testResponseFormatSchema() {
+		handle(200, "{\"id\":\"c\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"{}\"},\"finish_reason\":\"stop\"}]}");
+		JsonObject schema = new JsonObject();
+		schema.put("type", "json_schema");
+		JsonObject inner = new JsonObject();
+		inner.put("name", "answer");
+		schema.set("json_schema", inner);
+		OpenAiCompatClient client = newClient();
+		client.chat(ChatRequest.builder().model("gpt").messages(ChatMessage.user("q"))
+			.responseFormat(schema).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"response_format\""));
+		assertTrue(body.contains("\"type\":\"json_schema\""));
+		assertTrue(body.contains("\"answer\""));
+		client.close();
+	}
+
+	/** 未设置 responseFormat 时请求体不含该字段。 */
+	@Test
+	public void testNoResponseFormatByDefault() {
+		handle(200, "{\"id\":\"c\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"x\"},\"finish_reason\":\"stop\"}]}");
+		OpenAiCompatClient client = newClient();
+		client.chat(ChatRequest.builder().model("gpt").messages(ChatMessage.user("q")).build());
+		assertTrue(!this.lastBody.get().contains("response_format"));
+		client.close();
+	}
+
+	/** DocumentPart：fileId 形式序列化为 input_file.file_id。 */
+	@Test
+	public void testDocumentPartFileId() {
+		handle(200, "{\"id\":\"c\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		OpenAiCompatClient client = newClient();
+		List<MessagePart> parts = List.of(
+			TextPart.of("阅读这份合同"), DocumentPart.ofFileId("file-abc"));
+		client.chat(ChatRequest.builder().model("gpt").messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"type\":\"input_file\""));
+		assertTrue(body.contains("\"file_id\":\"file-abc\""));
+		client.close();
+	}
+
+	/** DocumentPart：base64 形式序列化为 input_file.file_data(data URI)。 */
+	@Test
+	public void testDocumentPartBase64() {
+		handle(200, "{\"id\":\"c\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		OpenAiCompatClient client = newClient();
+		List<MessagePart> parts = List.of(
+			TextPart.of("总结"), DocumentPart.ofBase64("doc.pdf", "application/pdf", "QkFTRTY0"));
+		client.chat(ChatRequest.builder().model("gpt").messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"filename\":\"doc.pdf\""));
+		assertTrue(body.contains("\"mime_type\":\"application/pdf\""));
+		assertTrue(body.contains("data:application/pdf;base64,QkFTRTY0"));
+		client.close();
+	}
+
+	/** TextPart 带缓存控制：序列化为 cache_control。 */
+	@Test
+	public void testTextPartCacheControl() {
+		handle(200, "{\"id\":\"c\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		OpenAiCompatClient client = newClient();
+		List<MessagePart> parts = List.of(
+			TextPart.ofWithCache("长系统提示词", CacheControl.ephemeral()),
+			TextPart.of("普通文本"));
+		client.chat(ChatRequest.builder().model("gpt").messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"cache_control\":{\"type\":\"ephemeral\"}"));
+		// 普通文本片段不应带 cache_control
+		assertTrue(body.indexOf("cache_control") < body.length() - 1);
 		client.close();
 	}
 }

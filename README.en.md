@@ -30,24 +30,30 @@
 - **Video Generation**: unified `VideoClient` abstraction supporting Sora / Wan / CogVideoX / Seedance / Azure Sora 2; all platforms use async task polling internally, exposing a synchronous API
 - **Speech TTS/STT**: unified `AudioClient` abstraction (TTS synthesis + STT transcription) supporting OpenAI / CosyVoice / GLM-TTS / Doubao / Baidu / Azure Speech; binary audio / URL / Base64 response formats
 - **RAG**: end-to-end retrieval-augmented generation pipeline (`sure-ai-rag`)
+- **Rerank**: unified `RerankClient` abstraction, Qwen qwen3-rerank integration, pluggable two-stage re-ranking in the RAG retrieval chain
+- **Structured Output**: unified `response_format` abstraction (json_object / JSON Schema), zero-dependency `JsonMapper` strong-typed record deserialization, adapted across 8 platforms
+- **Multimodal Image Understanding**: `MessagePart` content-block architecture (text + image), normalized image input across OpenAI-compatible / Gemini / Anthropic / Baidu
+- **PDF Document Input**: `DocumentPart` content block, PDF document understanding adapted across 5 platforms
+- **Prompt Caching**: Anthropic `cache_control` / Gemini `cachedContent` / OpenAI automatic caching, cutting repeated-prefix cost for long contexts
+- **Batches**: unified `BatchClient` abstraction, async batch inference across OpenAI / Azure / Zhipu / Anthropic, built-in polling
 - **Environment variable auto-config**: lazy-loads from `SURE_AI_*` env vars when not explicitly initialized
 - **JDK 21**: records, pattern matching, switch patterns
 
 ## Modules & Platforms
 
-| Platform | artifactId | Default baseUrl | Auth | Streaming | Embedding | Image Gen | Video Gen | TTS | STT | Function Calling |
-|----------|-----------|-----------------|------|-----------|-----------|-----------|-----------|-----|-----|-----------------|
-| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ tts-1 | ✅ whisper-1 | ✅ |
-| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key header | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ Speech | ✅ Speech | ✅ |
-| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key header | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= query param | ✅ | ✅ | ✅ Imagen | ❌ Veo(OAuth) | ❌ | ❌ | ✅ |
-| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Qwen | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ Wanx (async) | ✅ Wan 2.6 (async) | ✅ CosyVoice | ✅ Qwen-ASR | ✅ |
-| Zhipu GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ CogView | ✅ CogVideoX (async) | ✅ GLM-TTS | ✅ GLM-ASR | ✅ |
-| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Doubao | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ Seedance (async) | ✅ seed-tts-2.0 | ✅ BigASR | ✅ |
-| Baidu Qianfan | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token (auto-cached) | ✅ | ✅ | ✅ ERNIE-ViLG (async) | ❌ | ✅ DuXiaomei | ✅ Short ASR | ✅ |
-| Ollama | `sure-ai-ollama` | `http://localhost:11434` | None (local) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Platform | artifactId | Default baseUrl | Auth | Streaming | Embedding | Image Gen | Video Gen | TTS | STT | Function Calling | Rerank | Structured | Multimodal | PDF | Cache | Batches |
+|----------|-----------|-----------------|------|-----------|-----------|-----------|-----------|-----|-----|-----------------|--------|-----------|------------|-----|-------|---------|
+| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ tts-1 | ✅ whisper-1 | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ auto | ✅ |
+| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key header | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ Speech | ✅ Speech | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ auto | ✅ |
+| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key header | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ tool_use | ✅ | ✅ | ✅ cache_control | ✅ |
+| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= query param | ✅ | ✅ | ✅ Imagen | ❌ Veo(OAuth) | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ cachedContent | ❌ |
+| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Qwen | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ Wanx (async) | ✅ Wan 2.6 (async) | ✅ CosyVoice | ✅ Qwen-ASR | ✅ | ✅ qwen3-rerank | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Zhipu GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ CogView | ✅ CogVideoX (async) | ✅ GLM-TTS | ✅ GLM-ASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ |
+| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Doubao | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ Seedance (async) | ✅ seed-tts-2.0 | ✅ BigASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Baidu Qianfan | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token (auto-cached) | ✅ | ✅ | ✅ ERNIE-ViLG (async) | ❌ | ✅ DuXiaomei | ✅ Short ASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Ollama | `sure-ai-ollama` | `http://localhost:11434` | None (local) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 Aggregation modules: `sure-ai-all` (one dependency for all platforms), `sure-ai-bom` (version management).
 
@@ -124,6 +130,51 @@ System.out.println(stt.text());
 ```
 
 See [docs/audio.md](docs/audio.md) for platform configuration and response format details.
+
+### Structured Output
+
+```java
+import com.sure.ai.internal.json.Json;
+import com.sure.ai.model.ChatMessage;
+import com.sure.ai.model.ChatRequest;
+import com.sure.ai.openai.OpenAiUtil;
+import com.sure.ai.util.JsonMapper;
+
+// Target record: field names must match the JSON keys the model emits
+record CityInfo(String city, String country, int population) {}
+
+String text = OpenAiUtil.chat(ChatRequest.builder()
+    .model("gpt-4o-mini")
+    .messages(List.of(ChatMessage.user("Extract city info as JSON only: city/country/population. Text: Tokyo is the capital of Japan.")))
+    .responseFormat("json_object")
+    .build())
+    .firstText();
+
+// Zero-dependency strong-typed deserialization, no manual string parsing
+CityInfo info = JsonMapper.fromJson(Json.parse(text).getAsJsonObject(), CityInfo.class);
+```
+
+Per-platform `response_format` differences (Anthropic simulated via forced tool_use,
+Gemini `responseSchema`, Baidu string values) see [docs/structured-output.md](docs/structured-output.md).
+
+### Multimodal Image Understanding
+
+```java
+import com.sure.ai.model.*;
+
+// One user message = text part + image part (URL or Base64)
+String desc = OpenAiUtil.chat(ChatRequest.builder()
+    .model("gpt-4o")
+    .messages(List.of(ChatMessage.user(List.of(
+        TextPart.of("Describe this image in one sentence."),
+        ImagePart.ofUrl("https://example.com/cat.jpg")
+    ))))
+    .build())
+    .firstText();
+```
+
+Content-block architecture, PDF input and prompt caching see [docs/multimodal.md](docs/multimodal.md);
+Rerank see [docs/rerank.md](docs/rerank.md); Batches see [docs/batches.md](docs/batches.md).
 
 ## Maven Dependencies
 

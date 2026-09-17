@@ -38,9 +38,16 @@ import com.sun.net.httpserver.HttpServer;
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiAuthException;
+import com.sure.ai.internal.json.Json;
+import com.sure.ai.internal.json.JsonObject;
+import com.sure.ai.model.CacheControl;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
+import com.sure.ai.model.DocumentPart;
+import com.sure.ai.model.ImagePart;
+import com.sure.ai.model.MessagePart;
+import com.sure.ai.model.TextPart;
 import com.sure.ai.model.ToolCall;
 import com.sure.ai.model.ToolFunction;
 import com.sure.ai.model.ToolSpec;
@@ -261,5 +268,92 @@ public class AnthropicClientTest {
 	@Test
 	public void testName() {
 		assertEquals("anthropic", newClient().name());
+	}
+
+	/** 多模态：ImagePart 映射为 type=image + source.base64。 */
+	@Test
+	public void testMultimodalImage() {
+		handle(200, "{\"id\":\"msg_m\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"text\",\"text\":\"seen\"}],\"stop_reason\":\"end_turn\","
+			+ "\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}");
+		AnthropicClient client = newClient();
+		List<MessagePart> parts = List.of(TextPart.of("describe"),
+			ImagePart.ofBase64("aW1n", "image/png"));
+		client.chat(ChatRequest.builder().model("m").messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"type\":\"image\""));
+		assertTrue(body.contains("\"source\""));
+		assertTrue(body.contains("\"media_type\":\"image/png\""));
+		assertTrue(body.contains("aW1n"));
+		client.close();
+	}
+
+	/** 多模态：DocumentPart 映射为 type=document + source.base64。 */
+	@Test
+	public void testMultimodalDocument() {
+		handle(200, "{\"id\":\"msg_d\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stop_reason\":\"end_turn\","
+			+ "\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}");
+		AnthropicClient client = newClient();
+		List<MessagePart> parts = List.of(
+			DocumentPart.ofBase64("a.pdf", "application/pdf", "UE9E"));
+		client.chat(ChatRequest.builder().model("m").messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"type\":\"document\""));
+		assertTrue(body.contains("\"media_type\":\"application/pdf\""));
+		client.close();
+	}
+
+	/** Prompt 缓存：TextPart 带 cacheControl 输出 cache_control 断点。 */
+	@Test
+	public void testPromptCache() {
+		handle(200, "{\"id\":\"msg_c\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stop_reason\":\"end_turn\","
+			+ "\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}");
+		AnthropicClient client = newClient();
+		List<MessagePart> parts = List.of(
+			TextPart.ofWithCache("system-like long prompt", CacheControl.ephemeral()));
+		client.chat(ChatRequest.builder().model("m").messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"cache_control\""));
+		assertTrue(body.contains("\"type\":\"ephemeral\""));
+		client.close();
+	}
+
+	/** 结构化输出：自动注入 structured_output 工具并锁定 tool_choice。 */
+	@Test
+	public void testStructuredOutput() {
+		String resp = "{\"id\":\"msg_s\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"structured_output\","
+			+ "\"input\":{\"answer\":\"42\"}}],\"stop_reason\":\"tool_use\","
+			+ "\"usage\":{\"input_tokens\":5,\"output_tokens\":3}}";
+		handle(200, resp);
+		AnthropicClient client = newClient();
+		JsonObject schema = Json.object();
+		schema.put("type", "object");
+		JsonObject props = Json.object();
+		JsonObject answer = Json.object();
+		answer.put("type", "string");
+		props.put("answer", answer);
+		schema.put("properties", props);
+		JsonObject jsonSchema = Json.object();
+		jsonSchema.put("name", "answer");
+		jsonSchema.set("schema", schema);
+		JsonObject format = Json.object();
+		format.put("type", "json_schema");
+		format.set("json_schema", jsonSchema);
+		ChatResponse result = client.chat(ChatRequest.builder().model("m")
+			.messages(ChatMessage.user("give json"))
+			.responseFormat(format).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"name\":\"structured_output\""));
+		assertTrue(body.contains("\"tool_choice\""));
+		assertTrue(body.contains("\"type\":\"tool\""));
+		assertTrue(body.contains("\"input_schema\""));
+		List<ToolCall> calls = result.choices().get(0).message().toolCalls();
+		assertNotNull(calls);
+		assertEquals("structured_output", calls.get(0).name());
+		assertTrue(calls.get(0).argumentsJson().contains("42"));
+		client.close();
 	}
 }

@@ -14,20 +14,28 @@
  * limitations under the License.
  */
 
-package com.sure.ai.model;
+package com.sure.ai.client;
+
+import com.sure.ai.model.RerankRequest;
+import com.sure.ai.model.RerankResponse;
 
 /**
- * 多模态消息片段密封接口。
+ * 重排（Rerank）客户端抽象。
+ *
+ * <p>对 RAG 二阶段检索命中的候选文档按与查询的相关性重新排序。屏蔽平台差异，
+ * 平台客户端负责将 {@link RerankRequest} 序列化为自身协议并解析为
+ * {@link RerankResponse}。</p>
  *
  * @author sureai
- * @since 0.1.0
+ * @since 0.2.0
  */
-public sealed interface MessagePart permits TextPart, ImagePart, DocumentPart {
+public interface RerankClient {
 
 	/**
-	 * 返回片段类型："text"、"image_url" 或 "document"。
+	 * 对候选文档重排。
 	 *
-	 * @return 类型字符串
+	 * @param request 重排请求
+	 * @return 重排响应（结果按相关性降序）
 	 */
-	String type();
+	RerankResponse rerank(RerankRequest request);
 }

@@ -20,6 +20,8 @@ import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.exception.AiException;
+import com.sure.ai.model.BatchRequest;
+import com.sure.ai.model.BatchResponse;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
@@ -90,6 +92,12 @@ public final class AzureUtil {
 
 	/** STT 客户端初始化锁。 */
 	private static final Object STT_LOCK = new Object();
+
+	/** 批处理客户端单例。 */
+	private static volatile AzureBatchClient batchClient;
+
+	/** 批处理客户端初始化锁。 */
+	private static final Object BATCH_LOCK = new Object();
 
 	private AzureUtil() {
 		throw new AssertionError("No instances");
@@ -386,6 +394,57 @@ public final class AzureUtil {
 	public static void resetSttClient() {
 		synchronized (STT_LOCK) {
 			sttClient = null;
+		}
+	}
+
+	// ==================== 批处理（Batches） ====================
+
+	/**
+	 * 获取批处理单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 批处理客户端
+	 * @throws AiException 未初始化且未设置 {@code SURE_AI_AZURE_API_KEY}
+	 */
+	public static AzureBatchClient batchClient() {
+		AzureBatchClient c = batchClient;
+		if (c == null) {
+			synchronized (BATCH_LOCK) {
+				c = batchClient;
+				if (c == null) {
+					c = new AzureBatchClient(buildConfigFromEnv());
+					batchClient = c;
+				}
+			}
+		}
+		return c;
+	}
+
+	/**
+	 * 提交批处理任务。
+	 *
+	 * @param request 批处理请求（须先上传 JSONL 取得 input_file_id）
+	 * @return 初始任务响应
+	 */
+	public static BatchResponse batch(BatchRequest request) {
+		return batchClient().createBatch(request);
+	}
+
+	/**
+	 * 查询批处理任务状态。
+	 *
+	 * @param batchId 任务 ID
+	 * @return 最新任务响应
+	 */
+	public static BatchResponse getBatch(String batchId) {
+		return batchClient().getBatch(batchId);
+	}
+
+	/**
+	 * 重置批处理单例客户端（测试清理用）。
+	 */
+	public static void resetBatchClient() {
+		synchronized (BATCH_LOCK) {
+			batchClient = null;
 		}
 	}
 

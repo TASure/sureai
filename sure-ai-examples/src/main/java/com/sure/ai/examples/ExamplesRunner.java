@@ -95,6 +95,18 @@ public final class ExamplesRunner {
 			case "audio":
 				AudioDemo.main(emptyArgs);
 				break;
+			case "rerank":
+				RerankDemo.main(emptyArgs);
+				break;
+			case "structured":
+				StructuredOutputDemo.main(emptyArgs);
+				break;
+			case "multimodal":
+				MultimodalDemo.main(emptyArgs);
+				break;
+			case "batch":
+				BatchDemo.main(emptyArgs);
+				break;
 			default:
 				System.out.println("未知平台：" + args[0]);
 				printUsage();
@@ -120,5 +132,9 @@ public final class ExamplesRunner {
 		System.out.println("  image      - 多平台图像生成演示（OpenAI/通义万相/智谱）");
 		System.out.println("  video      - 多平台视频生成演示（OpenAI Sora/通义万相/智谱 CogVideoX）");
 		System.out.println("  audio      - 语音 TTS/STT 演示（OpenAI）");
+		System.out.println("  rerank     - 重排序演示（通义千问 qwen3-rerank）");
+		System.out.println("  structured - 结构化输出演示（OpenAI json_object + JsonMapper）");
+		System.out.println("  multimodal - 多模态图像理解演示（OpenAI 视觉模型）");
+		System.out.println("  batch      - 批处理演示（OpenAI Batches 提交/查询）");
 	}
 }

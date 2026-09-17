@@ -17,17 +17,23 @@
 package com.sure.ai.model;
 
 /**
- * 多模态消息片段密封接口。
+ * 提示词缓存控制标记。
  *
+ * <p>附在 {@link TextPart} 上，向平台声明该文本片段可被服务端缓存（如 Anthropic 的
+ * ephemeral 缓存断点）。当前仅支持 {@code "ephemeral"} 类型。</p>
+ *
+ * @param type 缓存控制类型，固定为 "ephemeral"
  * @author sureai
- * @since 0.1.0
+ * @since 0.2.0
  */
-public sealed interface MessagePart permits TextPart, ImagePart, DocumentPart {
+public record CacheControl(String type) {
 
 	/**
-	 * 返回片段类型："text"、"image_url" 或 "document"。
+	 * 短期（ephemeral）缓存控制。
 	 *
-	 * @return 类型字符串
+	 * @return ephemeral 缓存控制标记
 	 */
-	String type();
+	public static CacheControl ephemeral() {
+		return new CacheControl("ephemeral");
+	}
 }

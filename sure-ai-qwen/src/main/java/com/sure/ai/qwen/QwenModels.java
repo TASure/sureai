@@ -79,4 +79,10 @@ public final class QwenModels {
 
 	/** qwen3-asr-flash：Qwen3 语音识别 Flash。 */
 	public static final String QWEN3_ASR_FLASH = "qwen3-asr-flash";
+
+	/** qwen3-rerank：Qwen3 文本重排模型（OpenAI 兼容模式 /reranks）。 */
+	public static final String QWEN3_RERANK = "qwen3-rerank";
+
+	/** qwen3-vl-rerank：Qwen3 多模态重排模型（仅 DashScope 原生协议，本客户端走文本兼容模式）。 */
+	public static final String QWEN3_VL_RERANK = "qwen3-vl-rerank";
 }

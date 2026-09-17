@@ -85,4 +85,28 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- Builder 模式暂存外部候选文档列表引用（EI_EXPOSE_REP2）：
+         RerankRequest.Builder.documents 仅在 build() 时 List.copyOf 防御性拷贝，
+         产物不可变；Builder 本身是一次性可变装配器，与 ChatRequest.Builder 同类惯例。 -->
+    <Match>
+        <Class name="~com.sure.ai.model.RerankRequest\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Builder 模式暂存外部对话请求列表引用（EI_EXPOSE_REP2）：
+         BatchRequest.Builder.requests 仅在 build() 时 List.copyOf 防御性拷贝，
+         产物不可变；Builder 本身是一次性可变装配器，与 ChatRequest.Builder 同类惯例。 -->
+    <Match>
+        <Class name="~com.sure.ai.model.BatchRequest\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Builder 模式暂存外部向量存储/向量化组件引用（EI_EXPOSE_REP2）：
+         VectorRetriever.Builder 为一次性装配器，store/embeddingProvider 本就是调用方
+         提供的共享有状态组件，语义即按引用共享，与 RagPipeline.Builder 同类惯例。 -->
+    <Match>
+        <Class name="~com.sure.ai.rag.retriever.VectorRetriever\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>

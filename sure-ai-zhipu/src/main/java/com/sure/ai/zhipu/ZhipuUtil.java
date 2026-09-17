@@ -20,6 +20,8 @@ import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.exception.AiException;
+import com.sure.ai.model.BatchRequest;
+import com.sure.ai.model.BatchResponse;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
@@ -69,6 +71,12 @@ public final class ZhipuUtil {
 
 	/** 视频客户端初始化锁。 */
 	private static final Object VIDEO_LOCK = new Object();
+
+	/** 批处理客户端单例。 */
+	private static volatile ZhipuBatchClient batchClient;
+
+	/** 批处理客户端初始化锁。 */
+	private static final Object BATCH_LOCK = new Object();
 
 	/** 工具类禁止实例化。 */
 	private ZhipuUtil() {
@@ -298,5 +306,70 @@ public final class ZhipuUtil {
 	 */
 	public static SttResponse stt(SttRequest request) {
 		return client().transcribe(request);
+	}
+
+	// ==================== 批处理（Batches） ====================
+
+	/**
+	 * 获取批处理单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 批处理客户端
+	 * @throws AiException 环境变量缺失时抛出
+	 */
+	public static ZhipuBatchClient batchClient() {
+		ZhipuBatchClient c = batchClient;
+		if (c == null) {
+			synchronized (BATCH_LOCK) {
+				c = batchClient;
+				if (c == null) {
+					c = new ZhipuBatchClient(buildBatchConfigFromEnv());
+					batchClient = c;
+				}
+			}
+		}
+		return c;
+	}
+
+	/** 从环境变量构建批处理客户端配置。 */
+	private static AiConfig buildBatchConfigFromEnv() {
+		String key = System.getenv(ENV_API_KEY);
+		if (key == null || key.isBlank()) {
+			throw new AiException("env " + ENV_API_KEY + " is not set");
+		}
+		AiConfig.Builder b = AiConfig.builder().apiKey(key);
+		String base = System.getenv(ENV_BASE_URL);
+		if (base != null && !base.isBlank()) {
+			b.baseUrl(base);
+		}
+		return b.build();
+	}
+
+	/**
+	 * 提交批处理任务。
+	 *
+	 * @param request 批处理请求（须先上传 JSONL 取得 input_file_id）
+	 * @return 初始任务响应
+	 */
+	public static BatchResponse batch(BatchRequest request) {
+		return batchClient().createBatch(request);
+	}
+
+	/**
+	 * 查询批处理任务状态。
+	 *
+	 * @param batchId 任务 ID
+	 * @return 最新任务响应
+	 */
+	public static BatchResponse getBatch(String batchId) {
+		return batchClient().getBatch(batchId);
+	}
+
+	/**
+	 * 重置批处理单例客户端（测试清理用）。
+	 */
+	public static void resetBatchClient() {
+		synchronized (BATCH_LOCK) {
+			batchClient = null;
+		}
 	}
 }

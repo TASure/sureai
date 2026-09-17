@@ -17,6 +17,7 @@
 package com.sure.ai.gemini;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
@@ -38,9 +39,12 @@ import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.exception.AiApiException;
+import com.sure.ai.internal.json.Json;
+import com.sure.ai.internal.json.JsonObject;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
+import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.ImagePart;
@@ -228,18 +232,96 @@ public class GeminiClientTest {
 		client.close();
 	}
 
-	/** 多模态：ImagePart 映射为 inline_data。 */
+	/** 多模态：ImagePart 映射为 camelCase inlineData（裸 base64）。 */
 	@Test
-	public void testMultimodal() {
+	public void testMultimodalImage() {
 		handle(200, "{\"candidates\":[{\"content\":{\"role\":\"model\","
 			+ "\"parts\":[{\"text\":\"seen\"}]},\"finishReason\":\"STOP\"}]}");
 		GeminiClient client = newClient();
 		List<MessagePart> parts = List.of(TextPart.of("describe"), ImagePart.ofBase64("aGVsbG8=", "image/png"));
 		client.chat(ChatRequest.builder().model("m").messages(ChatMessage.user(parts)).build());
 		String body = this.lastBody.get();
-		assertTrue(body.contains("\"inline_data\""));
-		assertTrue(body.contains("\"mime_type\":\"image/png\""));
+		assertTrue(body.contains("\"inlineData\""));
+		assertTrue(body.contains("\"mimeType\":\"image/png\""));
 		assertTrue(body.contains("aGVsbG8="));
+		assertFalse("must not use snake_case inline_data", body.contains("\"inline_data\""));
+		client.close();
+	}
+
+	/** PDF 文档：DocumentPart 映射为 inlineData（与图片同结构）。 */
+	@Test
+	public void testPdfInput() {
+		handle(200, "{\"candidates\":[{\"content\":{\"role\":\"model\","
+			+ "\"parts\":[{\"text\":\"summarized\"}]},\"finishReason\":\"STOP\"}]}");
+		GeminiClient client = newClient();
+		List<MessagePart> parts = List.of(
+			TextPart.of("summarize"),
+			DocumentPart.ofBase64("contract.pdf", "application/pdf", "UE9EXZEYg=="));
+		client.chat(ChatRequest.builder().model("m").messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"inlineData\""));
+		assertTrue(body.contains("\"mimeType\":\"application/pdf\""));
+		assertTrue(body.contains("UE9EXZEYg=="));
+		client.close();
+	}
+
+	/** 结构化输出：responseFormat="json_object" 写入 generationConfig.responseMimeType。 */
+	@Test
+	public void testStructuredOutputString() {
+		handle(200, "{\"candidates\":[{\"content\":{\"role\":\"model\","
+			+ "\"parts\":[{\"text\":\"{}\"}]},\"finishReason\":\"STOP\"}]}");
+		GeminiClient client = newClient();
+		client.chat(ChatRequest.builder().model("m")
+			.messages(ChatMessage.user("give json"))
+			.responseFormat("json_object").build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"responseMimeType\":\"application/json\""));
+		client.close();
+	}
+
+	/** 结构化输出：json_schema 对象提取 schema 写入 responseSchema。 */
+	@Test
+	public void testStructuredOutputSchema() {
+		handle(200, "{\"candidates\":[{\"content\":{\"role\":\"model\","
+			+ "\"parts\":[{\"text\":\"{}\"}]},\"finishReason\":\"STOP\"}]}");
+		GeminiClient client = newClient();
+		JsonObject schema = Json.object();
+		schema.put("type", "object");
+		JsonObject props = Json.object();
+		JsonObject answer = Json.object();
+		answer.put("type", "string");
+		props.put("answer", answer);
+		schema.put("properties", props);
+		JsonObject jsonSchema = Json.object();
+		jsonSchema.put("name", "answer");
+		jsonSchema.set("schema", schema);
+		JsonObject format = Json.object();
+		format.put("type", "json_schema");
+		format.set("json_schema", jsonSchema);
+		client.chat(ChatRequest.builder().model("m")
+			.messages(ChatMessage.user("give json"))
+			.responseFormat(format).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"responseMimeType\":\"application/json\""));
+		assertTrue(body.contains("\"responseSchema\""));
+		assertTrue(body.contains("\"answer\""));
+		client.close();
+	}
+
+	/** Prompt 缓存：extra("cachedContent", ...) 作为顶级字段透传。 */
+	@Test
+	public void testPromptCache() {
+		handle(200, "{\"candidates\":[{\"content\":{\"role\":\"model\","
+			+ "\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}");
+		GeminiClient client = newClient();
+		JsonObject cached = Json.object();
+		cached.put("name", "cachedContents/abc123");
+		client.chat(ChatRequest.builder().model("m")
+			.messages(ChatMessage.user("hi"))
+			.extra("cachedContent", cached).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"cachedContent\""));
+		assertTrue(body.contains("cachedContents/abc123"));
 		client.close();
 	}
 

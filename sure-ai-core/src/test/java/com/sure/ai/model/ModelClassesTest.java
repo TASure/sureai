@@ -17,6 +17,7 @@
 package com.sure.ai.model;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -27,7 +28,6 @@ import java.util.List;
 import org.junit.Test;
 
 import com.sure.ai.exception.AiException;
-
 /**
  * 模型类静态工厂与不可变性测试。
  *
@@ -383,5 +383,134 @@ public class ModelClassesTest {
 		assertEquals(1, s.id());
 		assertEquals("segment text", s.text());
 		assertTrue(s.words().isEmpty());
+	}
+
+	// ==================== P1：缓存控制与文档片段 ====================
+
+	/** CacheControl.ephemeral 固定类型。 */
+	@Test
+	public void testCacheControl() {
+		CacheControl cc = CacheControl.ephemeral();
+		assertEquals("ephemeral", cc.type());
+	}
+
+	/** TextPart：默认无缓存控制，ofWithCache 携带缓存控制。 */
+	@Test
+	public void testTextPartCache() {
+		TextPart plain = TextPart.of("hello");
+		assertEquals("hello", plain.text());
+		assertNull(plain.cacheControl());
+		assertEquals("text", plain.type());
+		TextPart cached = TextPart.ofWithCache("prompt", CacheControl.ephemeral());
+		assertEquals("prompt", cached.text());
+		assertEquals("ephemeral", cached.cacheControl().type());
+	}
+
+	/** DocumentPart：base64 与 fileId 两种工厂。 */
+	@Test
+	public void testDocumentPart() {
+		DocumentPart b64 = DocumentPart.ofBase64("contract.pdf", "application/pdf", "AAAA");
+		assertEquals("document", b64.type());
+		assertEquals("contract.pdf", b64.name());
+		assertEquals("application/pdf", b64.mimeType());
+		assertEquals("AAAA", b64.data());
+		assertNull(b64.fileId());
+		DocumentPart fid = DocumentPart.ofFileId("file-123");
+		assertEquals("document", fid.type());
+		assertEquals("file-123", fid.fileId());
+		assertNull(fid.data());
+	}
+
+	// ==================== P1：重排模型 ====================
+
+	/** RerankRequest builder：全字段与必填校验。 */
+	@Test
+	public void testRerankRequestBuilder() {
+		RerankRequest req = RerankRequest.builder()
+			.model("bge-reranker").query("q").documents(List.of("a", "b"))
+			.topN(3).extra("k", "v").build();
+		assertEquals("bge-reranker", req.model());
+		assertEquals("q", req.query());
+		assertEquals(2, req.documents().size());
+		assertEquals(Integer.valueOf(3), req.topN());
+		assertEquals("v", req.extra().get("k"));
+		// addDocument 链式追加
+		RerankRequest r2 = RerankRequest.builder().model("m").query("q")
+			.addDocument("x").addDocument("y").build();
+		assertEquals(2, r2.documents().size());
+	}
+
+	/** RerankRequest 必填校验。 */
+	@Test
+	public void testRerankRequestValidation() {
+		assertThrows(Exception.class, () -> RerankRequest.builder().query("q").documents(List.of("a")).build());
+		assertThrows(Exception.class, () -> RerankRequest.builder().model("m").documents(List.of("a")).build());
+		assertThrows(Exception.class, () -> RerankRequest.builder().model("m").query("q").build());
+	}
+
+	/** RerankResult / RerankResponse。 */
+	@Test
+	public void testRerankModels() {
+		RerankResult r = RerankResult.of(1, 0.92, "doc text", "{}");
+		assertEquals(1, r.index());
+		assertEquals(0.92, r.relevanceScore(), 1e-9);
+		assertEquals("doc text", r.document());
+		RerankResponse resp = RerankResponse.of("bge", List.of(r), "{raw}");
+		assertEquals("bge", resp.model());
+		assertEquals(1, resp.results().size());
+		assertEquals("{raw}", resp.rawJson());
+		// 空列表防御性拷贝
+		RerankResponse empty = RerankResponse.of("m", null, null);
+		assertTrue(empty.results().isEmpty());
+	}
+
+	// ==================== P1：批处理模型 ====================
+
+	/** BatchRequest builder：requests 形式。 */
+	@Test
+	public void testBatchRequestBuilder() {
+		ChatRequest c1 = ChatRequest.builder().model("gpt").messages(ChatMessage.user("a")).build();
+		ChatRequest c2 = ChatRequest.builder().model("gpt").messages(ChatMessage.user("b")).build();
+		BatchRequest req = BatchRequest.builder()
+			.model("gpt-4o").requests(List.of(c1, c2)).completionWindow("24h")
+			.metadata("env", "test").extra("k", "v").build();
+		assertEquals("gpt-4o", req.model());
+		assertEquals(2, req.requests().size());
+		assertEquals("24h", req.completionWindow());
+		assertEquals("test", req.metadata().get("env"));
+		assertEquals("v", req.extra().get("k"));
+		assertNull(req.inputFileId());
+	}
+
+	/** BatchRequest：inputFileId 形式与必填校验。 */
+	@Test
+	public void testBatchRequestFileIdAndValidation() {
+		BatchRequest req = BatchRequest.builder().model("gpt").inputFileId("file-9").build();
+		assertEquals("file-9", req.inputFileId());
+		assertTrue(req.requests().isEmpty());
+		// 无 inputFileId 且无 requests 应抛异常
+		assertThrows(Exception.class, () -> BatchRequest.builder().model("gpt").build());
+		// 缺少 model 应抛异常
+		assertThrows(Exception.class, () -> BatchRequest.builder().inputFileId("f").build());
+	}
+
+	/** BatchResponse：状态便捷方法与 RequestCounts。 */
+	@Test
+	public void testBatchResponse() {
+		BatchResponse.RequestCounts counts = BatchResponse.RequestCounts.of(10, 8, 2);
+		assertEquals(10, counts.total());
+		assertEquals(8, counts.completed());
+		assertEquals(2, counts.failed());
+		BatchResponse done = BatchResponse.of("b-1", "completed", 100L, 200L, counts, null, "{}");
+		assertTrue(done.isCompleted());
+		assertFalse(done.isFailed());
+		assertEquals(100L, done.createdAt());
+		assertEquals(200L, done.completedAt());
+		BatchResponse failed = BatchResponse.of("b-2", "failed", 1L, 2L, null, "boom", "{}");
+		assertFalse(failed.isCompleted());
+		assertTrue(failed.isFailed());
+		assertEquals("boom", failed.error());
+		// null requestCounts 归一化为 0
+		assertEquals(0, failed.requestCounts().total());
 	}
 }
