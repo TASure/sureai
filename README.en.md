@@ -29,7 +29,7 @@
 - **Image Generation**: unified `ImageClient` abstraction supporting DALL·E / Wanx / CogView / ERNIE-ViLG / Gemini Imagen; async platforms handle polling internally, exposing a synchronous API
 - **Video Generation**: unified `VideoClient` abstraction supporting Sora / Wan / CogVideoX / Seedance / Azure Sora 2; all platforms use async task polling internally, exposing a synchronous API
 - **Speech TTS/STT**: unified `AudioClient` abstraction (TTS synthesis + STT transcription) supporting OpenAI / CosyVoice / GLM-TTS / Doubao / Baidu / Azure Speech; binary audio / URL / Base64 response formats
-- **RAG**: end-to-end retrieval-augmented generation pipeline (`sure-ai-rag`)
+- **RAG**: end-to-end retrieval-augmented generation pipeline (`sure-ai-rag`) — document loaders (local file / URL), recursive / Markdown / fixed-size splitters, vector store, vector + BM25 keyword hybrid retrieval
 - **Rerank**: unified `RerankClient` abstraction, Qwen qwen3-rerank integration, pluggable two-stage re-ranking in the RAG retrieval chain
 - **Structured Output**: unified `response_format` abstraction (json_object / JSON Schema), zero-dependency `JsonMapper` strong-typed record deserialization, adapted across 8 platforms
 - **Multimodal Image Understanding**: `MessagePart` content-block architecture (text + image), normalized image input across OpenAI-compatible / Gemini / Anthropic / Baidu
@@ -377,7 +377,9 @@ ChatResponse answer = pipeline.ask("What capabilities does sureai support?");
 ```
 
 An in-memory vector store (cosine similarity) is included; implement the `VectorStore`
-interface to plug in Milvus / FAISS / pgvector. See [docs/rag.md](docs/rag.md).
+interface to plug in Milvus / FAISS / pgvector. Built-in document loaders (local file /
+URL), BM25 keyword retrieval and weighted vector+keyword hybrid retrieval, plus Markdown
+and fixed-size splitters. See [docs/rag.md](docs/rag.md).
 
 ## Environment Variables
 

@@ -39,7 +39,10 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 
 ## P3 — 规划中（0.3.0+）
 
-- [ ] **RAG 增强**：文档加载器（URL / 文件 / 爬虫）、重排序（Rerank）、混合检索（BM25 + 向量）、外部向量库适配（Milvus / pgvector / Chroma）。
+- [x] **RAG 增强——文档加载器**：`DocumentLoader` + `TxtDocumentLoader`（本地文件/输入流/字符串）+ `UrlDocumentLoader`（JDK HttpClient + 基础 HTML 去标签）。见 [docs/rag.md](docs/rag.md#文档加载器)。
+- [x] **RAG 增强——混合检索**：`KeywordRetriever`（BM25 纯 JDK 实现）+ `HybridRetriever`（向量 + 关键词加权融合，可配权重）。见 [docs/rag.md](docs/rag.md#混合检索)。
+- [x] **RAG 增强——分块策略扩展**：`MarkdownTextSplitter`（按标题层级分块、保留标题上下文）+ `FixedSizeTextSplitter`（固定字符大小 + 重叠）。
+- [ ] **RAG 增强——外部向量库适配**：Milvus / pgvector / Chroma（重排序 Rerank 已在 P1 完成）。
 - [ ] **Prompt 模板**：变量替换、few-shot 管理、模板热加载。
 - [ ] **Agent 编排**：ReAct / Plan-and-Execute 轻量编排器，基于 sureai 原语。
 - [ ] **更多平台**：xAI (Grok)、Mistral、Cohere、Bedrock（AWS SigV4）、本地 llama.cpp server。

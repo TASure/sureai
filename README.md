@@ -29,7 +29,7 @@
 - **图像生成**：`ImageClient` 统一抽象，支持 DALL·E / 通义万相 / CogView / 文心一格 / Gemini Imagen，异步平台内部轮询屏蔽，对外同步返回
 - **视频生成**：`VideoClient` 统一抽象，支持 Sora / 通义万相 Wan / CogVideoX / Seedance / Azure Sora 2，全平台异步任务轮询屏蔽，对外同步返回
 - **语音 TTS/STT**：`AudioClient` 统一抽象（TTS 合成 + STT 转录），支持 OpenAI / CosyVoice / GLM-TTS / 豆包 / 百度 / Azure Speech，二进制音频 / URL / Base64 三种响应形态
-- **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（分块 / 向量存储 / 检索 / 增强生成）
+- **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（文档加载器：本地文件/URL；分块：递归字符/Markdown/固定大小；向量存储；检索：向量 + BM25 关键词混合加权融合；增强生成）
 - **Rerank 重排序**：`RerankClient` 统一抽象，通义千问 qwen3-rerank 接入，二阶段精排可无缝接入 RAG 检索链路
 - **结构化输出**：`response_format` 统一抽象（json_object / JSON Schema），`JsonMapper` 零依赖强类型 record 反序列化，8 平台适配
 - **多模态图像理解**：`MessagePart` 内容块架构（文本 + 图片），OpenAI 兼容 / Gemini / Anthropic / 百度 图片输入归一
@@ -376,7 +376,9 @@ ChatResponse answer = pipeline.ask("sureai 支持哪些能力？");
 ```
 
 内置进程内向量库（余弦相似度），亦可实现 `VectorStore` 接口接入
-Milvus / FAISS / pgvector 等外部向量库。详见 [docs/rag.md](docs/rag.md)。
+Milvus / FAISS / pgvector 等外部向量库。内置文档加载器（本地文件 / URL）、
+BM25 关键词检索与向量+关键词混合检索、Markdown / 固定大小分块器。
+详见 [docs/rag.md](docs/rag.md)。
 
 ## 环境变量配置
 
