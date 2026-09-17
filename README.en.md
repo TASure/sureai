@@ -30,6 +30,7 @@
 - **Video Generation**: unified `VideoClient` abstraction supporting Sora / Wan / CogVideoX / Seedance / Azure Sora 2; all platforms use async task polling internally, exposing a synchronous API
 - **Speech TTS/STT**: unified `AudioClient` abstraction (TTS synthesis + STT transcription) supporting OpenAI / CosyVoice / GLM-TTS / Doubao / Baidu / Azure Speech; binary audio / URL / Base64 response formats
 - **RAG**: end-to-end retrieval-augmented generation pipeline (`sure-ai-rag`) — document loaders (local file / URL), recursive / Markdown / fixed-size splitters, vector store, vector + BM25 keyword hybrid retrieval
+- **Agent orchestration (ReAct multi-tool loop)**: `sure-ai-agent` — tool registry + Function Calling argument validation + ReAct orchestrator, drivable by any `AiClient`, with exception / max-iteration / timeout guards
 - **Rerank**: unified `RerankClient` abstraction, Qwen qwen3-rerank integration, pluggable two-stage re-ranking in the RAG retrieval chain
 - **Structured Output**: unified `response_format` abstraction (json_object / JSON Schema), zero-dependency `JsonMapper` strong-typed record deserialization, adapted across 8 platforms
 - **Multimodal Image Understanding**: `MessagePart` content-block architecture (text + image), normalized image input across OpenAI-compatible / Gemini / Anthropic / Baidu
@@ -416,6 +417,7 @@ sureai enforces strict module-level isolation:
 ```
 sure-ai-core          ← common models/interfaces/HTTP/JSON (depended on by all platforms)
 sure-ai-rag           ← RAG pipeline (depends on core; platform-agnostic)
+sure-ai-agent         ← Agent ReAct multi-tool loop (depends on core; platform-agnostic)
   ├── sure-ai-openai
   ├── sure-ai-azure
   ├── sure-ai-anthropic
@@ -428,7 +430,7 @@ sure-ai-rag           ← RAG pipeline (depends on core; platform-agnostic)
   ├── sure-ai-baidu
   └── sure-ai-ollama
 sure-ai-bom           ← version BOM
-sure-ai-all           ← aggregate all platforms + RAG
+sure-ai-all           ← aggregate all platforms + RAG + Agent
 sure-ai-examples      ← usage examples
 ```
 

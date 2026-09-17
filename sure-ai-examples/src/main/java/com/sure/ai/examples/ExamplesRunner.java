@@ -86,6 +86,9 @@ public final class ExamplesRunner {
 			case "rag":
 				RagDemo.main(emptyArgs);
 				break;
+			case "agent":
+				AgentDemo.main(emptyArgs);
+				break;
 			case "image":
 				ImageDemo.main(emptyArgs);
 				break;
@@ -147,6 +150,7 @@ public final class ExamplesRunner {
 		System.out.println("  baidu      - 百度千帆文心");
 		System.out.println("  ollama     - Ollama 本地模型");
 		System.out.println("  rag        - RAG 检索增强问答（基于 OpenAI）");
+		System.out.println("  agent      - Agent ReAct 多工具编排（离线 Fake 模型演示）");
 		System.out.println("  image      - 多平台图像生成演示（OpenAI/通义万相/智谱）");
 		System.out.println("  video      - 多平台视频生成演示（OpenAI Sora/通义万相/智谱 CogVideoX）");
 		System.out.println("  audio      - 语音 TTS/STT 演示（OpenAI）");

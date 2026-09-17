@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <!--
 
     Copyright (c) 2026 sureai contributors
@@ -19,33 +20,22 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
     <parent>
         <groupId>io.github.tasure</groupId>
         <artifactId>sureai</artifactId>
         <version>0.3.0-SNAPSHOT</version>
     </parent>
-    <artifactId>sure-ai-examples</artifactId>
+
+    <artifactId>sure-ai-agent</artifactId>
     <packaging>jar</packaging>
-
-    <name>sureai-examples</name>
-    <description>各平台接入示例代码：每个平台一个 Demo 类，含静态工具调用、Builder 客户端、流式与向量演示。</description>
-
-    <properties>
-        <jacoco.skip>true</jacoco.skip>
-        <spotbugs.skip>true</spotbugs.skip>
-    </properties>
+    <name>sureai-agent</name>
+    <description>Agent 编排能力：工具注册中心、Function Calling 参数绑定与校验、ReAct 多工具循环编排器。仅依赖 sure-ai-core，可与任意平台 AiClient 组合。</description>
 
     <dependencies>
         <dependency>
             <groupId>io.github.tasure</groupId>
-            <artifactId>sure-ai-all</artifactId>
-            <version>${project.version}</version>
-            <type>pom</type>
-        </dependency>
-        <dependency>
-            <groupId>io.github.tasure</groupId>
-            <artifactId>sure-ai-agent</artifactId>
-            <version>${project.version}</version>
+            <artifactId>sure-ai-core</artifactId>
         </dependency>
     </dependencies>
 </project>

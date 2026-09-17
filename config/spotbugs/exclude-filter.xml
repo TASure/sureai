@@ -118,4 +118,45 @@
         <Bug pattern="UUF_UNUSED_FIELD"/>
     </Match>
 
+    <!-- AgentUtil 全局注册中心单例字段未被 SpotBugs 识别（UUF_UNUSED_FIELD）：
+         AgentUtil.globalRegistry 为 volatile 字段，采用双检锁懒加载，
+         并在 resetRegistry() 中重新赋值；与 QwenUtil.realtimeClient 同类并发惯用法，
+         SpotBugs 对该模式存在已知误报，字段实际既被读（registry() 命中）也被写。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.AgentUtil"/>
+        <Bug pattern="UUF_UNUSED_FIELD"/>
+    </Match>
+
+    <!-- PlanExecuteAgent 骨架类构造参数字段暂未使用（UUF_UNUSED_FIELD）：
+         该类为 Plan-and-Execute 编排器的占位骨架，构造器签名已与 ReActAgent 对齐
+         以便后续无缝替换；run() 当前抛 UnsupportedOperationException，
+         保存的 client/baseRequest/registry/listener/maxIterations/timeout 字段是
+         为下一阶段完整实现预留的入参，并非死代码，故排除而非删除。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.plan.PlanExecuteAgent"/>
+        <Bug pattern="UUF_UNUSED_FIELD"/>
+    </Match>
+
+    <!-- AgentUtil.registry() 返回全局可变注册中心（MS_EXPOSE_REP）：
+         全局 ToolRegistry 设计上就是供调用方 register/unregister 的可变共享单例，
+         与 QwenUtil.realtimeClient 同类语义；返回可变引用是 API 本意（便捷入口），
+         复杂场景建议直接 new ToolRegistry()，见类 JavaDoc。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.AgentUtil"/>
+        <Bug pattern="MS_EXPOSE_REP"/>
+    </Match>
+
+    <!-- 编排器持有外部共享 ToolRegistry 引用（EI_EXPOSE_REP2）：
+         ReActAgent / PlanExecuteAgent 的 registry 本就是调用方传入的有状态共享组件，
+         语义即按引用共享（调用方在编排期仍可动态注册/注销工具，编排器每轮实时读取
+         getToolSpecs/getHandler），与 RagPipeline.Builder 暂存共享组件同类惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.react.ReActAgent"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.sure.ai.agent.plan.PlanExecuteAgent"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>

@@ -44,7 +44,8 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 - [x] **RAG 增强——分块策略扩展**：`MarkdownTextSplitter`（按标题层级分块、保留标题上下文）+ `FixedSizeTextSplitter`（固定字符大小 + 重叠）。
 - [ ] **RAG 增强——外部向量库适配**：Milvus / pgvector / Chroma（重排序 Rerank 已在 P1 完成）。
 - [ ] **Prompt 模板**：变量替换、few-shot 管理、模板热加载。
-- [ ] **Agent 编排**：ReAct / Plan-and-Execute 轻量编排器，基于 sureai 原语。
+- [x] **Agent 编排——ReAct 多工具循环**：`sure-ai-agent`（`ToolRegistry`/`ReActAgent`/`ToolArgumentValidator`/`AgentListener`/`AgentUtil`），基于 sureai 原语，见 [docs/agent.md](docs/agent.md)。
+- [ ] **Agent 编排——Plan-and-Execute**：`PlanExecuteAgent` 当前为骨架（run 抛 UnsupportedOperationException），待后续迭代实现「JSON 步骤列表 → 逐步执行 → 汇总」。
 - [ ] **更多平台**：xAI (Grok)、Mistral、Cohere、Bedrock（AWS SigV4）、本地 llama.cpp server。
 - [ ] **响应缓存**：基于 prompt hash 的本地 / Redis 缓存层。
 - [ ] **限流熔断**：平台级 QPS 限流与熔断（基于 sure-core RateLimiter 扩展）。

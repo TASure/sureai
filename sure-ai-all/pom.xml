@@ -48,6 +48,10 @@
         </dependency>
         <dependency>
             <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-agent</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
             <artifactId>sure-ai-openai</artifactId>
         </dependency>
         <dependency>
