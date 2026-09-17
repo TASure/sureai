@@ -17,6 +17,7 @@
 package com.sure.ai.qwen;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -25,6 +26,7 @@ import java.io.OutputStream;
 import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 
 import org.junit.After;
@@ -43,6 +45,10 @@ import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
 
 /**
  * {@link QwenClient} 与 {@link QwenUtil} 集成测试：本地 HttpServer mock。
@@ -253,5 +259,50 @@ public class QwenClientTest {
 			java.lang.reflect.InvocationTargetException.class, c::newInstance);
 		assertTrue(ex.getCause() instanceof AssertionError);
 		assertEquals("qwen-max", QwenModels.QWEN_MAX);
+	}
+
+	/** TTS（CosyVoice）：原生端点返回 JSON 含 audio.url。 */
+	@Test
+	public void testTts() {
+		handle(200, "{\"output\":{\"audio\":{\"url\":\"https://example.com/tts.mp3\"}},"
+			+ "\"request_id\":\"req-tts\"}");
+		QwenClient client = newClient();
+		TtsResponse resp = client.synthesize(TtsRequest.builder()
+			.model(QwenModels.COSYVOICE_V3_5_PLUS).input("你好世界").voice("longanhuan_v3.6")
+			.responseFormat("mp3").build());
+		assertEquals("https://example.com/tts.mp3", resp.url());
+		assertEquals("mp3", resp.format());
+		assertTrue(this.lastUri.get().contains("/api/v1/services/audio/tts/SpeechSynthesizer"));
+		assertTrue(this.lastBody.get().contains("\"model\":\"cosyvoice-v3.5-plus\""));
+		assertTrue(this.lastBody.get().contains("\"text\":\"你好世界\""));
+		assertTrue(this.lastBody.get().contains("\"voice\":\"longanhuan_v3.6\""));
+		client.close();
+	}
+
+	/** STT（Qwen-ASR）：chat/completions input_audio base64 上报，解析 choices 文本。 */
+	@Test
+	public void testStt() {
+		handle(200, "{\"id\":\"asr\",\"model\":\"qwen3-asr-flash\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"识别结果文本\"},\"finish_reason\":\"stop\"}]}");
+		QwenClient client = newClient();
+		byte[] audio = "fake-audio".getBytes(StandardCharsets.UTF_8);
+		SttResponse resp = client.transcribe(SttRequest.builder()
+			.model(QwenModels.QWEN3_ASR_FLASH).audioData(audio).build());
+		assertEquals("识别结果文本", resp.text());
+		assertTrue(this.lastUri.get().contains("/compatible-mode/v1/chat/completions"));
+		assertTrue(this.lastBody.get().contains("\"type\":\"input_audio\""));
+		String expectedB64 = Base64.getEncoder().encodeToString(audio);
+		assertTrue(this.lastBody.get().contains(expectedB64));
+		assertTrue(resp.rawJson().contains("qwen3-asr-flash"));
+		client.close();
+	}
+
+	/** TTS / STT 模型常量。 */
+	@Test
+	public void testAudioModelsConstants() {
+		assertNotNull(QwenModels.COSYVOICE_V3_5_PLUS);
+		assertNotNull(QwenModels.COSYVOICE_V3_5_FLASH);
+		assertNotNull(QwenModels.QWEN_AUDIO_TTS_PLUS);
+		assertNotNull(QwenModels.QWEN3_ASR_FLASH);
 	}
 }

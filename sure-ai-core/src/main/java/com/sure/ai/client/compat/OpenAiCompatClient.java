@@ -17,6 +17,7 @@
 package com.sure.ai.client.compat;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -24,8 +25,12 @@ import java.util.function.Consumer;
 import com.sure.ai.client.AiClient;
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.AbstractAiClient;
+import com.sure.ai.client.AudioClient;
 import com.sure.ai.client.EmbeddingClient;
 import com.sure.ai.client.ImageClient;
+import com.sure.ai.client.VideoClient;
+import com.sure.ai.exception.AiException;
+import com.sure.ai.exception.AiTimeoutException;
 import com.sure.ai.internal.json.Json;
 import com.sure.ai.internal.json.JsonArray;
 import com.sure.ai.internal.json.JsonObject;
@@ -42,11 +47,20 @@ import com.sure.ai.model.ImageResponse;
 import com.sure.ai.model.ImageResult;
 import com.sure.ai.model.MessagePart;
 import com.sure.ai.model.Role;
+import com.sure.ai.model.Segment;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
 import com.sure.ai.model.TextPart;
 import com.sure.ai.model.TokenUsage;
 import com.sure.ai.model.ToolCall;
 import com.sure.ai.model.ToolFunction;
 import com.sure.ai.model.ToolSpec;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.VideoRequest;
+import com.sure.ai.model.VideoResponse;
+import com.sure.ai.model.VideoResult;
+import com.sure.ai.model.Word;
 
 /**
  * OpenAI 兼容协议客户端引擎。
@@ -57,7 +71,8 @@ import com.sure.ai.model.ToolSpec;
  * @author sureai
  * @since 0.1.0
  */
-public class OpenAiCompatClient extends AbstractAiClient implements AiClient, EmbeddingClient, ImageClient {
+public class OpenAiCompatClient extends AbstractAiClient
+		implements AiClient, EmbeddingClient, ImageClient, VideoClient, AudioClient {
 
 	/** 对话接口路径，子类可覆盖。 */
 	protected String chatPath = "/chat/completions";
@@ -67,6 +82,21 @@ public class OpenAiCompatClient extends AbstractAiClient implements AiClient, Em
 
 	/** 图像生成接口路径，子类可覆盖。 */
 	protected String imagesPath = "/images/generations";
+
+	/** 视频生成接口路径（提交任务），子类可覆盖。 */
+	protected String videosPath = "/videos";
+
+	/** 语音合成接口路径，子类可覆盖。 */
+	protected String ttsPath = "/audio/speech";
+
+	/** 语音识别接口路径，子类可覆盖。 */
+	protected String sttPath = "/audio/transcriptions";
+
+	/** 视频轮询间隔（毫秒），子类可覆盖。 */
+	protected long videoPollIntervalMs = 2000L;
+
+	/** 视频最大等待时间（毫秒），子类可覆盖。 */
+	protected long videoMaxWaitMs = 120000L;
 
 	/**
 	 * 构造客户端。
@@ -155,6 +185,184 @@ public class OpenAiCompatClient extends AbstractAiClient implements AiClient, Em
 			}
 		}
 		return ImageResponse.of(created, results, rawJson);
+	}
+
+	// ==================== 视频生成（异步轮询） ====================
+
+	@Override
+	public VideoResponse generate(VideoRequest request) {
+		JsonObject body = buildVideoBody(request);
+		PostResult submit = doPostRaw(this.videosPath, body);
+		String taskId = submit.json().optString("id", null);
+		if (taskId == null || taskId.isBlank()) {
+			throw new AiException("video task id not found in response: " + submit.rawBody());
+		}
+		long deadline = System.currentTimeMillis() + this.videoMaxWaitMs;
+		String lastRaw = submit.rawBody();
+		while (System.currentTimeMillis() < deadline) {
+			try {
+				Thread.sleep(this.videoPollIntervalMs);
+			} catch (InterruptedException ex) {
+				Thread.currentThread().interrupt();
+				throw new AiException("video polling interrupted", ex);
+			}
+			PostResult poll = doGetRaw(this.videosPath + "/" + taskId);
+			lastRaw = poll.rawBody();
+			String status = poll.json().optString("status", "");
+			if ("completed".equals(status)) {
+				return parseVideoResponse(poll.json(), poll.rawBody());
+			}
+			if ("failed".equals(status)) {
+				String reason = poll.json().optString("failure_reason",
+					poll.json().optString("error", "video generation failed"));
+				throw new AiException("video generation failed: " + reason);
+			}
+		}
+		throw new AiTimeoutException("video generation timed out after " + this.videoMaxWaitMs + "ms, last: " + lastRaw);
+	}
+
+	/** 构造视频生成请求体。 */
+	private JsonObject buildVideoBody(VideoRequest req) {
+		JsonObject body = Json.object();
+		body.put("model", req.model());
+		body.put("prompt", req.prompt());
+		putIfNotNull(body, "size", req.size());
+		putIfNotNull(body, "seconds", req.duration());
+		putIfNotNull(body, "n", req.n());
+		putIfNotNull(body, "negative_prompt", req.negativePrompt());
+		putIfNotNull(body, "seed", req.seed());
+		putIfNotNull(body, "resolution", req.resolution());
+		putIfNotNull(body, "ratio", req.ratio());
+		if (Boolean.TRUE.equals(req.withAudio())) {
+			body.put("with_audio", true);
+		}
+		for (Map.Entry<String, Object> e : req.extra().entrySet()) {
+			body.put(e.getKey(), Json.toElement(e.getValue()));
+		}
+		return body;
+	}
+
+	/** 解析视频生成响应：{created_at, status, data:[{url}] 或 video:{url}}。 */
+	private VideoResponse parseVideoResponse(JsonObject resp, String rawJson) {
+		long created = resp.optLong("created_at", resp.optLong("created", 0L));
+		List<VideoResult> results = new ArrayList<>();
+		JsonArray data = resp.has("data") ? resp.getJsonArray("data") : null;
+		if (data != null && !data.isEmpty()) {
+			for (int i = 0; i < data.size(); i++) {
+				JsonObject d = data.getJsonObject(i);
+				results.add(VideoResult.of(
+					d.optString("url", null),
+					d.optString("cover_image_url", null),
+					d.optString("b64_json", null),
+					resp.optString("status", null),
+					d.optString("revised_prompt", null)));
+			}
+		} else if (resp.has("video")) {
+			JsonObject v = resp.getJsonObject("video");
+			results.add(VideoResult.of(
+				v.optString("url", null),
+				v.optString("cover_image_url", null),
+				null,
+				resp.optString("status", null),
+				null));
+		} else {
+			String url = resp.optString("url", null);
+			if (url != null) {
+				results.add(VideoResult.ofUrl(url));
+			}
+		}
+		return VideoResponse.of(created, results, rawJson);
+	}
+
+	// ==================== 语音合成 TTS ====================
+
+	@Override
+	public TtsResponse synthesize(TtsRequest request) {
+		JsonObject body = buildTtsBody(request);
+		byte[] audio = doPostBinary(this.ttsPath, body);
+		String format = request.responseFormat() == null ? "mp3" : request.responseFormat();
+		return TtsResponse.ofAudio(audio, format);
+	}
+
+	/** 构造 TTS 请求体。 */
+	private JsonObject buildTtsBody(TtsRequest req) {
+		JsonObject body = Json.object();
+		body.put("model", req.model());
+		body.put("input", req.input());
+		body.put("voice", req.voice());
+		putIfNotNull(body, "response_format", req.responseFormat());
+		putIfNotNull(body, "speed", req.speed());
+		putIfNotNull(body, "instructions", req.instructions());
+		for (Map.Entry<String, Object> e : req.extra().entrySet()) {
+			body.put(e.getKey(), Json.toElement(e.getValue()));
+		}
+		return body;
+	}
+
+	// ==================== 语音识别 STT ====================
+
+	@Override
+	public SttResponse transcribe(SttRequest request) {
+		Map<String, String> fields = new LinkedHashMap<>();
+		fields.put("model", request.model());
+		if (request.language() != null) {
+			fields.put("language", request.language());
+		}
+		String respFormat = request.responseFormat() == null ? "verbose_json" : request.responseFormat();
+		fields.put("response_format", respFormat);
+		if (request.temperature() != null) {
+			fields.put("temperature", String.valueOf(request.temperature()));
+		}
+		if (request.prompt() != null) {
+			fields.put("prompt", request.prompt());
+		}
+		String fileName = request.fileName() == null ? "audio.mp3" : request.fileName();
+		String contentType = request.contentType() == null ? "audio/mpeg" : request.contentType();
+		PostResult result = doPostMultipart(this.sttPath, fields, "file", fileName, contentType, request.audioData());
+		return parseSttResponse(result.json(), result.rawBody());
+	}
+
+	/** 解析 STT 响应：{text, language, duration, segments:[], words:[]}。 */
+	private SttResponse parseSttResponse(JsonObject resp, String rawJson) {
+		String text = resp.optString("text", "");
+		String language = resp.optString("language", null);
+		Double duration = resp.has("duration") ? resp.get("duration").getAsDouble() : null;
+		List<Segment> segments = new ArrayList<>();
+		JsonArray segArr = resp.has("segments") ? resp.getJsonArray("segments") : null;
+		if (segArr != null) {
+			for (int i = 0; i < segArr.size(); i++) {
+				JsonObject s = segArr.getJsonObject(i);
+				List<Word> words = new ArrayList<>();
+				JsonArray wordArr = s.has("words") ? s.getJsonArray("words") : null;
+				if (wordArr != null) {
+					for (int j = 0; j < wordArr.size(); j++) {
+						JsonObject w = wordArr.getJsonObject(j);
+						words.add(Word.of(
+							w.optString("word", ""),
+							w.optDouble("start", 0.0),
+							w.optDouble("end", 0.0)));
+					}
+				}
+				segments.add(Segment.of(
+					s.optInt("id", i),
+					s.optDouble("start", 0.0),
+					s.optDouble("end", 0.0),
+					s.optString("text", ""),
+					words));
+			}
+		}
+		List<Word> words = new ArrayList<>();
+		JsonArray wordArr = resp.has("words") ? resp.getJsonArray("words") : null;
+		if (wordArr != null) {
+			for (int i = 0; i < wordArr.size(); i++) {
+				JsonObject w = wordArr.getJsonObject(i);
+				words.add(Word.of(
+					w.optString("word", ""),
+					w.optDouble("start", 0.0),
+					w.optDouble("end", 0.0)));
+			}
+		}
+		return SttResponse.of(text, language, duration, segments, words, rawJson);
 	}
 
 	/** 构造对话请求体。 */

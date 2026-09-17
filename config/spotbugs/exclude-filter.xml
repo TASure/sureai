@@ -69,4 +69,20 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- STT 段级记录暴露不可变词级列表（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         Segment 为不可变 record，规范构造器已 List.copyOf 防御性拷贝，
+         words() 返回不可变 List 供消费者只读访问，与 ChatStreamChunk 同类惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.model.Segment"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Builder 模式暂存外部字节数组引用（EI_EXPOSE_REP2）：
+         SttRequest.Builder.audioData 已在 setter 中 clone 防御性拷贝，
+         产物不可变；Builder 本身是一次性可变装配器，与 ChatRequest.Builder 同类惯例。 -->
+    <Match>
+        <Class name="~com.sure.ai.model.SttRequest\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>

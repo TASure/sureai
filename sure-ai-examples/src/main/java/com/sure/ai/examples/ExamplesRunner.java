@@ -89,6 +89,12 @@ public final class ExamplesRunner {
 			case "image":
 				ImageDemo.main(emptyArgs);
 				break;
+			case "video":
+				VideoDemo.main(emptyArgs);
+				break;
+			case "audio":
+				AudioDemo.main(emptyArgs);
+				break;
 			default:
 				System.out.println("未知平台：" + args[0]);
 				printUsage();
@@ -112,5 +118,7 @@ public final class ExamplesRunner {
 		System.out.println("  ollama     - Ollama 本地模型");
 		System.out.println("  rag        - RAG 检索增强问答（基于 OpenAI）");
 		System.out.println("  image      - 多平台图像生成演示（OpenAI/通义万相/智谱）");
+		System.out.println("  video      - 多平台视频生成演示（OpenAI Sora/通义万相/智谱 CogVideoX）");
+		System.out.println("  audio      - 语音 TTS/STT 演示（OpenAI）");
 	}
 }

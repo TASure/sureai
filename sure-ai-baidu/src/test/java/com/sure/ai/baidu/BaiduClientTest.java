@@ -45,6 +45,10 @@ import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
 
 /**
  * {@link BaiduClient} 测试：本地 HttpServer mock token 与 chat 接口。
@@ -63,6 +67,13 @@ public class BaiduClientTest {
 	private final AtomicInteger tokenHits = new AtomicInteger();
 	private final AtomicReference<String> lastChatPath = new AtomicReference<>();
 	private final AtomicReference<String> lastChatBody = new AtomicReference<>();
+	private final AtomicReference<String> ttsContentType = new AtomicReference<>();
+	private final AtomicReference<String> ttsBody = new AtomicReference<>();
+	private final AtomicReference<String> sttBody = new AtomicReference<>();
+	private final AtomicReference<String> sttPath = new AtomicReference<>();
+
+	/** TTS/STT 失败模式：null=正常，"ttsErr"=TTS 返回 JSON 错误，"sttErr"=STT 返回 err_no!=0。 */
+	private String audioMode;
 
 	/** 启动本地服务，注册 token/chat/embeddings 响应。 */
 	@Before
@@ -74,6 +85,11 @@ public class BaiduClientTest {
 		this.tokenHits.set(0);
 		this.lastChatPath.set(null);
 		this.lastChatBody.set(null);
+		this.ttsContentType.set(null);
+		this.ttsBody.set(null);
+		this.sttBody.set(null);
+		this.sttPath.set(null);
+		this.audioMode = null;
 		registerHandlers();
 		setSingleton(null);
 	}
@@ -133,6 +149,32 @@ public class BaiduClientTest {
 				respond(exchange, 200, body, "application/json");
 				return;
 			}
+			if (path.equals("/text2audio")) {
+				this.ttsContentType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
+				byte[] in = exchange.getRequestBody().readAllBytes();
+				this.ttsBody.set(new String(in, StandardCharsets.UTF_8));
+				if ("ttsErr".equals(this.audioMode)) {
+					respond(exchange, 200,
+						"{\"err_no\":3001,\"err_msg\":\"text length is too long\"}", "application/json");
+					return;
+				}
+				byte[] audio = "ID3fake-mp3-bytes".getBytes(StandardCharsets.UTF_8);
+				respondBytes(exchange, 200, audio, "audio/mpeg");
+				return;
+			}
+			if (path.equals("/server_api")) {
+				this.sttPath.set(path);
+				byte[] in = exchange.getRequestBody().readAllBytes();
+				this.sttBody.set(new String(in, StandardCharsets.UTF_8));
+				if ("sttErr".equals(this.audioMode)) {
+					respond(exchange, 200,
+						"{\"err_no\":3301,\"err_msg\":\"audio quality error\"}", "application/json");
+					return;
+				}
+				respond(exchange, 200,
+					"{\"err_no\":0,\"err_msg\":\"success.\",\"result\":[\"你好世界\"]}", "application/json");
+				return;
+			}
 			respond(exchange, 404, "{}", "application/json");
 		});
 	}
@@ -147,10 +189,23 @@ public class BaiduClientTest {
 		}
 	}
 
+	/** 发送二进制响应。 */
+	private static void respondBytes(HttpExchange ex, int status, byte[] body, String contentType)
+			throws IOException {
+		ex.getResponseHeaders().set("Content-Type", contentType);
+		ex.sendResponseHeaders(status, body.length);
+		try (OutputStream os = ex.getResponseBody()) {
+			os.write(body);
+		}
+	}
+
 	/** 构造指向 mock 的客户端。 */
 	private BaiduClient newClient() {
 		AiConfig cfg = AiConfig.builder().apiKey(API_KEY).baseUrl(this.baseUrl)
-			.extraHeader(BaiduClient.SECRET_KEY_HEADER, SECRET_KEY).build();
+			.extraHeader(BaiduClient.SECRET_KEY_HEADER, SECRET_KEY)
+			.extraHeader(BaiduClient.TTS_URL_HEADER, this.baseUrl + "/text2audio")
+			.extraHeader(BaiduClient.STT_URL_HEADER, this.baseUrl + "/server_api")
+			.build();
 		return new BaiduClient(cfg);
 	}
 
@@ -267,5 +322,77 @@ public class BaiduClientTest {
 		BaiduUtil.init(AiConfig.builder().apiKey(API_KEY).baseUrl(this.baseUrl)
 			.extraHeader(BaiduClient.SECRET_KEY_HEADER, SECRET_KEY).build());
 		assertNotNull(BaiduUtil.client());
+	}
+
+	// ==================== TTS ====================
+
+	/** TTS 成功：返回二进制 mp3，请求为 form-urlencoded 且含 tok/tex/per/aue。 */
+	@Test
+	public void testTts() {
+		BaiduClient client = newClient();
+		TtsResponse resp = client.synthesize(TtsRequest.builder()
+			.model("baidu").input("你好").voice(BaiduModels.TTS_PER_XIAOMEI)
+			.responseFormat("mp3").speed(1.0).build());
+		assertTrue(resp.audioLength() > 0);
+		assertEquals("mp3", resp.format());
+		assertTrue(this.ttsContentType.get().startsWith("application/x-www-form-urlencoded"));
+		String body = this.ttsBody.get();
+		assertTrue(body.contains("tok=" + TOKEN));
+		assertTrue(body.contains("tex="));
+		assertTrue(body.contains("per=" + BaiduModels.TTS_PER_XIAOMEI));
+		assertTrue(body.contains("aue=" + BaiduModels.TTS_AUE_MP3));
+		assertTrue(body.contains("ctp=1"));
+		assertTrue(body.contains("lan=zh"));
+		client.close();
+	}
+
+	/** TTS 错误：JSON 错误体抛 AiApiException，err_no 透传。 */
+	@Test
+	public void testTtsError() {
+		this.audioMode = "ttsErr";
+		BaiduClient client = newClient();
+		AiApiException e = assertThrows(AiApiException.class, () -> client.synthesize(
+			TtsRequest.of("baidu", "x", BaiduModels.TTS_PER_XIAOMEI)));
+		assertEquals("3001", e.getErrorCode());
+		assertTrue(e.getMessage().contains("text length is too long"));
+		client.close();
+	}
+
+	// ==================== STT ====================
+
+	/** STT 成功：解析 result[0]，请求体含 speech base64 与 len。 */
+	@Test
+	public void testStt() {
+		BaiduClient client = newClient();
+		byte[] audio = new byte[] { 1, 2, 3, 4, 5, 6 };
+		SttResponse resp = client.transcribe(SttRequest.of("baidu", audio));
+		assertEquals("你好世界", resp.text());
+		String body = this.sttBody.get();
+		assertTrue(body.contains("\"speech\":\""));
+		assertTrue(body.contains("\"len\":6"));
+		assertTrue(body.contains("\"token\":\"" + TOKEN + "\""));
+		assertTrue(body.contains("\"dev_pid\":1537"));
+		client.close();
+	}
+
+	/** STT 错误：err_no!=0 抛 AiApiException。 */
+	@Test
+	public void testSttError() {
+		this.audioMode = "sttErr";
+		BaiduClient client = newClient();
+		AiApiException e = assertThrows(AiApiException.class, () -> client.transcribe(
+			SttRequest.of("baidu", new byte[] { 9, 9 })));
+		assertEquals("3301", e.getErrorCode());
+		client.close();
+	}
+
+	/** Util 便捷 tts/stt 委托单例客户端。 */
+	@Test
+	public void testUtilAudioConvenience() {
+		setSingleton(newClient());
+		TtsResponse tts = BaiduUtil.tts("baidu", "hi", BaiduModels.TTS_PER_XIAOMEI);
+		assertTrue(tts.audioLength() > 0);
+		SttResponse stt = BaiduUtil.stt("baidu", new byte[] { 1, 2 });
+		assertEquals("你好世界", stt.text());
 	}
 }

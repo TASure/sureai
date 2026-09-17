@@ -27,25 +27,27 @@
 - **Function Calling**: tool declaration and invocation closed loop
 - **Embedding**: vector generation (see table below for supported platforms)
 - **Image Generation**: unified `ImageClient` abstraction supporting DALL·E / Wanx / CogView / ERNIE-ViLG / Gemini Imagen; async platforms handle polling internally, exposing a synchronous API
+- **Video Generation**: unified `VideoClient` abstraction supporting Sora / Wan / CogVideoX / Seedance / Azure Sora 2; all platforms use async task polling internally, exposing a synchronous API
+- **Speech TTS/STT**: unified `AudioClient` abstraction (TTS synthesis + STT transcription) supporting OpenAI / CosyVoice / GLM-TTS / Doubao / Baidu / Azure Speech; binary audio / URL / Base64 response formats
 - **RAG**: end-to-end retrieval-augmented generation pipeline (`sure-ai-rag`)
 - **Environment variable auto-config**: lazy-loads from `SURE_AI_*` env vars when not explicitly initialized
 - **JDK 21**: records, pattern matching, switch patterns
 
 ## Modules & Platforms
 
-| Platform | artifactId | Default baseUrl | Auth | Streaming | Embedding | Image Gen | Function Calling |
-|----------|-----------|-----------------|------|-----------|-----------|-----------|-----------------|
-| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ DALL·E 3 | ✅ |
-| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key header | ✅ | ✅ | ✅ DALL·E 3 | ✅ |
-| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key header | ✅ | ❌ | ❌ | ✅ |
-| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= query param | ✅ | ✅ | ✅ Imagen | ✅ |
-| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ❌ | ✅ |
-| Qwen | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ Wanx (async) | ✅ |
-| Zhipu GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ CogView | ✅ |
-| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ❌ | ✅ |
-| Doubao | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ |
-| Baidu Qianfan | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token (auto-cached) | ✅ | ✅ | ✅ ERNIE-ViLG (async) | ✅ |
-| Ollama | `sure-ai-ollama` | `http://localhost:11434` | None (local) | ✅ | ✅ | ❌ | ✅ |
+| Platform | artifactId | Default baseUrl | Auth | Streaming | Embedding | Image Gen | Video Gen | TTS | STT | Function Calling |
+|----------|-----------|-----------------|------|-----------|-----------|-----------|-----------|-----|-----|-----------------|
+| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ tts-1 | ✅ whisper-1 | ✅ |
+| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key header | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ Speech | ✅ Speech | ✅ |
+| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key header | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= query param | ✅ | ✅ | ✅ Imagen | ❌ Veo(OAuth) | ❌ | ❌ | ✅ |
+| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Qwen | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ Wanx (async) | ✅ Wan 2.6 (async) | ✅ CosyVoice | ✅ Qwen-ASR | ✅ |
+| Zhipu GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ CogView | ✅ CogVideoX (async) | ✅ GLM-TTS | ✅ GLM-ASR | ✅ |
+| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Doubao | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ Seedance (async) | ✅ seed-tts-2.0 | ✅ BigASR | ✅ |
+| Baidu Qianfan | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token (auto-cached) | ✅ | ✅ | ✅ ERNIE-ViLG (async) | ❌ | ✅ DuXiaomei | ✅ Short ASR | ✅ |
+| Ollama | `sure-ai-ollama` | `http://localhost:11434` | None (local) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
 
 Aggregation modules: `sure-ai-all` (one dependency for all platforms), `sure-ai-bom` (version management).
 
@@ -81,6 +83,47 @@ String url = OpenAiUtil.image(req).firstUrl();
 ```
 
 See [docs/images.md](docs/images.md) for platform configuration and async polling details.
+
+### Video Generation
+
+```java
+import com.sure.ai.openai.OpenAiUtil;
+import com.sure.ai.openai.OpenAiModels;
+import com.sure.ai.model.VideoRequest;
+
+// All platforms are async; SDK polls internally, returns synchronously
+String videoUrl = OpenAiUtil.video(OpenAiModels.SORA_2, "a cat running on grass").firstUrl();
+
+// Or use Builder for duration/resolution/first-last-frame
+VideoRequest req = VideoRequest.builder()
+    .model(OpenAiModels.SORA_2)
+    .prompt("cyberpunk city skyline at night, slow motion")
+    .duration(8)
+    .size("1280x720")
+    .build();
+String url = OpenAiUtil.video(req).firstUrl();
+```
+
+See [docs/video.md](docs/video.md) for platform configuration and async polling details.
+
+### Speech TTS / STT
+
+```java
+import com.sure.ai.openai.OpenAiUtil;
+import com.sure.ai.openai.OpenAiModels;
+import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.SttResponse;
+
+// TTS: text → binary audio
+TtsResponse tts = OpenAiUtil.tts(OpenAiModels.TTS_1, "Hello, world", "alloy");
+byte[] audio = tts.audio();  // save as mp3 directly
+
+// STT: audio → transcribed text
+SttResponse stt = OpenAiUtil.stt(OpenAiModels.WHISPER_1, audio);
+System.out.println(stt.text());
+```
+
+See [docs/audio.md](docs/audio.md) for platform configuration and response format details.
 
 ## Maven Dependencies
 

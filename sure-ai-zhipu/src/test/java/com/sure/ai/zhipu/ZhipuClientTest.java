@@ -50,6 +50,10 @@ import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
 
 /**
  * {@link ZhipuClient} 与 {@link ZhipuJwtGenerator} 测试：本地 HttpServer mock。
@@ -248,6 +252,47 @@ public class ZhipuClientTest {
 		assertTrue(this.lastBody.get().contains("\"prompt\":\"一只猫\""));
 		assertEquals("https://img.example.com/1.png", resp.firstUrl());
 		assertEquals(1700000000L, resp.created());
+		client.close();
+	}
+
+	/** TTS：mock 返回二进制音频，断言 audioLength>0 且请求走 /audio/speech。 */
+	@Test
+	public void testTts() {
+		byte[] fakeAudio = "fake-mp3-bytes".getBytes(StandardCharsets.UTF_8);
+		handle(ex -> {
+			ex.getResponseHeaders().set("Content-Type", "audio/mpeg");
+			ex.sendResponseHeaders(200, fakeAudio.length);
+			try (OutputStream os = ex.getResponseBody()) {
+				os.write(fakeAudio);
+			}
+		});
+		ZhipuClient client = newClient();
+		TtsResponse resp = client.synthesize(TtsRequest.builder()
+			.model(ZhipuModels.GLM_TTS).input("你好").voice("female").build());
+		assertTrue(this.lastUri.get().endsWith("/audio/speech"));
+		assertTrue(this.lastBody.get().contains("\"input\":\"你好\""));
+		assertTrue(resp.audioLength() > 0);
+		assertEquals("mp3", resp.format());
+		client.close();
+	}
+
+	/** STT：mock 返回 JSON text，断言转写文本正确且请求为 multipart。 */
+	@Test
+	public void testStt() {
+		AtomicReference<String> contentType = new AtomicReference<>();
+		handle(ex -> {
+			contentType.set(ex.getRequestHeaders().getFirst("Content-Type"));
+			respond(ex, 200, "{\"text\":\"你好世界\",\"language\":\"zh\"}");
+		});
+		ZhipuClient client = newClient();
+		byte[] audio = "fake-audio".getBytes(StandardCharsets.UTF_8);
+		SttResponse resp = client.transcribe(SttRequest.builder()
+			.model(ZhipuModels.GLM_ASR_2512).audioData(audio).build());
+		assertTrue(this.lastUri.get().endsWith("/audio/transcriptions"));
+		assertTrue("request must be multipart/form-data",
+			contentType.get() != null && contentType.get().startsWith("multipart/form-data"));
+		assertEquals("你好世界", resp.text());
+		assertEquals("zh", resp.language());
 		client.close();
 	}
 

@@ -18,11 +18,14 @@ package com.sure.ai.baidu;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -30,6 +33,7 @@ import java.util.function.Consumer;
 import com.sure.ai.client.AiClient;
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.AbstractAiClient;
+import com.sure.ai.client.AudioClient;
 import com.sure.ai.client.EmbeddingClient;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiAuthException;
@@ -47,7 +51,11 @@ import com.sure.ai.model.Choice;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.Role;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
 import com.sure.ai.model.TokenUsage;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
 
 /**
  * 百度智能云千帆（文心 ERNIE）客户端。
@@ -63,22 +71,47 @@ import com.sure.ai.model.TokenUsage;
  *
  * <p>默认 baseUrl：{@code https://aip.baidubce.com}。</p>
  *
+ * <p>TTS / STT 使用百度语音开放平台（{@code tsn.baidu.com} / {@code vop.baidu.com}），与对话服务
+ * 不同域，端点默认硬编码，可用 {@code extraHeaders("ttsUrl", ...)} / {@code extraHeaders("sttUrl", ...)}
+ * 覆盖（测试 mock 时使用）。百度暂无公开的视频生成 API，本模块不提供视频生成能力。</p>
+ *
  * @author sureai
  * @since 0.1.0
  */
-public class BaiduClient extends AbstractAiClient implements AiClient, EmbeddingClient {
+public class BaiduClient extends AbstractAiClient implements AiClient, EmbeddingClient, AudioClient {
 
 	/** 默认 baseUrl。 */
 	public static final String DEFAULT_BASE_URL = "https://aip.baidubce.com";
 
-	/** access_token 提前刷新的安全余量（毫秒）。 */
+	/** TTS 默认端点（短文本语音合成）。 */
+	public static final String DEFAULT_TTS_URL = "https://tsn.baidu.com/text2audio";
+
+	/** STT 默认端点（短语音识别）。 */
+	public static final String DEFAULT_STT_URL = "https://vop.baidu.com/server_api";
+
+	/** ttsUrl 在 extraHeaders 中的键名。 */
+	public static final String TTS_URL_HEADER = "ttsUrl";
+
+	/** sttUrl 在 extraHeaders 中的键名。 */
+	public static final String STT_URL_HEADER = "sttUrl";
+
+	/** OAuth access_token 提前刷新的安全余量（毫秒）。 */
 	private static final long TOKEN_LEEWAY_MS = 60_000L;
 
 	/** secretKey 在 extraHeaders 中的键名。 */
 	public static final String SECRET_KEY_HEADER = "secretKey";
 
+	/** cuid 用户标识。 */
+	private static final String CUID = "sureai";
+
 	/** secretKey。 */
 	private final String secretKey;
+
+	/** TTS 端点。 */
+	private final String ttsUrl;
+
+	/** STT 端点。 */
+	private final String sttUrl;
 
 	/** 已缓存的 access_token。 */
 	private volatile String cachedToken;
@@ -97,6 +130,8 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 	public BaiduClient(AiConfig config) {
 		super(withDefaults(config));
 		this.secretKey = config.extraHeaders().get(SECRET_KEY_HEADER);
+		this.ttsUrl = config.extraHeaders().getOrDefault(TTS_URL_HEADER, DEFAULT_TTS_URL);
+		this.sttUrl = config.extraHeaders().getOrDefault(STT_URL_HEADER, DEFAULT_STT_URL);
 	}
 
 	@Override
@@ -153,6 +188,182 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 		} catch (AiApiException ex) {
 			throw (AiApiException) enrichError(ex);
 		}
+	}
+
+	// ==================== 语音合成 TTS（短文本，form-urlencoded） ====================
+
+	@Override
+	public TtsResponse synthesize(TtsRequest request) {
+		String token = getAccessToken();
+		int aue = mapAue(request.responseFormat());
+		Map<String, String> form = new LinkedHashMap<>();
+		form.put("tex", request.input());
+		form.put("tok", token);
+		form.put("cuid", CUID);
+		form.put("ctp", "1");
+		form.put("lan", "zh");
+		form.put("spd", String.valueOf(mapSpeed(request.speed())));
+		form.put("pit", "5");
+		form.put("vol", "5");
+		form.put("per", request.voice() == null ? BaiduModels.TTS_PER_XIAOMEI : request.voice());
+		form.put("aue", String.valueOf(aue));
+		HttpResponse<byte[]> resp = postForm(this.ttsUrl, form);
+		String contentType = resp.headers().firstValue("Content-Type").orElse("");
+		if (contentType.startsWith("audio/")) {
+			return TtsResponse.ofAudio(resp.body(), formatFromAue(aue));
+		}
+		String raw = new String(resp.body(), StandardCharsets.UTF_8);
+		throw parseTtsError(raw);
+	}
+
+	/** 发送 x-www-form-urlencoded POST，返回字节响应（非 2xx 经 mapError 抛出）。 */
+	private HttpResponse<byte[]> postForm(String url, Map<String, String> form) {
+		String body = encodeForm(form);
+		HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+			.timeout(this.config.timeout())
+			.header("Content-Type", "application/x-www-form-urlencoded")
+			.header("Accept", "audio/*")
+			.POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+			.build();
+		try {
+			HttpResponse<byte[]> resp = this.httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+			int status = resp.statusCode();
+			if (status >= 200 && status < 300) {
+				return resp;
+			}
+			throw mapError(status, new String(resp.body(), StandardCharsets.UTF_8));
+		} catch (IOException ex) {
+			throw new AiTimeoutException("baidu tts request failed: " + ex.getMessage(), ex);
+		} catch (InterruptedException ex) {
+			Thread.currentThread().interrupt();
+			throw new AiException("baidu tts interrupted", ex);
+		}
+	}
+
+	/** 表单编码：UTF-8 URL 编码，& 连接。 */
+	private static String encodeForm(Map<String, String> form) {
+		StringBuilder sb = new StringBuilder();
+		for (Map.Entry<String, String> e : form.entrySet()) {
+			if (sb.length() > 0) {
+				sb.append('&');
+			}
+			sb.append(URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8));
+			sb.append('=');
+			sb.append(URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8));
+		}
+		return sb.toString();
+	}
+
+	/** TTS 错误响应 {err_no, err_msg} 映射为 AiApiException。 */
+	private static AiApiException parseTtsError(String raw) {
+		try {
+			JsonObject o = Json.parse(raw).getAsJsonObject();
+			int errNo = o.optInt("err_no", -1);
+			String msg = o.optString("err_msg", raw);
+			return new AiApiException(200, String.valueOf(errNo), "baidu tts failed: " + msg, raw);
+		} catch (RuntimeException ex) {
+			return new AiApiException(200, null, "baidu tts failed: " + raw, raw);
+		}
+	}
+
+	/** responseFormat 映射到 aue：mp3=3 / pcm=4 / wav=6，缺省 mp3。 */
+	private static int mapAue(String format) {
+		if (format == null || format.isBlank()) {
+			return 3;
+		}
+		switch (format.trim().toLowerCase()) {
+			case "wav":
+			case "wave":
+				return 6;
+			case "pcm":
+				return 4;
+			default:
+				return 3;
+		}
+	}
+
+	/** aue 反查格式字符串。 */
+	private static String formatFromAue(int aue) {
+		return switch (aue) {
+			case 4 -> "pcm";
+			case 6 -> "wav";
+			default -> "mp3";
+		};
+	}
+
+	/** 语速 0.25–4.0 映射到百度 spd 0–15，缺省 5。 */
+	private static int mapSpeed(Double speed) {
+		if (speed == null) {
+			return 5;
+		}
+		int v = (int) Math.round(speed * 5.0);
+		return Math.max(0, Math.min(15, v));
+	}
+
+	// ==================== 语音识别 STT（JSON base64） ====================
+
+	@Override
+	public SttResponse transcribe(SttRequest request) {
+		String token = getAccessToken();
+		String b64 = Base64.getEncoder().encodeToString(request.audioData());
+		JsonObject body = Json.object();
+		body.put("format", "pcm");
+		body.put("rate", 16000);
+		body.put("channel", 1);
+		body.put("cuid", CUID);
+		body.put("token", token);
+		body.put("dev_pid", resolveDevPid(request));
+		body.put("speech", b64);
+		body.put("len", request.audioData().length);
+		JsonObject resp = postJson(this.sttUrl, body);
+		int errNo = resp.optInt("err_no", 0);
+		if (errNo != 0) {
+			throw new AiApiException(200, String.valueOf(errNo),
+				"baidu stt failed: " + resp.optString("err_msg", ""), resp.toString());
+		}
+		JsonArray resultArr = resp.has("result") ? resp.getJsonArray("result") : null;
+		String text = (resultArr == null || resultArr.isEmpty()) ? "" : resultArr.getString(0);
+		return SttResponse.ofText(text);
+	}
+
+	/** 向绝对 URL 发送 JSON POST，返回解析后的对象（非 2xx 经 mapError 抛出）。 */
+	private JsonObject postJson(String url, JsonObject body) {
+		String payload = Json.stringify(body);
+		HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+			.timeout(this.config.timeout())
+			.header("Content-Type", "application/json")
+			.header("Accept", "application/json")
+			.POST(HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8))
+			.build();
+		try {
+			HttpResponse<String> resp = this.httpClient.send(request, BodyHandlers.ofString(StandardCharsets.UTF_8));
+			int status = resp.statusCode();
+			if (status >= 200 && status < 300) {
+				return parseJson(resp.body());
+			}
+			throw mapError(status, resp.body());
+		} catch (IOException ex) {
+			throw new AiTimeoutException("baidu stt request failed: " + ex.getMessage(), ex);
+		} catch (InterruptedException ex) {
+			Thread.currentThread().interrupt();
+			throw new AiException("baidu stt interrupted", ex);
+		}
+	}
+
+	/** 解析 dev_pid：优先 SttRequest.extra("dev_pid")，缺省普通话 1537。 */
+	private static int resolveDevPid(SttRequest request) {
+		Object v = request.extra().get("dev_pid");
+		if (v instanceof Number n) {
+			return n.intValue();
+		}
+		if (v instanceof String s && !s.isBlank()) {
+			try {
+				return Integer.parseInt(s.trim());
+			} catch (NumberFormatException ignored) {
+				// 解析失败回退默认
+			}
+		}
+		return BaiduModels.ASR_DEV_PID_MANDARIN;
 	}
 
 	/** 解析非流式对话响应：result 字段为正文。 */

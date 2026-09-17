@@ -27,6 +27,12 @@ import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.VideoRequest;
+import com.sure.ai.model.VideoResponse;
 
 /**
  * 阿里云百炼通义千问（DashScope）平台静态入口工具类。
@@ -59,6 +65,12 @@ public final class QwenUtil {
 
 	/** 图像客户端初始化锁。 */
 	private static final Object IMAGE_LOCK = new Object();
+
+	/** 视频生成客户端单例。 */
+	private static volatile QwenVideoClient videoClient;
+
+	/** 视频客户端初始化锁。 */
+	private static final Object VIDEO_LOCK = new Object();
 
 	private QwenUtil() {
 		throw new AssertionError("No instances");
@@ -231,5 +243,98 @@ public final class QwenUtil {
 		synchronized (IMAGE_LOCK) {
 			imageClient = null;
 		}
+	}
+
+	/**
+	 * 获取通义万相视频生成单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 视频客户端
+	 * @throws AiException 未初始化且未设置 {@code SURE_AI_QWEN_API_KEY}
+	 */
+	public static QwenVideoClient videoClient() {
+		QwenVideoClient c = videoClient;
+		if (c == null) {
+			synchronized (VIDEO_LOCK) {
+				c = videoClient;
+				if (c == null) {
+					c = new QwenVideoClient(buildConfigFromEnv());
+					videoClient = c;
+				}
+			}
+		}
+		return c;
+	}
+
+	/**
+	 * 便捷文生视频。
+	 *
+	 * @param model  模型 ID（如 {@link QwenModels#WAN2_6_T2V}）
+	 * @param prompt 提示词
+	 * @return 视频响应
+	 */
+	public static VideoResponse video(String model, String prompt) {
+		return videoClient().generate(VideoRequest.of(model, prompt));
+	}
+
+	/**
+	 * 文生视频。
+	 *
+	 * @param request 视频请求
+	 * @return 视频响应
+	 */
+	public static VideoResponse video(VideoRequest request) {
+		return videoClient().generate(request);
+	}
+
+	/**
+	 * 重置视频单例客户端（测试清理用）。
+	 */
+	public static void resetVideoClient() {
+		synchronized (VIDEO_LOCK) {
+			videoClient = null;
+		}
+	}
+
+	/**
+	 * 便捷语音合成（TTS）。
+	 *
+	 * @param model 模型 ID（如 {@link QwenModels#COSYVOICE_V3_5_PLUS}）
+	 * @param text  待合成文本
+	 * @param voice 音色 ID
+	 * @return 语音响应（含音频 URL）
+	 */
+	public static TtsResponse tts(String model, String text, String voice) {
+		return client().synthesize(TtsRequest.of(model, text, voice));
+	}
+
+	/**
+	 * 语音合成（TTS）。
+	 *
+	 * @param request TTS 请求
+	 * @return 语音响应
+	 */
+	public static TtsResponse tts(TtsRequest request) {
+		return client().synthesize(request);
+	}
+
+	/**
+	 * 便捷语音识别（STT）。
+	 *
+	 * @param model     模型 ID（如 {@link QwenModels#QWEN3_ASR_FLASH}）
+	 * @param audioData 音频二进制数据
+	 * @return 转写响应
+	 */
+	public static SttResponse stt(String model, byte[] audioData) {
+		return client().transcribe(SttRequest.of(model, audioData));
+	}
+
+	/**
+	 * 语音识别（STT）。
+	 *
+	 * @param request STT 请求
+	 * @return 转写响应
+	 */
+	public static SttResponse stt(SttRequest request) {
+		return client().transcribe(request);
 	}
 }

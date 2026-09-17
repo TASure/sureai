@@ -27,25 +27,27 @@
 - **Function Calling**：工具声明与调用闭环
 - **Embedding**：向量生成（支持平台见下表）
 - **图像生成**：`ImageClient` 统一抽象，支持 DALL·E / 通义万相 / CogView / 文心一格 / Gemini Imagen，异步平台内部轮询屏蔽，对外同步返回
+- **视频生成**：`VideoClient` 统一抽象，支持 Sora / 通义万相 Wan / CogVideoX / Seedance / Azure Sora 2，全平台异步任务轮询屏蔽，对外同步返回
+- **语音 TTS/STT**：`AudioClient` 统一抽象（TTS 合成 + STT 转录），支持 OpenAI / CosyVoice / GLM-TTS / 豆包 / 百度 / Azure Speech，二进制音频 / URL / Base64 三种响应形态
 - **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（分块 / 向量存储 / 检索 / 增强生成）
 - **环境变量自动配置**：未显式 init 时自动从 `SURE_AI_*` 环境变量读取
 - **JDK 21**：record / pattern matching / switch 模式
 
 ## 模块与平台一览
 
-| 平台 | artifactId | 默认 baseUrl | 鉴权方式 | 流式 | Embedding | 图像生成 | Function Calling |
-|------|-----------|-------------|---------|------|-----------|---------|-----------------|
-| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ DALL·E 3 | ✅ |
-| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key 头 | ✅ | ✅ | ✅ DALL·E 3 | ✅ |
-| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key 头 | ✅ | ❌ | ❌ | ✅ |
-| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= 查询参数 | ✅ | ✅ | ✅ Imagen | ✅ |
-| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ❌ | ✅ |
-| 通义千问 | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ 通义万相（异步） | ✅ |
-| 智谱 GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ CogView | ✅ |
-| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ❌ | ✅ |
-| 豆包 | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ |
-| 百度千帆 | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token（自动缓存） | ✅ | ✅ | ✅ 文心一格（异步） | ✅ |
-| Ollama | `sure-ai-ollama` | `http://localhost:11434` | 无（本地服务） | ✅ | ✅ | ❌ | ✅ |
+| 平台 | artifactId | 默认 baseUrl | 鉴权方式 | 流式 | Embedding | 图像生成 | 视频生成 | TTS | STT | Function Calling |
+|------|-----------|-------------|---------|------|-----------|---------|---------|-----|-----|-----------------|
+| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ tts-1 | ✅ whisper-1 | ✅ |
+| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key 头 | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ Speech | ✅ Speech | ✅ |
+| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key 头 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= 查询参数 | ✅ | ✅ | ✅ Imagen | ❌ Veo(OAuth) | ❌ | ❌ | ✅ |
+| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| 通义千问 | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ 通义万相（异步） | ✅ Wan 2.6（异步） | ✅ CosyVoice | ✅ Qwen-ASR | ✅ |
+| 智谱 GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ CogView | ✅ CogVideoX（异步） | ✅ GLM-TTS | ✅ GLM-ASR | ✅ |
+| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| 豆包 | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ Seedance（异步） | ✅ seed-tts-2.0 | ✅ 录音文件识别 | ✅ |
+| 百度千帆 | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token（自动缓存） | ✅ | ✅ | ✅ 文心一格（异步） | ❌ | ✅ 度小美 | ✅ 短语音识别 | ✅ |
+| Ollama | `sure-ai-ollama` | `http://localhost:11434` | 无（本地服务） | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
 
 聚合模块：`sure-ai-all`（一个依赖引入全部平台）、`sure-ai-bom`（版本统一管理）。
 
@@ -81,6 +83,47 @@ String url = OpenAiUtil.image(req).firstUrl();
 ```
 
 更多平台配置与异步轮询说明见 [docs/images.md](docs/images.md)。
+
+### 视频生成
+
+```java
+import com.sure.ai.openai.OpenAiUtil;
+import com.sure.ai.openai.OpenAiModels;
+import com.sure.ai.model.VideoRequest;
+
+// 全平台异步任务，SDK 内部轮询，对外同步返回
+String videoUrl = OpenAiUtil.video(OpenAiModels.SORA_2, "一只猫咪在草地上奔跑").firstUrl();
+
+// 或使用 Builder 配置时长/分辨率/首尾帧
+VideoRequest req = VideoRequest.builder()
+    .model(OpenAiModels.SORA_2)
+    .prompt("赛博朋克风格的城市夜景，慢镜头")
+    .duration(8)
+    .size("1280x720")
+    .build();
+String url = OpenAiUtil.video(req).firstUrl();
+```
+
+更多平台配置与异步轮询说明见 [docs/video.md](docs/video.md)。
+
+### 语音 TTS / STT
+
+```java
+import com.sure.ai.openai.OpenAiUtil;
+import com.sure.ai.openai.OpenAiModels;
+import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.SttResponse;
+
+// TTS：文本 → 二进制音频
+TtsResponse tts = OpenAiUtil.tts(OpenAiModels.TTS_1, "你好，世界", "alloy");
+byte[] audio = tts.audio();  // 可直接保存为 mp3
+
+// STT：音频 → 转写文本
+SttResponse stt = OpenAiUtil.stt(OpenAiModels.WHISPER_1, audio);
+System.out.println(stt.text());
+```
+
+更多平台配置与响应形态说明见 [docs/audio.md](docs/audio.md)。
 
 ## Maven 依赖
 

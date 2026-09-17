@@ -45,6 +45,12 @@ import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.VideoRequest;
+import com.sure.ai.model.VideoResponse;
 
 /**
  * {@link OpenAiClient} 与 {@link OpenAiUtil} 集成测试：本地 HttpServer mock。
@@ -233,6 +239,82 @@ public class OpenAiClientTest {
 		client.close();
 	}
 
+	/** 视频生成（异步轮询）：提交 queued → 轮询 in_progress → completed。 */
+	@Test
+	public void testVideoGeneration() throws Exception {
+		java.util.concurrent.atomic.AtomicInteger pollCount =
+			new java.util.concurrent.atomic.AtomicInteger(0);
+		handle(ex -> {
+			String method = ex.getRequestMethod();
+			String uri = ex.getRequestURI().toString();
+			if ("POST".equals(method) && uri.endsWith("/videos")) {
+				respond(ex, 200, "{\"id\":\"v-abc\",\"status\":\"queued\",\"created_at\":1700000000}");
+			} else if ("GET".equals(method) && uri.contains("/videos/v-abc")) {
+				int n = pollCount.incrementAndGet();
+				if (n == 1) {
+					respond(ex, 200, "{\"id\":\"v-abc\",\"status\":\"in_progress\",\"progress\":50}");
+				} else {
+					respond(ex, 200, "{\"id\":\"v-abc\",\"status\":\"completed\",\"created_at\":1700000000,"
+						+ "\"data\":[{\"url\":\"https://cdn.example.com/video.mp4\"}]}");
+				}
+			} else {
+				respond(ex, 404, "{\"error\":\"not found\"}");
+			}
+		});
+		OpenAiClient client = newClient();
+		VideoResponse resp = client.generate(VideoRequest.builder()
+			.model(OpenAiModels.SORA_2).prompt("a cat playing piano").duration(5).build());
+		assertEquals("https://cdn.example.com/video.mp4", resp.firstUrl());
+		assertEquals(1700000000L, resp.created());
+		assertEquals(2, pollCount.get());
+		client.close();
+	}
+
+	/** 语音合成 TTS：POST JSON → 二进制音频响应。 */
+	@Test
+	public void testTts() {
+		byte[] fakeAudio = new byte[]{0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00, 0x7f};
+		handle(ex -> {
+			ex.getResponseHeaders().set("Content-Type", "audio/mpeg");
+			ex.sendResponseHeaders(200, fakeAudio.length);
+			try (OutputStream os = ex.getResponseBody()) {
+				os.write(fakeAudio);
+			}
+		});
+		OpenAiClient client = newClient();
+		TtsResponse resp = client.synthesize(TtsRequest.builder()
+			.model(OpenAiModels.TTS_1).input("hello").voice("alloy").responseFormat("mp3").build());
+		assertTrue(this.lastBody.get().contains("\"model\":\"tts-1\""));
+		assertTrue(this.lastBody.get().contains("\"input\":\"hello\""));
+		assertTrue(this.lastBody.get().contains("\"voice\":\"alloy\""));
+		assertEquals(fakeAudio.length, resp.audioLength());
+		assertEquals("mp3", resp.format());
+		client.close();
+	}
+
+	/** 语音识别 STT：multipart/form-data 上传 → JSON 文本响应。 */
+	@Test
+	public void testStt() {
+		handle(200, "{\"text\":\"hello world\",\"language\":\"en\",\"duration\":2.5,"
+			+ "\"segments\":[{\"id\":0,\"start\":0.0,\"end\":2.5,\"text\":\"hello world\"}],"
+			+ "\"words\":[{\"word\":\"hello\",\"start\":0.0,\"end\":1.0},"
+			+ "{\"word\":\"world\",\"start\":1.0,\"end\":2.5}]}");
+		OpenAiClient client = newClient();
+		byte[] audio = "fake-audio-data".getBytes(StandardCharsets.UTF_8);
+		SttResponse resp = client.transcribe(SttRequest.builder()
+			.model(OpenAiModels.WHISPER_1).audioData(audio).fileName("test.mp3")
+			.contentType("audio/mpeg").language("en").build());
+		// 验证请求为 multipart
+		assertTrue(this.lastBody.get().contains("multipart/form-data")
+			|| this.lastBody.get().contains("------sureai"));
+		assertEquals("hello world", resp.text());
+		assertEquals("en", resp.language());
+		assertEquals(Double.valueOf(2.5), resp.duration());
+		assertEquals(1, resp.segments().size());
+		assertEquals(2, resp.words().size());
+		client.close();
+	}
+
 	/** 401 映射为 AiAuthException。 */
 	@Test
 	public void testAuth401() {
@@ -270,6 +352,50 @@ public class OpenAiClientTest {
 		OpenAiUtil.init(AiConfig.builder().apiKey("util-key").baseUrl(this.baseUrl).build());
 		assertEquals("yo", OpenAiUtil.chat("gpt-4o", "hi").firstText());
 		assertEquals("Bearer util-key", this.lastAuth.get());
+	}
+
+	/** Util 便捷 TTS：二进制音频响应。 */
+	@Test
+	public void testUtilTts() {
+		byte[] audio = new byte[]{1, 2, 3, 4};
+		handle(ex -> {
+			ex.getResponseHeaders().set("Content-Type", "audio/mpeg");
+			ex.sendResponseHeaders(200, audio.length);
+			try (OutputStream os = ex.getResponseBody()) {
+				os.write(audio);
+			}
+		});
+		OpenAiUtil.init(AiConfig.builder().apiKey("k").baseUrl(this.baseUrl).build());
+		assertEquals(4, OpenAiUtil.tts("tts-1", "hi", "alloy").audioLength());
+	}
+
+	/** Util 便捷 STT：multipart 上传 → JSON 文本响应。 */
+	@Test
+	public void testUtilStt() {
+		handle(200, "{\"text\":\"transcribed\"}");
+		OpenAiUtil.init(AiConfig.builder().apiKey("k").baseUrl(this.baseUrl).build());
+		assertEquals("transcribed", OpenAiUtil.stt("whisper-1", new byte[]{1, 2}).text());
+	}
+
+	/** Util 便捷 video：异步轮询 queued → completed。 */
+	@Test
+	public void testUtilVideo() {
+		java.util.concurrent.atomic.AtomicInteger polls = new java.util.concurrent.atomic.AtomicInteger(0);
+		handle(ex -> {
+			String method = ex.getRequestMethod();
+			if ("POST".equals(method)) {
+				respond(ex, 200, "{\"id\":\"v1\",\"status\":\"queued\"}");
+			} else {
+				int n = polls.incrementAndGet();
+				if (n == 1) {
+					respond(ex, 200, "{\"id\":\"v1\",\"status\":\"in_progress\"}");
+				} else {
+					respond(ex, 200, "{\"id\":\"v1\",\"status\":\"completed\",\"data\":[{\"url\":\"http://x/v.mp4\"}]}");
+				}
+			}
+		});
+		OpenAiUtil.init(AiConfig.builder().apiKey("k").baseUrl(this.baseUrl).build());
+		assertEquals("http://x/v.mp4", OpenAiUtil.video("sora-2", "cat").firstUrl());
 	}
 
 	/** Util 未 init 且未设置环境变量时抛 AiException。 */

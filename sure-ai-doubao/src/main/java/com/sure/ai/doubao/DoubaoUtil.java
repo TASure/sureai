@@ -25,6 +25,12 @@ import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.VideoRequest;
+import com.sure.ai.model.VideoResponse;
 
 /**
  * 火山方舟（豆包 / Doubao）静态入口。
@@ -52,6 +58,24 @@ public final class DoubaoUtil {
 
 	/** 初始化锁。 */
 	private static final Object LOCK = new Object();
+
+	/** 视频生成客户端单例（方舟原生端点）。 */
+	private static volatile DoubaoVideoClient videoClient;
+
+	/** 视频客户端初始化锁。 */
+	private static final Object VIDEO_LOCK = new Object();
+
+	/** TTS 客户端单例（openspeech 端点，鉴权头不同）。 */
+	private static volatile DoubaoTtsClient ttsClient;
+
+	/** TTS 客户端初始化锁。 */
+	private static final Object TTS_LOCK = new Object();
+
+	/** STT 客户端单例（openspeech 端点，异步 submit+query）。 */
+	private static volatile DoubaoSttClient sttClient;
+
+	/** STT 客户端初始化锁。 */
+	private static final Object STT_LOCK = new Object();
 
 	/** 工具类禁止实例化。 */
 	private DoubaoUtil() {
@@ -153,5 +177,170 @@ public final class DoubaoUtil {
 	 */
 	public static EmbeddingResponse embed(EmbeddingRequest request) {
 		return client().embed(request);
+	}
+
+	/**
+	 * 获取 Seedance 视频生成单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 视频客户端
+	 * @throws AiException 环境变量缺失时抛出
+	 */
+	public static DoubaoVideoClient videoClient() {
+		DoubaoVideoClient c = videoClient;
+		if (c == null) {
+			synchronized (VIDEO_LOCK) {
+				c = videoClient;
+				if (c == null) {
+					c = buildVideoClientFromEnv();
+					videoClient = c;
+				}
+			}
+		}
+		return c;
+	}
+
+	/** 从环境变量构建视频客户端。 */
+	private static DoubaoVideoClient buildVideoClientFromEnv() {
+		return new DoubaoVideoClient(baseConfigFromEnv());
+	}
+
+	/**
+	 * 便捷视频生成：仅模型与提示词。
+	 *
+	 * @param model  模型 ID（如 {@link DoubaoModels#SEEDANCE_2_5}）
+	 * @param prompt 提示词
+	 * @return 视频响应
+	 */
+	public static VideoResponse video(String model, String prompt) {
+		return videoClient().generate(VideoRequest.of(model, prompt));
+	}
+
+	/**
+	 * 视频生成。
+	 *
+	 * @param request 视频请求
+	 * @return 视频响应
+	 */
+	public static VideoResponse video(VideoRequest request) {
+		return videoClient().generate(request);
+	}
+
+	/**
+	 * 重置视频单例客户端（测试清理用）。
+	 */
+	public static void resetVideoClient() {
+		synchronized (VIDEO_LOCK) {
+			videoClient = null;
+		}
+	}
+
+	/**
+	 * 获取豆包 TTS 单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return TTS 客户端
+	 * @throws AiException 环境变量缺失时抛出
+	 */
+	public static DoubaoTtsClient ttsClient() {
+		DoubaoTtsClient c = ttsClient;
+		if (c == null) {
+			synchronized (TTS_LOCK) {
+				c = ttsClient;
+				if (c == null) {
+					c = new DoubaoTtsClient(baseConfigFromEnv());
+					ttsClient = c;
+				}
+			}
+		}
+		return c;
+	}
+
+	/**
+	 * 便捷语音合成：模型/文本/音色。
+	 *
+	 * @param model 模型 ID（如 {@link DoubaoModels#SEED_TTS_2_0}，鉴权资源 ID 固定）
+	 * @param text  待合成文本
+	 * @param voice 音色 ID（如 {@link DoubaoModels#DOUBAO_TTS_SPEAKER_DEFAULT}）
+	 * @return 语音响应
+	 */
+	public static TtsResponse tts(String model, String text, String voice) {
+		return ttsClient().synthesize(TtsRequest.of(model, text, voice));
+	}
+
+	/**
+	 * 语音合成。
+	 *
+	 * @param request TTS 请求
+	 * @return 语音响应
+	 */
+	public static TtsResponse tts(TtsRequest request) {
+		return ttsClient().synthesize(request);
+	}
+
+	/**
+	 * 重置 TTS 单例客户端（测试清理用）。
+	 */
+	public static void resetTtsClient() {
+		synchronized (TTS_LOCK) {
+			ttsClient = null;
+		}
+	}
+
+	/**
+	 * 获取豆包 STT 单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return STT 客户端
+	 * @throws AiException 环境变量缺失时抛出
+	 */
+	public static DoubaoSttClient sttClient() {
+		DoubaoSttClient c = sttClient;
+		if (c == null) {
+			synchronized (STT_LOCK) {
+				c = sttClient;
+				if (c == null) {
+					c = new DoubaoSttClient(baseConfigFromEnv());
+					sttClient = c;
+				}
+			}
+		}
+		return c;
+	}
+
+	/**
+	 * 便捷语音识别：模型 + 音频数据。
+	 *
+	 * @param model     模型 ID（鉴权资源 ID 固定为 volc.bigasr.auc）
+	 * @param audioData 音频二进制
+	 * @return 识别响应
+	 */
+	public static SttResponse stt(String model, byte[] audioData) {
+		return sttClient().transcribe(SttRequest.of(model, audioData));
+	}
+
+	/**
+	 * 语音识别。
+	 *
+	 * @param request STT 请求
+	 * @return 识别响应
+	 */
+	public static SttResponse stt(SttRequest request) {
+		return sttClient().transcribe(request);
+	}
+
+	/**
+	 * 重置 STT 单例客户端（测试清理用）。
+	 */
+	public static void resetSttClient() {
+		synchronized (STT_LOCK) {
+			sttClient = null;
+		}
+	}
+
+	/** 从环境变量构建基础配置（视频/TTS/STT 客户端共用 apiKey）。 */
+	private static AiConfig baseConfigFromEnv() {
+		String key = System.getenv(ENV_API_KEY);
+		if (key == null || key.isBlank()) {
+			throw new AiException("env " + ENV_API_KEY + " is not set");
+		}
+		return AiConfig.of(key);
 	}
 }

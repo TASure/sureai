@@ -43,6 +43,21 @@ public final class DoubaoModels {
 	/** doubao-embedding-text-240715：文本向量模型。 */
 	public static final String DOUBAO_EMBEDDING_TEXT = "doubao-embedding-text-240715";
 
+	/** doubao-seedance-2.5-260628：视频生成模型 2.5。 */
+	public static final String SEEDANCE_2_5 = "doubao-seedance-2-5-260628";
+
+	/** doubao-seedance-2.0-260128：视频生成模型 2.0。 */
+	public static final String SEEDANCE_2_0 = "doubao-seedance-2-0-260128";
+
+	/** seed-tts-2.0：语音合成资源 ID（X-Api-Resource-Id）。 */
+	public static final String SEED_TTS_2_0 = "seed-tts-2.0";
+
+	/** 豆包 TTS 默认音色。 */
+	public static final String DOUBAO_TTS_SPEAKER_DEFAULT = "zh_female_vv_uranus_bigtts";
+
+	/** volc.bigasr.auc：录音文件识别资源 ID（X-Api-Resource-Id）。 */
+	public static final String VOLC_BIGASR_AUC = "volc.bigasr.auc";
+
 	/** 工具类禁止实例化。 */
 	private DoubaoModels() {
 		throw new AssertionError("No instances");

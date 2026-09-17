@@ -55,6 +55,9 @@ public class ZhipuClient extends OpenAiCompatClient {
 	 */
 	public ZhipuClient(AiConfig config) {
 		super(withDefaultBaseUrl(config));
+		// baseUrl 已含 /api/paas/v4，这里显式给出相对语音接口路径，便于阅读与覆盖。
+		this.ttsPath = "/audio/speech";
+		this.sttPath = "/audio/transcriptions";
 	}
 
 	@Override

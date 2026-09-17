@@ -25,6 +25,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.UUID;
 import java.util.logging.Logger;
 
 import com.sure.ai.exception.AiApiException;
@@ -239,6 +241,128 @@ public abstract class AbstractAiClient {
 			}
 			throw mapError(status, resp.body(), parseRetryAfter(retryAfter));
 		}
+	}
+
+	/**
+	 * JSON POST 并返回二进制响应体（用于 TTS 等返回音频二进制的接口）。
+	 *
+	 * @param path 接口路径
+	 * @param body 请求体 JSON
+	 * @return 二进制响应体
+	 */
+	protected byte[] doPostBinary(String path, JsonObject body) {
+		String url = resolveUrl(path);
+		String payload = Json.stringify(body);
+		int attempt = 0;
+		while (true) {
+			HttpRequest request = newRequest(url, payload).build();
+			HttpResponse<byte[]> resp;
+			try {
+				resp = this.httpClient.send(request, BodyHandlers.ofByteArray());
+			} catch (IOException ex) {
+				throw new AiTimeoutException("request failed: " + ex.getMessage(), ex);
+			} catch (InterruptedException ex) {
+				Thread.currentThread().interrupt();
+				throw new AiException("request interrupted", ex);
+			}
+			int status = resp.statusCode();
+			if (status >= 200 && status < 300) {
+				return resp.body();
+			}
+			String retryAfter = resp.headers().firstValue("Retry-After").orElse(null);
+			if (isRetriable(status) && attempt < this.config.maxRetries()) {
+				this.log.fine("retry " + (attempt + 1) + " after status " + status);
+				sleepBackoff(attempt, retryAfter);
+				attempt++;
+				continue;
+			}
+			String rawBody = new String(resp.body(), StandardCharsets.UTF_8);
+			throw mapError(status, rawBody, parseRetryAfter(retryAfter));
+		}
+	}
+
+	/**
+	 * multipart/form-data POST（用于 STT 音频文件上传等接口），返回解析结果与原始报文。
+	 *
+	 * @param path            接口路径
+	 * @param textFields      文本字段（name → value）
+	 * @param fileField       文件字段名
+	 * @param fileName        文件名
+	 * @param fileContentType 文件 MIME 类型
+	 * @param fileData        文件二进制数据
+	 * @return 解析结果（含原始报文）
+	 */
+	protected PostResult doPostMultipart(String path, Map<String, String> textFields,
+			String fileField, String fileName, String fileContentType, byte[] fileData) {
+		String url = resolveUrl(path);
+		String boundary = "----sureai" + UUID.randomUUID().toString().replace("-", "");
+		byte[] body = buildMultipartBody(boundary, textFields, fileField, fileName, fileContentType, fileData);
+		int attempt = 0;
+		while (true) {
+			HttpRequest.Builder rb = HttpRequest.newBuilder()
+				.uri(URI.create(url))
+				.timeout(this.config.timeout())
+				.header("Content-Type", "multipart/form-data; boundary=" + boundary)
+				.header("Accept", "application/json")
+				.POST(HttpRequest.BodyPublishers.ofByteArray(body));
+			applyAuth(rb, this.config);
+			for (Map.Entry<String, String> e : this.config.extraHeaders().entrySet()) {
+				rb.header(e.getKey(), e.getValue());
+			}
+			HttpRequest request = rb.build();
+			HttpResponse<String> resp;
+			try {
+				resp = this.httpClient.send(request, BodyHandlers.ofString(StandardCharsets.UTF_8));
+			} catch (IOException ex) {
+				throw new AiTimeoutException("request failed: " + ex.getMessage(), ex);
+			} catch (InterruptedException ex) {
+				Thread.currentThread().interrupt();
+				throw new AiException("request interrupted", ex);
+			}
+			int status = resp.statusCode();
+			if (status >= 200 && status < 300) {
+				return new PostResult(parseJson(resp.body()), resp.body());
+			}
+			String retryAfter = resp.headers().firstValue("Retry-After").orElse(null);
+			if (isRetriable(status) && attempt < this.config.maxRetries()) {
+				sleepBackoff(attempt, retryAfter);
+				attempt++;
+				continue;
+			}
+			throw mapError(status, resp.body(), parseRetryAfter(retryAfter));
+		}
+	}
+
+	/** 构造 multipart/form-data 请求体字节。 */
+	private static byte[] buildMultipartBody(String boundary, Map<String, String> textFields,
+			String fileField, String fileName, String fileContentType, byte[] fileData) {
+		java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+		String dashBoundary = "--" + boundary;
+		String crlf = "\r\n";
+		try {
+			for (Map.Entry<String, String> e : textFields.entrySet()) {
+				out.write((dashBoundary + crlf).getBytes(StandardCharsets.UTF_8));
+				out.write(("Content-Disposition: form-data; name=\"" + e.getKey() + "\"" + crlf)
+					.getBytes(StandardCharsets.UTF_8));
+				out.write(crlf.getBytes(StandardCharsets.UTF_8));
+				out.write(e.getValue().getBytes(StandardCharsets.UTF_8));
+				out.write(crlf.getBytes(StandardCharsets.UTF_8));
+			}
+			if (fileData != null) {
+				out.write((dashBoundary + crlf).getBytes(StandardCharsets.UTF_8));
+				out.write(("Content-Disposition: form-data; name=\"" + fileField + "\"; filename=\""
+					+ fileName + "\"" + crlf).getBytes(StandardCharsets.UTF_8));
+				out.write(("Content-Type: " + (fileContentType == null ? "application/octet-stream"
+					: fileContentType) + crlf).getBytes(StandardCharsets.UTF_8));
+				out.write(crlf.getBytes(StandardCharsets.UTF_8));
+				out.write(fileData);
+				out.write(crlf.getBytes(StandardCharsets.UTF_8));
+			}
+			out.write((dashBoundary + "--" + crlf).getBytes(StandardCharsets.UTF_8));
+		} catch (IOException ex) {
+			throw new AiException("build multipart body failed: " + ex.getMessage(), ex);
+		}
+		return out.toByteArray();
 	}
 
 	/** 读取错误响应体。 */

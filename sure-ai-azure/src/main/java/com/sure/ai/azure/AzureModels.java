@@ -50,4 +50,18 @@ public final class AzureModels {
 
 	/** DALL·E 3 部署参考名。 */
 	public static final String DALL_E_3 = "dall-e-3";
+
+	/** Sora 2 视频生成模型（预览）。 */
+	public static final String SORA_2 = "sora-2";
+
+	// ==================== TTS 音色 ====================
+
+	/** zh-CN XiaoxiaoNeural（晓晓，女声）。 */
+	public static final String TTS_VOICE_XIAOXIAO = "zh-CN-XiaoxiaoNeural";
+
+	/** zh-CN YunxiNeural（云希，男声）。 */
+	public static final String TTS_VOICE_YUNXI = "zh-CN-YunxiNeural";
+
+	/** TTS 输出格式：24kHz 48kbps 单声道 mp3。 */
+	public static final String TTS_OUTPUT_MP3 = "audio-24khz-48kbitrate-mono-mp3";
 }

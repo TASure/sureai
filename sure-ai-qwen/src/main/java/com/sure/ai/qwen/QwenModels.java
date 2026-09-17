@@ -58,4 +58,25 @@ public final class QwenModels {
 
 	/** wan2.1-t2i-plus：通义万相 2.1 文生图 Plus，质量更高。 */
 	public static final String WAN2_1_T2I_PLUS = "wan2.1-t2i-plus";
+
+	/** wan2.6-t2v：通义万相 2.6 文生视频。 */
+	public static final String WAN2_6_T2V = "wan2.6-t2v";
+
+	/** wan2.5-t2v：通义万相 2.5 文生视频。 */
+	public static final String WAN2_5_T2V = "wan2.5-t2v";
+
+	/** wanx2.1-t2v-turbo：通义万相 2.1 文生视频 Turbo，高并发低延迟。 */
+	public static final String WANX2_1_T2V = "wanx2.1-t2v-turbo";
+
+	/** cosyvoice-v3.5-plus：CosyVoice 语音合成 Plus。 */
+	public static final String COSYVOICE_V3_5_PLUS = "cosyvoice-v3.5-plus";
+
+	/** cosyvoice-v3.5-flash：CosyVoice 语音合成 Flash，低延迟。 */
+	public static final String COSYVOICE_V3_5_FLASH = "cosyvoice-v3.5-flash";
+
+	/** qwen-audio-3.0-tts-plus：Qwen-Audio TTS Plus。 */
+	public static final String QWEN_AUDIO_TTS_PLUS = "qwen-audio-3.0-tts-plus";
+
+	/** qwen3-asr-flash：Qwen3 语音识别 Flash。 */
+	public static final String QWEN3_ASR_FLASH = "qwen3-asr-flash";
 }

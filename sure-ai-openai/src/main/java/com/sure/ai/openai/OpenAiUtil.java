@@ -27,6 +27,12 @@ import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.VideoRequest;
+import com.sure.ai.model.VideoResponse;
 
 /**
  * OpenAI 平台静态入口工具类。
@@ -206,5 +212,69 @@ public final class OpenAiUtil {
 	 */
 	public static ImageResponse image(ImageRequest request) {
 		return client().generate(request);
+	}
+
+	/**
+	 * 视频生成（内部异步轮询，同步返回）。
+	 *
+	 * @param model  模型 ID（如 {@link OpenAiModels#SORA_2}）
+	 * @param prompt 提示词
+	 * @return 视频响应
+	 */
+	public static VideoResponse video(String model, String prompt) {
+		return client().generate(VideoRequest.of(model, prompt));
+	}
+
+	/**
+	 * 视频生成。
+	 *
+	 * @param request 视频请求
+	 * @return 视频响应
+	 */
+	public static VideoResponse video(VideoRequest request) {
+		return client().generate(request);
+	}
+
+	/**
+	 * 语音合成（TTS）。
+	 *
+	 * @param model 模型 ID（如 {@link OpenAiModels#TTS_1}）
+	 * @param text  待合成文本
+	 * @param voice 音色（如 alloy/nova）
+	 * @return TTS 响应（二进制音频）
+	 */
+	public static TtsResponse tts(String model, String text, String voice) {
+		return client().synthesize(model, text, voice);
+	}
+
+	/**
+	 * 语音合成。
+	 *
+	 * @param request TTS 请求
+	 * @return TTS 响应
+	 */
+	public static TtsResponse tts(TtsRequest request) {
+		return client().synthesize(request);
+	}
+
+	/**
+	 * 语音识别（STT/转录）。
+	 *
+	 * @param model     模型 ID（如 {@link OpenAiModels#WHISPER_1}）
+	 * @param audioData 音频二进制数据
+	 * @return STT 响应（含转写文本）
+	 */
+	public static SttResponse stt(String model, byte[] audioData) {
+		return client().transcribe(model, audioData);
+	}
+
+	/**
+	 * 语音识别。
+	 *
+	 * @param request STT 请求
+	 * @return STT 响应
+	 */
+	public static SttResponse stt(SttRequest request) {
+		return client().transcribe(request);
 	}
 }

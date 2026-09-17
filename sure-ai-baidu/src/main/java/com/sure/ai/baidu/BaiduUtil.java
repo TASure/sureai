@@ -27,6 +27,10 @@ import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
 
 /**
  * 百度千帆（文心 ERNIE）静态入口。
@@ -237,6 +241,52 @@ public final class BaiduUtil {
 	 */
 	public static ImageResponse image(ImageRequest request) {
 		return imageClient().generate(request);
+	}
+
+	/**
+	 * 便捷语音合成：模型/文本/音色。
+	 *
+	 * <p>百度短文本语音合成无 model 概念，{@code model} 参数可传入任意占位值；
+	 * {@code voice} 映射到发音人 per（如 {@link BaiduModels#TTS_PER_XIAOMEI}）。</p>
+	 *
+	 * @param model 模型占位（百度忽略）
+	 * @param text  待合成文本
+	 * @param voice 发音人 per
+	 * @return 语音合成响应（二进制音频）
+	 */
+	public static TtsResponse tts(String model, String text, String voice) {
+		return client().synthesize(TtsRequest.of(model, text, voice));
+	}
+
+	/**
+	 * 语音合成。
+	 *
+	 * @param request TTS 请求
+	 * @return 语音合成响应（二进制音频）
+	 */
+	public static TtsResponse tts(TtsRequest request) {
+		return client().synthesize(request);
+	}
+
+	/**
+	 * 便捷语音识别：模型 + 音频数据。
+	 *
+	 * @param model     模型占位（百度忽略）
+	 * @param audioData 音频二进制（pcm/wav/amr/m4a，≤60s，单声道 16kHz）
+	 * @return 语音识别响应（转写文本）
+	 */
+	public static SttResponse stt(String model, byte[] audioData) {
+		return client().transcribe(SttRequest.of(model, audioData));
+	}
+
+	/**
+	 * 语音识别。
+	 *
+	 * @param request STT 请求
+	 * @return 语音识别响应（转写文本）
+	 */
+	public static SttResponse stt(SttRequest request) {
+		return client().transcribe(request);
 	}
 
 	/**

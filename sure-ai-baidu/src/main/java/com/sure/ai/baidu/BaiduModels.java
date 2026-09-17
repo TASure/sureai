@@ -45,6 +45,39 @@ public final class BaiduModels {
 	/** ernie-vilg-v2：文心一格文生图模型（异步任务）。 */
 	public static final String ERNIE_VILG_V2 = "ernie-vilg-v2";
 
+	// ==================== TTS 发音人 per ====================
+
+	/** 度小美（默认女声）。 */
+	public static final String TTS_PER_XIAOMEI = "0";
+
+	/** 度小宇（男声）。 */
+	public static final String TTS_PER_XIAOYU = "1";
+
+	/** 度逍遥。 */
+	public static final String TTS_PER_XIAOYAO = "3";
+
+	/** 度丫丫。 */
+	public static final String TTS_PER_YAYA = "4";
+
+	// ==================== TTS 音频格式 aue ====================
+
+	/** mp3。 */
+	public static final String TTS_AUE_MP3 = "3";
+
+	/** wav。 */
+	public static final String TTS_AUE_WAV = "6";
+
+	// ==================== STT dev_pid 方言 ====================
+
+	/** 普通话（带声调）。 */
+	public static final int ASR_DEV_PID_MANDARIN = 1537;
+
+	/** 英语。 */
+	public static final int ASR_DEV_PID_ENGLISH = 1737;
+
+	/** 粤语。 */
+	public static final int ASR_DEV_PID_CANTONESE = 1637;
+
 	/** 工具类禁止实例化。 */
 	private BaiduModels() {
 		throw new AssertionError("No instances");

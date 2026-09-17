@@ -49,10 +49,16 @@ import com.sure.ai.model.ImagePart;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
 import com.sure.ai.model.MessagePart;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
 import com.sure.ai.model.TextPart;
 import com.sure.ai.model.ToolCall;
 import com.sure.ai.model.ToolFunction;
 import com.sure.ai.model.ToolSpec;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.VideoRequest;
+import com.sure.ai.model.VideoResponse;
 import com.sure.ai.internal.json.JsonObject;
 
 /**
@@ -399,5 +405,177 @@ public class OpenAiCompatClientTest {
 		JsonObject doGetPublic(String path) {
 			return doGet(path);
 		}
+	}
+
+	// ==================== 视频生成 ====================
+
+	/** 视频生成：异步轮询 queued → in_progress → completed，解析 data[0].url。 */
+	@Test
+	public void testVideoGeneration() {
+		AtomicInteger pollCount = new AtomicInteger(0);
+		AtomicReference<String> submitBody = new AtomicReference<>();
+		handle(ex -> {
+			String method = ex.getRequestMethod();
+			String uri = ex.getRequestURI().toString();
+			if ("POST".equals(method) && uri.endsWith("/videos")) {
+				submitBody.set(this.lastBody.get());
+				respond(ex, 200, "{\"id\":\"v-1\",\"status\":\"queued\",\"created_at\":100}");
+			} else if ("GET".equals(method) && uri.contains("/videos/v-1")) {
+				int n = pollCount.incrementAndGet();
+				if (n == 1) {
+					respond(ex, 200, "{\"id\":\"v-1\",\"status\":\"in_progress\",\"progress\":50}");
+				} else {
+					respond(ex, 200, "{\"id\":\"v-1\",\"status\":\"completed\",\"created_at\":100,"
+						+ "\"data\":[{\"url\":\"https://cdn.example.com/v.mp4\"}]}");
+				}
+			} else {
+				respond(ex, 404, "{}");
+			}
+		});
+		FastVideoClient client = new FastVideoClient(AiConfig.builder()
+			.apiKey("k").baseUrl(this.baseUrl).build());
+		VideoResponse resp = client.generate(VideoRequest.builder()
+			.model("sora-2").prompt("a cat").duration(5).size("1280x720").build());
+		assertTrue(submitBody.get().contains("\"model\":\"sora-2\""));
+		assertTrue(submitBody.get().contains("\"prompt\":\"a cat\""));
+		assertTrue(submitBody.get().contains("\"seconds\":5"));
+		assertEquals("https://cdn.example.com/v.mp4", resp.firstUrl());
+		assertEquals(100L, resp.created());
+		assertEquals(2, pollCount.get());
+		client.close();
+	}
+
+	/** 视频生成：failed 状态抛 AiException。 */
+	@Test
+	public void testVideoGenerationFailed() {
+		handle(ex -> {
+			String method = ex.getRequestMethod();
+			if ("POST".equals(method)) {
+				respond(ex, 200, "{\"id\":\"v-2\",\"status\":\"queued\"}");
+			} else {
+				respond(ex, 200, "{\"id\":\"v-2\",\"status\":\"failed\",\"failure_reason\":\"nsfw\"}");
+			}
+		});
+		FastVideoClient client = new FastVideoClient(AiConfig.builder()
+			.apiKey("k").baseUrl(this.baseUrl).build());
+		assertThrows(com.sure.ai.exception.AiException.class, () ->
+			client.generate(VideoRequest.of("sora-2", "bad")));
+		client.close();
+	}
+
+	/** 视频生成：提交响应无 id 抛 AiException。 */
+	@Test
+	public void testVideoGenerationNoId() {
+		handle(200, "{\"status\":\"queued\"}");
+		FastVideoClient client = new FastVideoClient(AiConfig.builder()
+			.apiKey("k").baseUrl(this.baseUrl).build());
+		assertThrows(com.sure.ai.exception.AiException.class, () ->
+			client.generate(VideoRequest.of("sora-2", "x")));
+		client.close();
+	}
+
+	/** 调小轮询间隔的视频客户端子类。 */
+	private static class FastVideoClient extends OpenAiCompatClient {
+		FastVideoClient(AiConfig config) {
+			super(config);
+			this.videoPollIntervalMs = 10L;
+			this.videoMaxWaitMs = 5000L;
+		}
+	}
+
+	// ==================== TTS ====================
+
+	/** TTS：POST JSON → 二进制音频响应。 */
+	@Test
+	public void testTts() {
+		byte[] fakeAudio = new byte[]{0x49, 0x44, 0x33, 0x04};
+		handle(ex -> {
+			ex.getResponseHeaders().set("Content-Type", "audio/mpeg");
+			ex.sendResponseHeaders(200, fakeAudio.length);
+			try (OutputStream os = ex.getResponseBody()) {
+				os.write(fakeAudio);
+			}
+		});
+		OpenAiCompatClient client = newClient();
+		TtsResponse resp = client.synthesize(TtsRequest.builder()
+			.model("tts-1").input("hello").voice("alloy")
+			.responseFormat("mp3").speed(1.5).build());
+		assertTrue(this.lastBody.get().contains("\"model\":\"tts-1\""));
+		assertTrue(this.lastBody.get().contains("\"input\":\"hello\""));
+		assertTrue(this.lastBody.get().contains("\"voice\":\"alloy\""));
+		assertTrue(this.lastBody.get().contains("\"speed\":1.5"));
+		assertEquals(fakeAudio.length, resp.audioLength());
+		assertEquals("mp3", resp.format());
+		client.close();
+	}
+
+	/** TTS：便捷 synthesize(model, text, voice)。 */
+	@Test
+	public void testTtsConvenience() {
+		byte[] audio = new byte[]{1, 2, 3};
+		handle(ex -> {
+			ex.getResponseHeaders().set("Content-Type", "audio/wav");
+			ex.sendResponseHeaders(200, audio.length);
+			try (OutputStream os = ex.getResponseBody()) {
+				os.write(audio);
+			}
+		});
+		OpenAiCompatClient client = newClient();
+		TtsResponse resp = client.synthesize("tts-1-hd", "hi", "nova");
+		assertEquals(3, resp.audioLength());
+		client.close();
+	}
+
+	// ==================== STT ====================
+
+	/** STT：multipart/form-data 上传 → JSON 文本响应。 */
+	@Test
+	public void testStt() {
+		handle(200, "{\"text\":\"hello world\",\"language\":\"en\",\"duration\":2.5,"
+			+ "\"segments\":[{\"id\":0,\"start\":0.0,\"end\":2.5,\"text\":\"hello world\"}],"
+			+ "\"words\":[{\"word\":\"hello\",\"start\":0.0,\"end\":1.0}]}");
+		OpenAiCompatClient client = newClient();
+		byte[] audio = "fake-audio".getBytes(StandardCharsets.UTF_8);
+		SttResponse resp = client.transcribe(SttRequest.builder()
+			.model("whisper-1").audioData(audio).fileName("test.mp3")
+			.contentType("audio/mpeg").language("en").build());
+		// 请求体为 multipart，含 boundary 与字段
+		assertTrue(this.lastBody.get().contains("------sureai"));
+		assertTrue(this.lastBody.get().contains("whisper-1"));
+		assertEquals("hello world", resp.text());
+		assertEquals("en", resp.language());
+		assertEquals(Double.valueOf(2.5), resp.duration());
+		assertEquals(1, resp.segments().size());
+		assertEquals(1, resp.words().size());
+		client.close();
+	}
+
+	/** STT：便捷 transcribe(model, audioData)。 */
+	@Test
+	public void testSttConvenience() {
+		handle(200, "{\"text\":\"transcribed text\"}");
+		OpenAiCompatClient client = newClient();
+		SttResponse resp = client.transcribe("gpt-4o-transcribe", new byte[]{1, 2});
+		assertEquals("transcribed text", resp.text());
+		assertTrue(resp.segments().isEmpty());
+		client.close();
+	}
+
+	/** STT：verbose_json 含段级与词级时间戳。 */
+	@Test
+	public void testSttVerboseJson() {
+		handle(200, "{\"text\":\"full text\",\"segments\":["
+			+ "{\"id\":0,\"start\":0.0,\"end\":1.0,\"text\":\"part1\",\"words\":["
+			+ "{\"word\":\"a\",\"start\":0.0,\"end\":0.5},{\"word\":\"b\",\"start\":0.5,\"end\":1.0}]},"
+			+ "{\"id\":1,\"start\":1.0,\"end\":2.0,\"text\":\"part2\"}],"
+			+ "\"words\":[{\"word\":\"a\",\"start\":0.0,\"end\":0.5}]}");
+		OpenAiCompatClient client = newClient();
+		SttResponse resp = client.transcribe(SttRequest.of("whisper-1", new byte[]{1}));
+		assertEquals("full text", resp.text());
+		assertEquals(2, resp.segments().size());
+		assertEquals(2, resp.segments().get(0).words().size());
+		assertEquals("a", resp.segments().get(0).words().get(0).word());
+		assertEquals(1, resp.words().size());
+		client.close();
 	}
 }

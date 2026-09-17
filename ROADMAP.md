@@ -18,7 +18,8 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 - [ ] **Spring Boot Starter**：`sure-ai-spring-boot-starter`，自动配置 + `@Autowired` 注入，配置属性 `sure.ai.<platform>.api-key` 等。
 - [ ] **重试可观测性**：重试事件回调（RetryListener），指标埋点（Micrometer 可选适配，默认无依赖）。
 - [x] **图像生成**：`ImageClient` 抽象 + 6 平台接入（OpenAI DALL·E / Azure / 通义万相 / 智谱 CogView / 文心一格 / Gemini），异步平台内部轮询屏蔽，对外同步返回。见 [docs/images.md](docs/images.md)。
-- [ ] **音频**：Whisper / TTS 接口抽象（`AudioClient`）。
+- [x] **视频生成**：`VideoClient` 抽象 + 5 平台接入（OpenAI Sora / 通义万相 Wan / 智谱 CogVideoX / 火山 Seedance / Azure Sora 2），全平台异步任务轮询屏蔽，对外同步返回。见 [docs/video.md](docs/video.md)。
+- [x] **音频（TTS/STT）**：`AudioClient` 抽象（TTS synthesize + STT transcribe）+ 6 平台接入（OpenAI / 通义 CosyVoice / 智谱 GLM-TTS/ASR / 火山豆包 / 百度 / Azure Speech），支持二进制音频/URL/Base64 三种响应形态与 multipart/base64/二进制四种上传格式。见 [docs/audio.md](docs/audio.md)。
 - [ ] **Function Calling 增强**：自动参数校验（JSON Schema → Java Bean 校验）、工具注册中心。
 - [ ] **结构化输出**：JSON mode / response_format 统一抽象，支持强类型反序列化。
 

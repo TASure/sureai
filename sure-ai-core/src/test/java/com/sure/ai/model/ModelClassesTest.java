@@ -201,4 +201,187 @@ public class ModelClassesTest {
 		assertTrue(empty.data().isEmpty());
 		assertNull(empty.firstUrl());
 	}
+
+	// ==================== 视频模型 ====================
+
+	/** VideoRequest builder：必填校验与全字段。 */
+	@Test
+	public void testVideoRequestBuilder() {
+		VideoRequest req = VideoRequest.builder()
+			.model("sora-2").prompt("a cat").duration(8).size("1280x720")
+			.ratio("16:9").n(1).firstFrameImageUrl("http://f.png").lastFrameImageUrl("http://l.png")
+			.negativePrompt("ugly").seed(42).withAudio(true).resolution("720p")
+			.extra("k", "v").build();
+		assertEquals("sora-2", req.model());
+		assertEquals("a cat", req.prompt());
+		assertEquals(Integer.valueOf(8), req.duration());
+		assertEquals("1280x720", req.size());
+		assertEquals("16:9", req.ratio());
+		assertEquals(Integer.valueOf(1), req.n());
+		assertEquals("http://f.png", req.firstFrameImageUrl());
+		assertEquals("http://l.png", req.lastFrameImageUrl());
+		assertEquals("ugly", req.negativePrompt());
+		assertEquals(Integer.valueOf(42), req.seed());
+		assertEquals(Boolean.TRUE, req.withAudio());
+		assertEquals("720p", req.resolution());
+		assertEquals("v", req.extra().get("k"));
+	}
+
+	/** VideoRequest.of 便捷构造与必填校验。 */
+	@Test
+	public void testVideoRequestOfAndValidation() {
+		VideoRequest req = VideoRequest.of("m", "p");
+		assertEquals("m", req.model());
+		assertEquals("p", req.prompt());
+		assertNull(req.duration());
+		assertThrows(Exception.class, () -> VideoRequest.builder().prompt("p").build());
+		assertThrows(Exception.class, () -> VideoRequest.builder().model("m").build());
+	}
+
+	/** VideoResult 工厂方法。 */
+	@Test
+	public void testVideoResult() {
+		VideoResult r1 = VideoResult.of("http://v.mp4", "http://cover.jpg", "b64", "SUCCEEDED", "revised");
+		assertEquals("http://v.mp4", r1.url());
+		assertEquals("http://cover.jpg", r1.coverImageUrl());
+		assertEquals("b64", r1.b64Json());
+		assertEquals("SUCCEEDED", r1.taskStatus());
+		assertEquals("revised", r1.revisedPrompt());
+		VideoResult r2 = VideoResult.ofUrl("http://v2.mp4");
+		assertEquals("http://v2.mp4", r2.url());
+		assertNull(r2.coverImageUrl());
+		VideoResult r3 = VideoResult.ofUrl("http://v3.mp4", "http://c3.jpg");
+		assertEquals("http://c3.jpg", r3.coverImageUrl());
+	}
+
+	/** VideoResponse：of/firstUrl/firstCoverUrl/空列表防御性拷贝。 */
+	@Test
+	public void testVideoResponse() {
+		VideoResult r = VideoResult.ofUrl("http://v.mp4", "http://c.jpg");
+		VideoResponse resp = VideoResponse.of(456L, List.of(r), "{}");
+		assertEquals(456L, resp.created());
+		assertEquals(1, resp.data().size());
+		assertEquals("http://v.mp4", resp.firstUrl());
+		assertEquals("http://c.jpg", resp.firstCoverUrl());
+		VideoResponse empty = VideoResponse.of(0, null, null);
+		assertTrue(empty.data().isEmpty());
+		assertNull(empty.firstUrl());
+		assertNull(empty.firstCoverUrl());
+	}
+
+	// ==================== TTS 模型 ====================
+
+	/** TtsRequest builder：必填校验与全字段。 */
+	@Test
+	public void testTtsRequestBuilder() {
+		TtsRequest req = TtsRequest.builder()
+			.model("tts-1").input("hello").voice("alloy")
+			.responseFormat("mp3").speed(1.5).volume(80.0).pitch(1.2)
+			.sampleRate(24000).instructions("speak slowly").extra("k", "v").build();
+		assertEquals("tts-1", req.model());
+		assertEquals("hello", req.input());
+		assertEquals("alloy", req.voice());
+		assertEquals("mp3", req.responseFormat());
+		assertEquals(Double.valueOf(1.5), req.speed());
+		assertEquals(Double.valueOf(80.0), req.volume());
+		assertEquals(Double.valueOf(1.2), req.pitch());
+		assertEquals(Integer.valueOf(24000), req.sampleRate());
+		assertEquals("speak slowly", req.instructions());
+		assertEquals("v", req.extra().get("k"));
+	}
+
+	/** TtsRequest.of 便捷构造与必填校验。 */
+	@Test
+	public void testTtsRequestOfAndValidation() {
+		TtsRequest req = TtsRequest.of("m", "t", "v");
+		assertEquals("m", req.model());
+		assertEquals("t", req.input());
+		assertEquals("v", req.voice());
+		assertThrows(Exception.class, () -> TtsRequest.builder().input("t").voice("v").build());
+		assertThrows(Exception.class, () -> TtsRequest.builder().model("m").voice("v").build());
+		assertThrows(Exception.class, () -> TtsRequest.builder().model("m").input("t").build());
+	}
+
+	/** TtsResponse 工厂方法与 audioLength。 */
+	@Test
+	public void testTtsResponse() {
+		byte[] audio = new byte[]{1, 2, 3};
+		TtsResponse r1 = TtsResponse.ofAudio(audio, "mp3");
+		assertEquals(3, r1.audioLength());
+		assertEquals("mp3", r1.format());
+		assertNull(r1.url());
+		// 防御性拷贝：修改原数组不影响响应
+		audio[0] = 99;
+		assertEquals(1, r1.audio()[0]);
+		TtsResponse r2 = TtsResponse.ofUrl("http://a.mp3", "mp3", "{}");
+		assertEquals("http://a.mp3", r2.url());
+		assertEquals(0, r2.audioLength());
+		assertNull(r2.audio());
+	}
+
+	// ==================== STT 模型 ====================
+
+	/** SttRequest builder：必填校验与全字段。 */
+	@Test
+	public void testSttRequestBuilder() {
+		byte[] audio = "fake".getBytes();
+		SttRequest req = SttRequest.builder()
+			.model("whisper-1").audioData(audio).fileName("test.mp3")
+			.contentType("audio/mpeg").language("en").responseFormat("verbose_json")
+			.temperature(0.5).prompt("custom").extra("k", "v").build();
+		assertEquals("whisper-1", req.model());
+		assertEquals(4, req.audioData().length);
+		assertEquals("test.mp3", req.fileName());
+		assertEquals("audio/mpeg", req.contentType());
+		assertEquals("en", req.language());
+		assertEquals("verbose_json", req.responseFormat());
+		assertEquals(Double.valueOf(0.5), req.temperature());
+		assertEquals("custom", req.prompt());
+		assertEquals("v", req.extra().get("k"));
+		// 防御性拷贝
+		audio[0] = 99;
+		assertEquals('f', req.audioData()[0]);
+	}
+
+	/** SttRequest.of 便捷构造与必填校验。 */
+	@Test
+	public void testSttRequestOfAndValidation() {
+		byte[] audio = "x".getBytes();
+		SttRequest req = SttRequest.of("m", audio);
+		assertEquals("m", req.model());
+		assertEquals(1, req.audioData().length);
+		assertThrows(Exception.class, () -> SttRequest.builder().audioData(audio).build());
+		assertThrows(Exception.class, () -> SttRequest.builder().model("m").build());
+	}
+
+	/** SttResponse 工厂方法与字段。 */
+	@Test
+	public void testSttResponse() {
+		List<Word> words = List.of(Word.of("hello", 0.0, 1.0));
+		List<Segment> segments = List.of(Segment.of(0, 0.0, 2.0, "hello world", words));
+		SttResponse resp = SttResponse.of("hello world", "en", 2.0, segments, words, "{}");
+		assertEquals("hello world", resp.text());
+		assertEquals("en", resp.language());
+		assertEquals(Double.valueOf(2.0), resp.duration());
+		assertEquals(1, resp.segments().size());
+		assertEquals(1, resp.words().size());
+		assertEquals("hello", resp.words().get(0).word());
+		SttResponse textOnly = SttResponse.ofText("hi");
+		assertEquals("hi", textOnly.text());
+		assertTrue(textOnly.segments().isEmpty());
+		assertTrue(textOnly.words().isEmpty());
+	}
+
+	/** Word/Segment 静态工厂。 */
+	@Test
+	public void testWordAndSegment() {
+		Word w = Word.of("test", 0.5, 1.5);
+		assertEquals("test", w.word());
+		assertEquals(0.5, w.start(), 0.001);
+		assertEquals(1.5, w.end(), 0.001);
+		Segment s = Segment.of(1, 0.0, 3.0, "segment text");
+		assertEquals(1, s.id());
+		assertEquals("segment text", s.text());
+		assertTrue(s.words().isEmpty());
+	}
 }
