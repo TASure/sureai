@@ -1,0 +1,9 @@
+sureai
+Copyright 2026 sureai contributors
+
+This product includes software developed by the sureai project.
+https://github.com/TASure/sureai
+
+This product depends on sure-core (io.github.tasure:sure-core:0.2.0),
+licensed under the Apache License, Version 2.0.
+https://github.com/TASure/suretool

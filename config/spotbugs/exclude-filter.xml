@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  sureai SpotBugs 排除清单：
+  仅排除「设计意图 / 惯例性」告警，真实缺陷一律修复而非排除。
+  新增排除项必须在注释中说明理由。
+-->
+<FindBugsFilter>
+
+    <!-- 构造器参数校验抛异常（CT_CONSTRUCTOR_THROW）：
+         sureai 工具类均为 final 不可继承、无 finalize 方法，不存在 Finalizer 攻击面。 -->
+    <Match>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+
+    <!-- Boolean 包装类型显式返回 null（NP_BOOLEAN_RETURN_NULL）：
+         JSON 模型 getBool 语义刻意设计——缺失值返回 null（区别于 false）。 -->
+    <Match>
+        <Bug pattern="NP_BOOLEAN_RETURN_NULL"/>
+    </Match>
+
+    <!-- 内部可变集合直接暴露（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         JsonObject/JsonArray 为自研可变 JSON 模型，设计上即允许调用方读写，
+         与 org.json 等主流实现行为一致。 -->
+    <Match>
+        <Class name="com.sure.ai.internal.json.JsonObject"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.sure.ai.internal.json.JsonArray"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Builder 模式暂存外部集合引用（EI_EXPOSE_REP2）：
+         ChatRequest.Builder 仅在 build() 时 List.copyOf 防御性拷贝，
+         产物不可变；Builder 本身是一次性可变装配器，暂存引用是惯例。 -->
+    <Match>
+        <Class name="~com.sure.ai.model.ChatRequest\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 流式分片返回增量 toolCalls（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         ChatStreamChunk 为不可变记录，构造时已 List.copyOf；
+         返回不可变 List 供消费者读取，设计意图即只读访问。 -->
+    <Match>
+        <Class name="com.sure.ai.model.ChatStreamChunk"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 内部结果记录暴露可变 JsonObject（EI_EXPOSE_REP）：
+         PostResult 为 protected 内部传递载体，JsonObject 本身即只读解析视图。 -->
+    <Match>
+        <Class name="~com.sure.ai.client.AbstractAiClient\$PostResult"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+
+    <!-- 持锁 sleep（SWL_SLEEP_WITH_LOCK_HELD）：
+         百度 access_token 缓存刷新等待时持 synchronized 锁是有意设计，
+         保证多线程并发下只刷新一次。 -->
+    <Match>
+        <Bug pattern="SWL_SLEEP_WITH_LOCK_HELD"/>
+    </Match>
+
+</FindBugsFilter>

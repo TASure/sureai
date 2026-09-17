@@ -1,0 +1,271 @@
+/*
+ * Copyright (c) 2026 sureai contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.sure.ai.baidu;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.lang.reflect.Field;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+
+import com.sure.ai.client.AiConfig;
+import com.sure.ai.exception.AiApiException;
+import com.sure.ai.model.ChatMessage;
+import com.sure.ai.model.ChatRequest;
+import com.sure.ai.model.ChatResponse;
+import com.sure.ai.model.EmbeddingRequest;
+import com.sure.ai.model.EmbeddingResponse;
+
+/**
+ * {@link BaiduClient} 测试：本地 HttpServer mock token 与 chat 接口。
+ *
+ * @author sureai
+ * @since 0.1.0
+ */
+public class BaiduClientTest {
+
+	private static final String API_KEY = "test-ak";
+	private static final String SECRET_KEY = "test-sk";
+	private static final String TOKEN = "mock-access-token";
+
+	private HttpServer server;
+	private String baseUrl;
+	private final AtomicInteger tokenHits = new AtomicInteger();
+	private final AtomicReference<String> lastChatPath = new AtomicReference<>();
+	private final AtomicReference<String> lastChatBody = new AtomicReference<>();
+
+	/** 启动本地服务，注册 token/chat/embeddings 响应。 */
+	@Before
+	public void setUp() throws IOException {
+		this.server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		this.server.start();
+		int port = this.server.getAddress().getPort();
+		this.baseUrl = "http://127.0.0.1:" + port;
+		this.tokenHits.set(0);
+		this.lastChatPath.set(null);
+		this.lastChatBody.set(null);
+		registerHandlers();
+		setSingleton(null);
+	}
+
+	/** 停止服务。 */
+	@After
+	public void tearDown() {
+		this.server.stop(0);
+		setSingleton(null);
+	}
+
+	/** 反射设置 Util 单例。 */
+	private static void setSingleton(BaiduClient c) {
+		try {
+			Field f = BaiduUtil.class.getDeclaredField("client");
+			f.setAccessible(true);
+			f.set(null, c);
+		} catch (ReflectiveOperationException ex) {
+			throw new IllegalStateException(ex);
+		}
+	}
+
+	/** 注册 mock 路由。 */
+	private void registerHandlers() {
+		this.server.createContext("/", exchange -> {
+			String path = exchange.getRequestURI().getPath();
+			String query = exchange.getRequestURI().getQuery();
+			if (path.equals("/oauth/2.0/token")) {
+				this.tokenHits.incrementAndGet();
+				String body = "{\"access_token\":\"" + TOKEN + "\",\"expires_in\":2592000}";
+				respond(exchange, 200, body, "application/json");
+				return;
+			}
+			if (path.contains("/chat/")) {
+				this.lastChatPath.set(path + "?" + query);
+				byte[] in = exchange.getRequestBody().readAllBytes();
+				this.lastChatBody.set(new String(in, StandardCharsets.UTF_8));
+				String req = this.lastChatBody.get();
+				if (req.contains("\"stream\":true")) {
+					String sse = "data: {\"id\":\"r\",\"result\":\"你\",\"is_end\":false}\n\n"
+						+ "data: {\"id\":\"r\",\"result\":\"好\",\"is_end\":true}\n\n";
+					respond(exchange, 200, sse, "text/event-stream");
+				} else if (req.contains("\"__err__\"")) {
+					respond(exchange, 400, "{\"error_code\":110,\"error_msg\":\"invalid token\"}",
+						"application/json");
+				} else {
+					String body = "{\"id\":\"r1\",\"object\":\"chat.completion\",\"created\":1,"
+						+ "\"result\":\"你好，我是文心\",\"need_clear_history\":false,"
+						+ "\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":6,\"total_tokens\":9}}";
+					respond(exchange, 200, body, "application/json");
+				}
+				return;
+			}
+			if (path.contains("/embeddings/")) {
+				String body = "{\"id\":\"e\",\"data\":[{\"embedding\":[0.1,0.2,0.3]}],"
+					+ "\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":0,\"total_tokens\":1}}";
+				respond(exchange, 200, body, "application/json");
+				return;
+			}
+			respond(exchange, 404, "{}", "application/json");
+		});
+	}
+
+	/** 发送响应。 */
+	private static void respond(HttpExchange ex, int status, String body, String contentType) throws IOException {
+		byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+		ex.getResponseHeaders().set("Content-Type", contentType);
+		ex.sendResponseHeaders(status, bytes.length);
+		try (OutputStream os = ex.getResponseBody()) {
+			os.write(bytes);
+		}
+	}
+
+	/** 构造指向 mock 的客户端。 */
+	private BaiduClient newClient() {
+		AiConfig cfg = AiConfig.builder().apiKey(API_KEY).baseUrl(this.baseUrl)
+			.extraHeader(BaiduClient.SECRET_KEY_HEADER, SECRET_KEY).build();
+		return new BaiduClient(cfg);
+	}
+
+	/** 正常 chat：解析 result 字段，请求体无 model 字段。 */
+	@Test
+	public void testChatResultParsing() {
+		BaiduClient client = newClient();
+		ChatResponse resp = client.chat(ChatRequest.builder().model("ernie-4.0-turbo-8k")
+			.messages(ChatMessage.user("你好")).build());
+		assertEquals("你好，我是文心", resp.firstText());
+		assertEquals(9, resp.usage().totalTokens());
+		String body = this.lastChatBody.get();
+		assertTrue(body.contains("\"role\":\"user\""));
+		assertFalse("chat body must not contain model field", body.contains("\"model\""));
+		client.close();
+	}
+
+	/** token 缓存：连续两次 chat，token 接口只调用一次。 */
+	@Test
+	public void testTokenFetchedOnlyOnce() {
+		BaiduClient client = newClient();
+		client.chat(ChatRequest.builder().model("ernie-3.5-8k").messages(ChatMessage.user("a")).build());
+		client.chat(ChatRequest.builder().model("ernie-3.5-8k").messages(ChatMessage.user("b")).build());
+		assertEquals(1, this.tokenHits.get());
+		client.close();
+	}
+
+	/** access_token 在 URL 查询串中。 */
+	@Test
+	public void testAccessTokenInQuery() {
+		BaiduClient client = newClient();
+		client.chat(ChatRequest.builder().model("ernie-speed-128k").messages(ChatMessage.user("hi")).build());
+		assertTrue(this.lastChatPath.get().contains("access_token=" + TOKEN));
+		assertTrue(this.lastChatPath.get().contains("/chat/ernie-speed-128k"));
+		client.close();
+	}
+
+	/** SSE 流式聚合 result 增量，is_end=true 结束。 */
+	@Test
+	public void testStreamAggregation() {
+		BaiduClient client = newClient();
+		StringBuilder sb = new StringBuilder();
+		String[] finish = new String[1];
+		client.chatStream(ChatRequest.builder().model("ernie-lite-8k")
+			.messages(ChatMessage.user("hi")).build(), chunk -> {
+				if (chunk.deltaText() != null) {
+					sb.append(chunk.deltaText());
+				}
+				if (chunk.finishReason() != null) {
+					finish[0] = chunk.finishReason();
+				}
+			});
+		assertEquals("你好", sb.toString());
+		assertEquals("stop", finish[0]);
+		client.close();
+	}
+
+	/** 错误体 error_code/error_msg 映射到 AiApiException.errorCode。 */
+	@Test
+	public void testErrorCodeMapping() {
+		BaiduClient client = newClient();
+		ChatRequest req = ChatRequest.builder().model("ernie-3.5-8k")
+			.messages(ChatMessage.user("__err__")).build();
+		AiApiException e = assertThrows(AiApiException.class, () -> client.chat(req));
+		assertEquals(400, e.getHttpStatus());
+		assertEquals("110", e.getErrorCode());
+		assertTrue(e.getRawBody().contains("invalid token"));
+		client.close();
+	}
+
+	/** embeddings。 */
+	@Test
+	public void testEmbeddings() {
+		BaiduClient client = newClient();
+		EmbeddingResponse resp = client.embed(new EmbeddingRequest("embedding-v1", List.of("hi")));
+		assertEquals(1, resp.embeddings().size());
+		assertEquals(3, resp.embeddings().get(0).length, 0);
+		client.close();
+	}
+
+	/** name() 与默认 baseUrl。 */
+	@Test
+	public void testNameAndDefaults() {
+		assertEquals("baidu", newClient().name());
+		assertEquals("https://aip.baidubce.com", BaiduClient.DEFAULT_BASE_URL);
+	}
+
+	/** Models 常量。 */
+	@Test
+	public void testModelsConstants() {
+		assertEquals("ernie-4.0-turbo-8k", BaiduModels.ERNIE_4_0_TURBO_8K);
+		assertEquals("embedding-v1", BaiduModels.EMBEDDING_V1);
+		List<String> ids = List.of(BaiduModels.ERNIE_4_0_TURBO_8K, BaiduModels.ERNIE_3_5_8K,
+			BaiduModels.ERNIE_SPEED_128K, BaiduModels.ERNIE_LITE_8K, BaiduModels.EMBEDDING_V1);
+		for (String id : ids) {
+			assertFalse(id.isEmpty());
+		}
+	}
+
+	/** Util：init(ak, sk) + 便捷方法。 */
+	@Test
+	public void testUtilConvenience() {
+		BaiduUtil.init(API_KEY, SECRET_KEY);
+		// 指向真实默认 baseUrl 会联网，改为反射注入 mock 客户端
+		setSingleton(newClient());
+		ChatResponse resp = BaiduUtil.chat("ernie-3.5-8k", "hi");
+		assertEquals("你好，我是文心", resp.firstText());
+		assertNotNull(BaiduUtil.client());
+	}
+
+	/** Util：init(AiConfig) 不触网。 */
+	@Test
+	public void testUtilInitByConfig() {
+		BaiduUtil.init(AiConfig.builder().apiKey(API_KEY).baseUrl(this.baseUrl)
+			.extraHeader(BaiduClient.SECRET_KEY_HEADER, SECRET_KEY).build());
+		assertNotNull(BaiduUtil.client());
+	}
+}

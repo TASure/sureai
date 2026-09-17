@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: [21, 25]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Build, test and verify
+        run: mvn -B verify
+
+      - name: Upload JaCoCo coverage report
+        if: matrix.java == '21'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report-jdk${{ matrix.java }}
+          path: |
+            sure-ai-core/target/site/jacoco
+            sure-ai-openai/target/site/jacoco
+            sure-ai-azure/target/site/jacoco
+            sure-ai-anthropic/target/site/jacoco
+            sure-ai-gemini/target/site/jacoco
+            sure-ai-deepseek/target/site/jacoco
+            sure-ai-qwen/target/site/jacoco
+            sure-ai-zhipu/target/site/jacoco
+            sure-ai-moonshot/target/site/jacoco
+            sure-ai-doubao/target/site/jacoco
+            sure-ai-baidu/target/site/jacoco
+            sure-ai-ollama/target/site/jacoco
