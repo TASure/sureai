@@ -83,6 +83,9 @@ public final class ExamplesRunner {
 			case "ollama":
 				OllamaDemo.main(emptyArgs);
 				break;
+			case "rag":
+				RagDemo.main(emptyArgs);
+				break;
 			default:
 				System.out.println("未知平台：" + args[0]);
 				printUsage();
@@ -104,5 +107,6 @@ public final class ExamplesRunner {
 		System.out.println("  doubao     - 火山引擎豆包");
 		System.out.println("  baidu      - 百度千帆文心");
 		System.out.println("  ollama     - Ollama 本地模型");
+		System.out.println("  rag        - RAG 检索增强问答（基于 OpenAI）");
 	}
 }

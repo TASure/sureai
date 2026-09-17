@@ -26,6 +26,7 @@
 - **Streaming**: unified SSE streaming interface with per-chunk callback
 - **Function Calling**: tool declaration and invocation closed loop
 - **Embedding**: vector generation (see table below for supported platforms)
+- **RAG**: end-to-end retrieval-augmented generation pipeline (`sure-ai-rag`)
 - **Environment variable auto-config**: lazy-loads from `SURE_AI_*` env vars when not explicitly initialized
 - **JDK 21**: records, pattern matching, switch patterns
 
@@ -196,6 +197,33 @@ float[] vector = resp.embeddings().get(0);
 System.out.println("Vector dimensions: " + vector.length);
 ```
 
+## RAG (Retrieval-Augmented Generation)
+
+`sure-ai-rag` provides an end-to-end RAG pipeline (text splitting → embedding → similarity
+retrieval → augmented generation), decoupled from any platform. Combine any platform client
+that supports chat + embeddings:
+
+```xml
+<dependency>
+    <groupId>io.github.tasure</groupId>
+    <artifactId>sure-ai-rag</artifactId>
+    <version>0.2.0</version>
+</dependency>
+```
+
+```java
+OpenAiClient client = OpenAiClient.builder().apiKey("sk-xxx").build();
+
+RagPipeline pipeline = RagUtil.pipeline(client, client,
+        OpenAiModels.GPT_4O_MINI, OpenAiModels.TEXT_EMBEDDING_3_SMALL);
+
+pipeline.ingest("sureai-intro", "sureai is a zero-dependency Java LLM toolkit ...");
+ChatResponse answer = pipeline.ask("What capabilities does sureai support?");
+```
+
+An in-memory vector store (cosine similarity) is included; implement the `VectorStore`
+interface to plug in Milvus / FAISS / pgvector. See [docs/rag.md](docs/rag.md).
+
 ## Environment Variables
 
 | Platform | Variable | Required | Description |
@@ -230,6 +258,7 @@ sureai enforces strict module-level isolation:
 
 ```
 sure-ai-core          ← common models/interfaces/HTTP/JSON (depended on by all platforms)
+sure-ai-rag           ← RAG pipeline (depends on core; platform-agnostic)
   ├── sure-ai-openai
   ├── sure-ai-azure
   ├── sure-ai-anthropic
@@ -242,16 +271,17 @@ sure-ai-core          ← common models/interfaces/HTTP/JSON (depended on by all
   ├── sure-ai-baidu
   └── sure-ai-ollama
 sure-ai-bom           ← version BOM
-sure-ai-all           ← aggregate all platforms
+sure-ai-all           ← aggregate all platforms + RAG
 sure-ai-examples      ← usage examples
 ```
 
 **Core design principles:**
 
-- Each platform module depends only on `sure-ai-core`; **zero cross-platform dependencies**
+- Each platform module and the RAG module depend only on `sure-ai-core`; **zero cross-module dependencies**
 - Core module ships with a built-in JSON parser and SSE line reader — no third-party libraries
 - Static utilities use double-checked locking lazy init; auto-loads from env vars when not explicitly initialized
 - Platform-specific auth logic (JWT / access_token cache / custom headers) is encapsulated within each module
+- The RAG pipeline is platform-agnostic: any platform's chat + embedding clients can be combined
 
 ## Build
 

@@ -12,8 +12,9 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 - [x] BOM / all 聚合模块 / examples
 - [x] 开源治理文件与 CI
 
-## P1 — 计划中（0.2.0）
+## P1 — 进行中（0.2.0）
 
+- [x] **RAG 组件**：`sure-ai-rag` 模块——文本分块（递归字符分块）、向量存储抽象（内置进程内实现）、向量化适配、向量检索器、端到端 `RagPipeline`（索引 → 检索 → 增强 → 生成）。见 [docs/rag.md](docs/rag.md)。
 - [ ] **Spring Boot Starter**：`sure-ai-spring-boot-starter`，自动配置 + `@Autowired` 注入，配置属性 `sure.ai.<platform>.api-key` 等。
 - [ ] **重试可观测性**：重试事件回调（RetryListener），指标埋点（Micrometer 可选适配，默认无依赖）。
 - [ ] **图像生成**：DALL·E / 通义万相 / 文心一格等图像生成接口抽象（`ImageClient`）。
@@ -23,7 +24,7 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 
 ## P2 — 规划中（0.3.0+）
 
-- [ ] **RAG 组件**：文档加载器、切分器、向量存储抽象（适配 Milvus / pgvector / Chroma）。
+- [ ] **RAG 增强**：文档加载器（URL / 文件 / 爬虫）、重排序（Rerank）、混合检索（BM25 + 向量）、外部向量库适配（Milvus / pgvector / Chroma）。
 - [ ] **Prompt 模板**：变量替换、few-shot 管理、模板热加载。
 - [ ] **Agent 编排**：ReAct / Plan-and-Execute 轻量编排器，基于 sureai 原语。
 - [ ] **更多平台**：xAI (Grok)、Mistral、Cohere、Bedrock（AWS SigV4）、本地 llama.cpp server。

@@ -26,6 +26,7 @@
 - **流式调用**：统一 SSE 流式接口，逐片回调
 - **Function Calling**：工具声明与调用闭环
 - **Embedding**：向量生成（支持平台见下表）
+- **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（分块 / 向量存储 / 检索 / 增强生成）
 - **环境变量自动配置**：未显式 init 时自动从 `SURE_AI_*` 环境变量读取
 - **JDK 21**：record / pattern matching / switch 模式
 
@@ -196,6 +197,32 @@ float[] vector = resp.embeddings().get(0);
 System.out.println("向量维度: " + vector.length);
 ```
 
+## RAG 检索增强问答
+
+`sure-ai-rag` 提供端到端 RAG 管线（文本分块 → 向量化 → 相似度检索 → 增强生成），
+与平台解耦，任意支持对话 + Embedding 的平台客户端可直接组合：
+
+```xml
+<dependency>
+    <groupId>io.github.tasure</groupId>
+    <artifactId>sure-ai-rag</artifactId>
+    <version>0.2.0</version>
+</dependency>
+```
+
+```java
+OpenAiClient client = OpenAiClient.builder().apiKey("sk-xxx").build();
+
+RagPipeline pipeline = RagUtil.pipeline(client, client,
+        OpenAiModels.GPT_4O_MINI, OpenAiModels.TEXT_EMBEDDING_3_SMALL);
+
+pipeline.ingest("sureai-intro", "sureai 是一个零第三方依赖的 Java 大模型接入工具库……");
+ChatResponse answer = pipeline.ask("sureai 支持哪些能力？");
+```
+
+内置进程内向量库（余弦相似度），亦可实现 `VectorStore` 接口接入
+Milvus / FAISS / pgvector 等外部向量库。详见 [docs/rag.md](docs/rag.md)。
+
 ## 环境变量配置
 
 | 平台 | 环境变量 | 必填 | 说明 |
@@ -230,6 +257,7 @@ sureai 采用严格的模块级隔离架构：
 
 ```
 sure-ai-core          ← 公共模型/接口/HTTP/JSON（所有平台依赖此模块）
+sure-ai-rag           ← RAG 检索增强生成（依赖 core，与平台解耦）
   ├── sure-ai-openai
   ├── sure-ai-azure
   ├── sure-ai-anthropic
@@ -242,16 +270,17 @@ sure-ai-core          ← 公共模型/接口/HTTP/JSON（所有平台依赖此�
   ├── sure-ai-baidu
   └── sure-ai-ollama
 sure-ai-bom           ← 版本统一管理（BOM）
-sure-ai-all           ← 聚合引入全部平台
+sure-ai-all           ← 聚合引入全部平台与 RAG
 sure-ai-examples      ← 使用示例
 ```
 
 **核心设计原则：**
 
-- 每个平台模块只依赖 `sure-ai-core`，平台间**零依赖**
+- 每个平台模块与 RAG 模块只依赖 `sure-ai-core`，模块间**零依赖**
 - 核心模块内置自研 JSON 解析器与 SSE 行读取器，不引入第三方库
 - 静态工具类双检锁懒加载，未初始化时从环境变量自动读取
 - 各平台特有鉴权逻辑（JWT / access_token 缓存 / 自定义请求头）封装在各自模块内
+- RAG 管线与平台解耦：任意平台的对话 + Embedding 客户端可直接组合
 
 ## 构建指南
 

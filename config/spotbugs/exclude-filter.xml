@@ -60,4 +60,13 @@
         <Bug pattern="SWL_SLEEP_WITH_LOCK_HELD"/>
     </Match>
 
+    <!-- Builder 模式暂存外部组件引用（EI_EXPOSE_REP2）：
+         RagPipeline.Builder 为一次性装配器，vectorStore/splitter/retriever
+         本就是调用方提供的共享组件（VectorStore 等为有状态服务），
+         语义即按引用共享，与 ChatRequest.Builder 同类惯例。 -->
+    <Match>
+        <Class name="~com.sure.ai.rag.pipeline.RagPipeline\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>
