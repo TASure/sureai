@@ -14,11 +14,24 @@
  * limitations under the License.
  */
 
+package com.sure.ai.agent.orchestrator;
+
+import java.util.List;
+
 /**
- * Plan-and-Execute 编排子包。
+ * 结果聚合器：把多个子 Agent 的输出合并成最终答案。
  *
- * <p>提供 {@code PlanExecuteAgent}：先全局规划（JSON 数组步骤）、再分步执行
- * （可带工具调用）、最后汇总产出最终答案。支持可选的
- * {@link com.sure.ai.agent.memory.ConversationMemory} 会话记忆。</p>
+ * @author sureai
+ * @since 1.1.0
  */
-package com.sure.ai.agent.plan;
+@FunctionalInterface
+public interface ResultAggregator {
+
+	/**
+	 * 聚合子任务结果。
+	 *
+	 * @param results 子任务结果列表（与拆分顺序一致；失败项为 {@code "[ERROR: ...]"} 文本）
+	 * @return 最终答案文本
+	 */
+	String aggregate(List<String> results);
+}

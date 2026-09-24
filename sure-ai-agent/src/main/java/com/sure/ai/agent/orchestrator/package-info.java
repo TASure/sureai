@@ -15,10 +15,11 @@
  */
 
 /**
- * Plan-and-Execute 编排子包。
+ * 多 Agent 编排子包：任务拆分、并行执行、结果聚合。
  *
- * <p>提供 {@code PlanExecuteAgent}：先全局规划（JSON 数组步骤）、再分步执行
- * （可带工具调用）、最后汇总产出最终答案。支持可选的
- * {@link com.sure.ai.agent.memory.ConversationMemory} 会话记忆。</p>
+ * <p>{@link com.sure.ai.agent.orchestrator.AgentOrchestrator} 把一个大任务经
+ * {@link com.sure.ai.agent.orchestrator.TaskSplitter} 拆成子任务，提交到线程池由多个独立
+ * {@code ReActAgent} 并行处理，单任务失败/超时被隔离为 {@code "[ERROR: ...]"} 文本，
+ * 最终由 {@link com.sure.ai.agent.orchestrator.ResultAggregator} 聚合。</p>
  */
-package com.sure.ai.agent.plan;
+package com.sure.ai.agent.orchestrator;

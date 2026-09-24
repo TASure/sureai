@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Agent 深化——PlanExecuteAgent 完整实现**：重写骨架为完整 Plan-and-Execute 编排器（规划→逐步执行→汇总），三级计划解析兜底（JSON 数组→按行→单步直接回答），maxSteps+总超时双防护，单步失败重试一次后记录继续；AgentListener 新增 onPlanGenerated/onStepStart/onStepComplete 三个 default 方法（向后兼容）。
+- **Agent 深化——会话记忆 Memory**：新包 `com.sure.ai.agent.memory`——`ConversationMemory` 接口 + `InMemoryConversationMemory`（环形窗口默认 20 条，synchronized 线程安全）；ReActAgent/PlanExecuteAgent 可选注入 memory（null 时行为与旧版逐字节一致），请求时注入历史、回合结束后记录 user+assistant。
+- **Agent 深化——多 Agent 编排**：新包 `com.sure.ai.agent.orchestrator`——`TaskSplitter`/`SimpleTaskSplitter`（段落/句子/均分策略）、`ResultAggregator`/`ConcatenatingAggregator`、`AgentOrchestrator`（ExecutorService 并行执行+invokeAll 超时+异常隔离不拖垮整体）。
+- **Agent 深化——内置工具包**：新包 `com.sure.ai.agent.tool.builtin`——`HttpTool`（JDK HttpClient GET/POST，scheme 白名单+响应截断）、`DateTimeTool`（format+zone）、`CalculatorTool`（自研递归下降解析器，白名单 +-*/()，禁止 eval/反射）。
+- 新增 43 个测试（agent 模块 29→72），agent 行覆盖率 83.6%。
 - **RAG 生产化——外部向量库适配**：`sure-ai-rag` 新增 `MilvusVectorStore`（Milvus 2.x REST v2，`/v2/vectordb/entities/insert|search|delete`，Bearer 鉴权，COSINE/L2/IP 距离映射）与 `ChromaVectorStore`（Chroma REST v1，`/api/v1/collections/{id}/add|query|delete`，X-Chroma-Token，构造时 get-or-create），均 `implements VectorStore`，JDK HttpClient 零第三方依赖，本地 HttpServer mock 测试 9 个。pgvector 以文档可复制 JDBC 示例提供（不引驱动）。文档 `docs/vector-stores.md`。
 - **RAG 生产化——Prompt 模板与查询改写**：新包 `com.sure.ai.rag.prompt`——`PromptTemplate`（`{var}`/`{var=default}` 占位符、严格模式、fromResource、varargs render）、`ChatTemplate`（多消息模板 + few-shot 示例组装）；新包 `com.sure.ai.rag.rewriter`——`QueryRewriter` 接口 + `ModelQueryRewriter`（AiClient 生成多查询，按行解析，异常回退原查询），不注入 RagPipeline 默认链路（向后兼容），文档说明手动融合方式。新增 33 个测试，rag 行覆盖率 88.4%。文档 `docs/prompt-template.md`。
 - **响应缓存（core）**：`com.sure.ai.client.cache` 包——`CacheStore` SPI（get/put/remove/clear，TTL）、`ChatCacheKey` 请求归一化 SHA-256（参与字段：model/messages/temperature/topP/tools/responseFormat/reasoningEffort/thinkingConfig/grounding；不含 maxTokens/n/stream/extraHeaders，tools 按 name 排序保证顺序无关）、`LruCacheStore` 内置实现（LinkedHashMap accessOrder + synchronized，容量/TTL 可配，惰性过期）。`AiConfig` 新增 `cacheStore`/`cacheTtl`（默认 null=关闭，零开销）。`OpenAiCompatClient.chat()` 非流式请求查缓存，命中直接返回（不触发网络/指标/重试），未命中走原逻辑并回写；流式/错误不缓存。新增 19 个测试，core 行覆盖率 84.2%。文档 `docs/cache.md`（含 Redis CacheStore 可复制示例）。

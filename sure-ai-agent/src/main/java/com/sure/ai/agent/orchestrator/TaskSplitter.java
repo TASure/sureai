@@ -14,11 +14,27 @@
  * limitations under the License.
  */
 
+package com.sure.ai.agent.orchestrator;
+
+import java.util.List;
+
 /**
- * Plan-and-Execute 编排子包。
+ * 任务拆分器：把一个大任务拆成可并行执行的子任务列表。
  *
- * <p>提供 {@code PlanExecuteAgent}：先全局规划（JSON 数组步骤）、再分步执行
- * （可带工具调用）、最后汇总产出最终答案。支持可选的
- * {@link com.sure.ai.agent.memory.ConversationMemory} 会话记忆。</p>
+ * <p>多 Agent 编排的第一步：由 {@code AgentOrchestrator} 调用，
+ * 每个子任务交给一个独立的 {@code ReActAgent} 实例执行。</p>
+ *
+ * @author sureai
+ * @since 1.1.0
  */
-package com.sure.ai.agent.plan;
+@FunctionalInterface
+public interface TaskSplitter {
+
+	/**
+	 * 把原始任务拆成子任务列表。
+	 *
+	 * @param task 原始任务文本
+	 * @return 子任务列表（可能为空，不为 null）
+	 */
+	List<String> split(String task);
+}

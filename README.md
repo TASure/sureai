@@ -30,7 +30,7 @@
 - **视频生成**：`VideoClient` 统一抽象，支持 Sora / 通义万相 Wan / CogVideoX / Seedance / Azure Sora 2，全平台异步任务轮询屏蔽，对外同步返回
 - **语音 TTS/STT**：`AudioClient` 统一抽象（TTS 合成 + STT 转录），支持 OpenAI / CosyVoice / GLM-TTS / 豆包 / 百度 / Azure Speech，二进制音频 / URL / Base64 三种响应形态
 - **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（文档加载器：本地文件/URL；分块：递归字符/Markdown/固定大小；向量存储：内置 + Milvus/Chroma 外部适配；检索：向量 + BM25 关键词混合加权融合；Prompt 模板 + 查询改写；增强生成）。见 [docs/rag.md](docs/rag.md)、[docs/vector-stores.md](docs/vector-stores.md)、[docs/prompt-template.md](docs/prompt-template.md)
-- **Agent 编排（ReAct 多工具循环）**：`sure-ai-agent` 工具注册中心 + Function Calling 参数校验 + ReAct 编排器，任意 `AiClient` 可驱动，异常/超限/超时全防护
+- **Agent 编排（ReAct + Plan-and-Execute）**：`sure-ai-agent` 工具注册中心 + Function Calling 参数校验 + ReAct 编排器 + PlanExecuteAgent（规划→逐步执行→汇总，三级计划解析兜底）；多 Agent 编排（TaskSplitter/AgentOrchestrator/ResultAggregator 并行执行+异常隔离）；内置工具包（HttpTool/DateTimeTool/CalculatorTool 白名单四则）；会话记忆（ConversationMemory 环形窗口，可选注入）。任意 `AiClient` 可驱动，异常/超限/超时全防护。见 [docs/agent.md](docs/agent.md)
 - **可观测性（重试回调/指标/限流）**：`RetryListener` 重试事件回调 + `MetricsCollector` 指标埋点（内置零依赖 `AiMetrics`）+ 客户端 QPS 限流（sure-core 令牌桶），`sure-ai-micrometer` 可选 Micrometer/Prometheus 桥接，未挂载零开销。见 [docs/observability.md](docs/observability.md)
 - **响应缓存**：`ChatCacheKey` 请求归一化 SHA-256 + `CacheStore` SPI + 内置 `LruCacheStore`（LRU+TTL，纯 JDK），默认关闭零开销，命中不触发网络/指标/重试，Redis 适配见文档示例。见 [docs/cache.md](docs/cache.md)
 - **Spring Boot Starter**：`sure-ai-spring-boot-starter` 自动配置（`sure.ai.<platform>.api-key` 等属性绑定 + `@ConditionalOnProperty` 条件装配 + `@Autowired` 注入），仅 Spring Boot 工程使用，core/平台模块零 Spring 依赖。见 [docs/spring-boot.md](docs/spring-boot.md)

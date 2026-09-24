@@ -47,7 +47,10 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 - [x] **RAG 增强——外部向量库适配**：Milvus / Chroma REST 适配（`MilvusVectorStore`/`ChromaVectorStore`），pgvector 以文档 JDBC 示例提供（重排序 Rerank 已在 P1 完成）。见 [docs/vector-stores.md](docs/vector-stores.md)。
 - [x] **Prompt 模板**：`PromptTemplate`（变量替换/默认值/严格模式/fromResource）+ `ChatTemplate`（多消息/few-shot）+ `QueryRewriter` 查询改写接口与 `ModelQueryRewriter` 实现。见 [docs/prompt-template.md](docs/prompt-template.md)。
 - [x] **Agent 编排——ReAct 多工具循环**：`sure-ai-agent`（`ToolRegistry`/`ReActAgent`/`ToolArgumentValidator`/`AgentListener`/`AgentUtil`），基于 sureai 原语，见 [docs/agent.md](docs/agent.md)。
-- [ ] **Agent 编排——Plan-and-Execute**：`PlanExecuteAgent` 当前为骨架（run 抛 UnsupportedOperationException），待后续迭代实现「JSON 步骤列表 → 逐步执行 → 汇总」。
+- [x] **Agent 编排——Plan-and-Execute**：`PlanExecuteAgent` 完整实现（规划→逐步执行→汇总，三级计划解析兜底，maxSteps+超时防护），见 [docs/agent.md](docs/agent.md)。
+- [x] **Agent 编排——多 Agent 并行**：`AgentOrchestrator`（TaskSplitter 拆分+ExecutorService 并行+ResultAggregator 汇总+异常隔离）。
+- [x] **Agent 编排——内置工具包**：`HttpTool`/`DateTimeTool`/`CalculatorTool`（白名单四则递归下降解析器）。
+- [x] **Agent 编排——会话记忆**：`ConversationMemory` 接口 + `InMemoryConversationMemory`（环形窗口），ReAct/PlanExecute 可选注入。
 - [ ] **更多平台**：xAI (Grok)、Mistral、Cohere、Bedrock（AWS SigV4）、本地 llama.cpp server。
 - [x] **响应缓存**：基于 prompt hash 的本地 / Redis 缓存层。`ChatCacheKey` 归一化 + `CacheStore` SPI + `LruCacheStore`（LRU+TTL），默认关闭零开销。见 [docs/cache.md](docs/cache.md)。
 - [x] **限流**：客户端 QPS 限流已完成（`AiConfig.rateLimitQps`，基于 sure-core `RateLimiter` 令牌桶，见 [docs/observability.md](docs/observability.md)）；熔断（circuit breaker）后续规划。

@@ -26,6 +26,8 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.sure.ai.agent.AgentListener;
+import com.sure.ai.agent.memory.ConversationMemory;
+import com.sure.ai.agent.memory.InMemoryConversationMemory;
 import com.sure.ai.agent.tool.ToolRegistry;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatMessage;
@@ -243,5 +245,59 @@ public class ReActAgentTest {
 		ReActAgent agent = new ReActAgent(client, baseRequest(), registry);
 		String answer = agent.run("x");
 		assertEquals("参数非法，我重新答。", answer);
+	}
+
+	@Test
+	public void testMemoryInjectedIntoRequest() {
+		ToolRegistry registry = new ToolRegistry(); // 空：单次 chat
+		ConversationMemory memory = new InMemoryConversationMemory(10);
+		memory.add(ChatMessage.user("上一轮问题"));
+		memory.add(ChatMessage.assistant("上一轮答案"));
+
+		FakeAiClient client = new FakeAiClient().withText("这一轮答案");
+		ReActAgent agent = new ReActAgent(client, baseRequest(), registry,
+				null, 10, Duration.ofSeconds(30), memory);
+		String answer = agent.run("这一轮问题");
+		assertEquals("这一轮答案", answer);
+
+		// 请求消息顺序：base(system) → memory 历史 → 当前 user
+		List<ChatMessage> msgs = client.lastRequest().messages();
+		assertEquals(4, msgs.size());
+		assertEquals("你是助手", msgs.get(0).content());
+		assertEquals("上一轮问题", msgs.get(1).content());
+		assertEquals("上一轮答案", msgs.get(2).content());
+		assertEquals("这一轮问题", msgs.get(3).content());
+	}
+
+	@Test
+	public void testMemoryRecordsAfterRun() {
+		ToolRegistry registry = new ToolRegistry();
+		ConversationMemory memory = new InMemoryConversationMemory(10);
+
+		FakeAiClient client = new FakeAiClient().withText("助手答案");
+		ReActAgent agent = new ReActAgent(client, baseRequest(), registry,
+				null, 10, Duration.ofSeconds(30), memory);
+		agent.run("用户问题");
+
+		assertEquals(2, memory.size());
+		assertEquals("用户问题", memory.history().get(0).content());
+		assertEquals("user", memory.history().get(0).role().name().toLowerCase());
+		assertEquals("助手答案", memory.history().get(1).content());
+		assertEquals("assistant", memory.history().get(1).role().name().toLowerCase());
+	}
+
+	@Test
+	public void testNoMemoryBackwardCompatible() {
+		ToolRegistry registry = new ToolRegistry();
+		FakeAiClient client = new FakeAiClient().withText("无记忆答案");
+		// 旧构造器（不带 memory）行为不变
+		ReActAgent agent = new ReActAgent(client, baseRequest(), registry);
+		String answer = agent.run("你好");
+		assertEquals("无记忆答案", answer);
+
+		List<ChatMessage> msgs = client.lastRequest().messages();
+		// base(system) + 当前 user = 2 条，无额外历史
+		assertEquals(2, msgs.size());
+		assertEquals("你好", msgs.get(1).content());
 	}
 }

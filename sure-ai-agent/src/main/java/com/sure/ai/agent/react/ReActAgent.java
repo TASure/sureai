@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.sure.ai.agent.AgentListener;
+import com.sure.ai.agent.memory.ConversationMemory;
 import com.sure.ai.agent.tool.ToolArgumentValidator;
 import com.sure.ai.agent.tool.ToolRegistry;
 import com.sure.ai.client.AiClient;
@@ -52,6 +53,11 @@ import com.sure.tool.lang.Assert;
  * <p>registry 为空时退化为普通单次 chat（直接返回模型文本）。
  * 工具执行异常 / 参数校验失败 / 工具未注册都不会中断编排，而是把错误文本回灌模型让其自我修正。</p>
  *
+ * <p><b>会话记忆（可选）：</b>注入 {@link ConversationMemory} 后，每次 run 会把
+ * {@code memory.history()} 注入到 baseRequest 模板消息之后、当前用户消息之前
+ * （不覆盖 system prompt）；一轮结束后把当轮用户消息与助手最终答案追加进记忆。
+ * 不注入（null）时行为与历史版本完全一致。</p>
+ *
  * @author sureai
  * @since 0.3.0
  */
@@ -69,6 +75,7 @@ public final class ReActAgent {
 	private final AgentListener listener;
 	private final int maxIterations;
 	private final Duration timeout;
+	private final ConversationMemory memory;
 	private final ToolArgumentValidator validator = new ToolArgumentValidator();
 
 	/**
@@ -84,7 +91,7 @@ public final class ReActAgent {
 	}
 
 	/**
-	 * 全参构造。
+	 * 全参构造（不带会话记忆）。
 	 *
 	 * @param client        对话客户端
 	 * @param baseRequest   基础请求模板
@@ -95,6 +102,23 @@ public final class ReActAgent {
 	 */
 	public ReActAgent(AiClient client, ChatRequest baseRequest, ToolRegistry registry,
 			AgentListener listener, int maxIterations, Duration timeout) {
+		this(client, baseRequest, registry, listener, maxIterations, timeout, null);
+	}
+
+	/**
+	 * 全参构造（带可选会话记忆）。
+	 *
+	 * @param client        对话客户端
+	 * @param baseRequest   基础请求模板
+	 * @param registry      工具注册中心
+	 * @param listener      事件回调（null 表示空监听）
+	 * @param maxIterations 最大迭代轮数（≥1）
+	 * @param timeout       总超时（正时长）
+	 * @param memory        会话记忆（null 表示不启用多轮记忆）
+	 */
+	public ReActAgent(AiClient client, ChatRequest baseRequest, ToolRegistry registry,
+			AgentListener listener, int maxIterations, Duration timeout,
+			ConversationMemory memory) {
 		Assert.notNull(client, "client must not be null");
 		Assert.notNull(baseRequest, "baseRequest must not be null");
 		Assert.notNull(registry, "registry must not be null");
@@ -108,6 +132,7 @@ public final class ReActAgent {
 		} : listener;
 		this.maxIterations = maxIterations;
 		this.timeout = timeout;
+		this.memory = memory;
 	}
 
 	/**
@@ -127,20 +152,40 @@ public final class ReActAgent {
 	 */
 	public String run(String userMessage) {
 		List<ChatMessage> history = new ArrayList<>(this.baseRequest.messages());
-		if (userMessage != null && !userMessage.isBlank()) {
+		if (this.memory != null) {
+			history.addAll(this.memory.history());
+		}
+		boolean hasUserMessage = userMessage != null && !userMessage.isBlank();
+		if (hasUserMessage) {
 			history.add(ChatMessage.user(userMessage));
 		}
 		long deadline = System.nanoTime() + this.timeout.toNanos();
 
+		String finalAnswer;
 		// 无工具：退化为普通单次 chat
 		if (this.registry.isEmpty()) {
 			ChatRequest req = buildRequest(history);
 			ChatResponse resp = this.client.chat(req);
-			String text = firstText(resp);
-			this.listener.onFinish(text);
-			return text;
+			finalAnswer = firstText(resp);
+		} else {
+			finalAnswer = runLoop(history, deadline);
 		}
 
+		this.listener.onFinish(finalAnswer);
+
+		if (this.memory != null) {
+			if (hasUserMessage) {
+				this.memory.add(ChatMessage.user(userMessage));
+			}
+			this.memory.add(ChatMessage.assistant(finalAnswer));
+		}
+		return finalAnswer;
+	}
+
+	/**
+	 * ReAct 工具调用主循环：Thought → Action → Observation 直到模型给出文本答案。
+	 */
+	private String runLoop(List<ChatMessage> history, long deadline) {
 		for (int iter = 1; iter <= this.maxIterations; iter++) {
 			checkTimeout(deadline);
 			ChatResponse response = this.client.chat(buildRequest(history));
@@ -148,9 +193,7 @@ public final class ReActAgent {
 			List<ToolCall> toolCalls = message == null ? null : message.toolCalls();
 
 			if (toolCalls == null || toolCalls.isEmpty()) {
-				String finalAnswer = message == null ? "" : message.content();
-				this.listener.onFinish(finalAnswer);
-				return finalAnswer;
+				return message == null ? "" : message.content();
 			}
 
 			// 助手工具调用消息 + 每个 tool 结果消息追加进历史

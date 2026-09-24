@@ -15,10 +15,11 @@
  */
 
 /**
- * Plan-and-Execute 编排子包。
+ * 内置工具包子包：开箱即用的 {@code ToolHandler} 实现。
  *
- * <p>提供 {@code PlanExecuteAgent}：先全局规划（JSON 数组步骤）、再分步执行
- * （可带工具调用）、最后汇总产出最终答案。支持可选的
- * {@link com.sure.ai.agent.memory.ConversationMemory} 会话记忆。</p>
+ * <p>{@link com.sure.ai.agent.tool.builtin.HttpTool} 基于 JDK HttpClient 发起 GET/POST；
+ * {@link com.sure.ai.agent.tool.builtin.DateTimeTool} 返回格式化当前时间；
+ * {@link com.sure.ai.agent.tool.builtin.CalculatorTool} 用自研递归下降解析器做白名单四则运算。
+ * 每个工具都提供静态 {@code toToolFunction()} 供注册到 {@code ToolRegistry}。</p>
  */
-package com.sure.ai.agent.plan;
+package com.sure.ai.agent.tool.builtin;

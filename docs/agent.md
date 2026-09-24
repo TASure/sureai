@@ -163,8 +163,58 @@ String answer = new ReActAgent(fake, base, registry).run("西安天气？");
 | 超过总 `timeout` | 抛 `AiTimeoutException` |
 | 注册中心为空 | 退化为单次普通 chat，直接返回模型文本 |
 
-## Plan-and-Execute 状态
+## Plan-and-Execute（完整实现）
 
-`PlanExecuteAgent` 当前为**骨架**：构造器签名已对齐 `ReActAgent`，但 `run(...)` 抛
-`UnsupportedOperationException`。完整设计思路（先让模型产出 JSON 步骤列表 → 逐步执行
-→ 汇总）见类 JavaDoc，留待后续迭代。现阶段请使用 `ReActAgent`。
+`PlanExecuteAgent` 已完整实现，构造器签名与 `ReActAgent` 对齐。
+
+**流程**：
+1. **Planning**：构造规划请求（system prompt 要求 JSON 数组 `[{"step","description"}]`），调用模型获取计划
+2. **计划解析（三级兜底）**：
+   - 严格 JSON 数组：截取 `[...]` 用 `Json.parse`，对象取 `step`（缺失回退 `description`）
+   - 非严格按行：按 `\R` 切行，过滤空行/编号，≥2 行才采纳
+   - 全失败：回退单步「直接回答」
+3. **Execution**：逐步执行，每步可调用工具（复用 ReAct 风格，单步最大工具调用 3 次）；步骤失败回灌重试一次，仍失败记录 `[步骤失败]` 继续
+4. **汇总**：各步骤结果拼接为上下文，模型给出最终答案
+5. **防护**：`maxIterations`（复用为 maxSteps）+ 总 timeout
+
+**Listener 事件**：`onPlanGenerated(steps)` / `onStepStart(index, step)` / `onStepComplete(index, result)`（均为 default 空方法，向后兼容）。
+
+## 多 Agent 编排
+
+新包 `com.sure.ai.agent.orchestrator`：
+
+| 组件 | 说明 |
+|---|---|
+| `TaskSplitter` | 函数式接口 `split(String) → List<String>` |
+| `SimpleTaskSplitter` | 规则式拆分（PARAGRAPH / SENTENCE / EVEN_COUNT） |
+| `ResultAggregator` | 函数式接口 `aggregate(List<String>) → String` |
+| `ConcatenatingAggregator` | 分隔符拼接非空结果（默认 `\n---\n`） |
+| `AgentOrchestrator` | Builder：splitter/aggregator/executor/timeout/agentFactory；`execute(task)` 拆分→并行执行→异常隔离→汇总；`execute(List)` 跳过拆分 |
+
+- 并行执行：`executor.invokeAll(calls, timeout)`，单子任务失败/超时记 `[ERROR: ...]`，不拖垮整体
+- `agentFactory: Function<String, ReActAgent>` 由调用方提供 client/baseRequest/registry
+- 默认 `fixedThreadPool(4)`，JavaDoc 注明调用方负责 shutdown
+
+## 内置工具包
+
+新包 `com.sure.ai.agent.tool.builtin`，均 `implements ToolHandler`，可直接 `registry.register(HttpTool.toToolFunction(), new HttpTool())`：
+
+| 工具 | 说明 |
+|---|---|
+| `HttpTool` | JDK HttpClient GET/POST，http/https scheme 白名单，响应截断（默认 8000 字符），异常返回错误文本不抛出 |
+| `DateTimeTool` | 当前日期时间格式化，可配 format/zone |
+| `CalculatorTool` | 自研递归下降解析器，白名单 `+ - * / ( )`，支持小数/负号/空格；**禁止 eval/反射/ScriptEngine**；除零/非法表达式返回可读错误 |
+
+## 会话记忆 Memory
+
+新包 `com.sure.ai.agent.memory`：
+
+| 组件 | 说明 |
+|---|---|
+| `ConversationMemory` | 接口：add/history/clear/size |
+| `InMemoryConversationMemory` | 环形窗口（默认 20 条），synchronized 线程安全，history 返回不可变快照 |
+
+- ReActAgent/PlanExecuteAgent 可选注入（7 参构造器，旧构造器委托 memory=null）
+- 请求顺序：baseRequest.messages → memory.history() → 当前用户消息
+- 回合结束后记录 user + assistant(finalAnswer)
+- memory=null 时行为与旧版逐字节一致（向后兼容）

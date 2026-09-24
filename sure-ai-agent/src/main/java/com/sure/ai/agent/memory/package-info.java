@@ -15,10 +15,10 @@
  */
 
 /**
- * Plan-and-Execute 编排子包。
+ * 会话记忆子包：在多轮对话之间累积并注入历史消息。
  *
- * <p>提供 {@code PlanExecuteAgent}：先全局规划（JSON 数组步骤）、再分步执行
- * （可带工具调用）、最后汇总产出最终答案。支持可选的
- * {@link com.sure.ai.agent.memory.ConversationMemory} 会话记忆。</p>
+ * <p>提供 {@link com.sure.ai.agent.memory.ConversationMemory} SPI 与内置的
+ * 环形窗口实现 {@link com.sure.ai.agent.memory.InMemoryConversationMemory}，
+ * 供 ReActAgent / PlanExecuteAgent 按需注入。</p>
  */
-package com.sure.ai.agent.plan;
+package com.sure.ai.agent.memory;
