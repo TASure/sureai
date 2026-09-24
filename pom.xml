@@ -72,6 +72,11 @@
         <module>sure-ai-doubao</module>
         <module>sure-ai-baidu</module>
         <module>sure-ai-ollama</module>
+        <module>sure-ai-grok</module>
+        <module>sure-ai-mistral</module>
+        <module>sure-ai-llamacpp</module>
+        <module>sure-ai-cohere</module>
+        <module>sure-ai-benchmark</module>
         <module>sure-ai-bom</module>
         <module>sure-ai-all</module>
         <module>sure-ai-examples</module>
@@ -166,6 +171,31 @@
             <dependency>
                 <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-ollama</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-grok</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-mistral</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-llamacpp</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-cohere</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-benchmark</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

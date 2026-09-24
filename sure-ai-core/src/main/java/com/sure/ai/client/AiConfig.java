@@ -25,6 +25,7 @@ import java.util.Map;
 import com.sure.ai.client.cache.CacheStore;
 import com.sure.ai.client.observability.MetricsCollector;
 import com.sure.ai.client.observability.RetryListener;
+import com.sure.ai.client.resilience.CircuitBreaker;
 import com.sure.tool.lang.Assert;
 
 /**
@@ -50,6 +51,7 @@ public final class AiConfig {
 	private final double rateLimitQps;
 	private final CacheStore cacheStore;
 	private final Duration cacheTtl;
+	private final CircuitBreaker circuitBreaker;
 
 	private AiConfig(Builder b) {
 		this.apiKey = b.apiKey;
@@ -65,6 +67,7 @@ public final class AiConfig {
 		this.rateLimitQps = b.rateLimitQps;
 		this.cacheStore = b.cacheStore;
 		this.cacheTtl = b.cacheTtl;
+		this.circuitBreaker = b.circuitBreaker;
 	}
 
 	/**
@@ -104,6 +107,7 @@ public final class AiConfig {
 		private double rateLimitQps;
 		private CacheStore cacheStore;
 		private Duration cacheTtl;
+		private CircuitBreaker circuitBreaker;
 
 		private Builder() {
 		}
@@ -278,6 +282,20 @@ public final class AiConfig {
 		}
 
 		/**
+		 * 挂载熔断器（可选，默认 null=关闭；关闭时零开销）。
+		 *
+		 * <p>熔断在重试循环之外再包一层：OPEN 时不发起网络、不触发重试/指标/限流，
+		 * 直接快速失败。不配置时行为与之前完全一致。</p>
+		 *
+		 * @param circuitBreaker 熔断器
+		 * @return this
+		 */
+		public Builder circuitBreaker(CircuitBreaker circuitBreaker) {
+			this.circuitBreaker = circuitBreaker;
+			return this;
+		}
+
+		/**
 		 * 构建。
 		 *
 		 * @return 配置
@@ -351,5 +369,10 @@ public final class AiConfig {
 	/** 缓存 TTL，未设置时返回 null（使用 store 默认 TTL）。 */
 	public Duration cacheTtl() {
 		return this.cacheTtl;
+	}
+
+	/** 熔断器，未挂载时返回 null（熔断关闭）。 */
+	public CircuitBreaker circuitBreaker() {
+		return this.circuitBreaker;
 	}
 }

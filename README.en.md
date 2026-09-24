@@ -13,7 +13,7 @@
 |-----------|--------|-------------|-----------|
 | Third-party deps | **Zero** (JDK + built-in JSON/HTTP only) | Heavy transitive chain | Tied to Spring ecosystem |
 | Zero-config usage | **Static utility, one-line call** | Requires Builder wiring | Requires @Configuration + Beans |
-| Chinese platform coverage | **All 11 platforms** (Baidu, Zhipu, Doubao, etc.) | Partial | Partial |
+| Chinese platform coverage | **All 15 platforms** (Baidu, Zhipu, Doubao, etc.) | Partial | Partial |
 | Module isolation | **Per-module zero-dep**, pull only what you need | Monolithic | Monolithic |
 | JDK requirement | 21+ (records / pattern matching) | 17+ | 17+ |
 
@@ -34,6 +34,7 @@
 - **Observability (retry callbacks / metrics / rate limit)**: `RetryListener` retry event callbacks + `MetricsCollector` metrics (built-in zero-dependency `AiMetrics`) + client-side QPS rate limiting (sure-core token bucket), optional `sure-ai-micrometer` Micrometer/Prometheus bridge; zero overhead when not mounted. See [docs/observability.md](docs/observability.md)
 - **Response Cache**: `ChatCacheKey` request-normalized SHA-256 + `CacheStore` SPI + built-in `LruCacheStore` (LRU+TTL, pure JDK), disabled by default with zero overhead; cache hits bypass network/metrics/retry; Redis adapter example in docs. See [docs/cache.md](docs/cache.md)
 - **Spring Boot Starter**: `sure-ai-spring-boot-starter` auto-configuration (`sure.ai.<platform>.api-key` property binding + `@ConditionalOnProperty` conditional assembly + `@Autowired` injection), for Spring Boot projects only; core/platform modules have zero Spring dependency. See [docs/spring-boot.md](docs/spring-boot.md)
+- **Circuit Breaker**: `CircuitBreaker` 3-state machine (CLOSED→OPEN→HALF_OPEN), sliding-window failure count + open timeout + half-open probe, optional via `AiConfig.circuitBreaker`, disabled by default (zero overhead), nested with retry/rate-limit. See [docs/circuit-breaker.md](docs/circuit-breaker.md)
 - **Rerank**: unified `RerankClient` abstraction, Qwen qwen3-rerank integration, pluggable two-stage re-ranking in the RAG retrieval chain
 - **Structured Output**: unified `response_format` abstraction (json_object / JSON Schema), zero-dependency `JsonMapper` strong-typed record deserialization, adapted across 8 platforms
 - **Multimodal Image Understanding**: `MessagePart` content-block architecture (text + image), normalized image input across OpenAI-compatible / Gemini / Anthropic / Baidu
@@ -64,6 +65,10 @@
 | Doubao | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ Seedance (async) | ✅ seed-tts-2.0 | ✅ BigASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ console | ❌ | ❌ |
 | Baidu Qianfan | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token (auto-cached) | ✅ | ✅ | ✅ ERNIE-ViLG (async) | ❌ | ✅ DuXiaomei | ✅ Short ASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
 | Ollama | `sure-ai-ollama` | `http://localhost:11434` | None (local) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Grok (xAI) | `sure-ai-grok` | `https://api.x.ai/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| Mistral | `sure-ai-mistral` | `https://api.mistral.ai/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Cohere | `sure-ai-cohere` | `https://api.cohere.com/v2` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| llama.cpp | `sure-ai-llamacpp` | `http://localhost:8080/v1` | Optional Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 
 Aggregation modules: `sure-ai-all` (one dependency for all platforms), `sure-ai-bom` (version management).
 

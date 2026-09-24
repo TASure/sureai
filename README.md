@@ -13,7 +13,7 @@
 |------|--------|-------------|-----------|
 | 第三方依赖 | **零**（仅 JDK + 自研 JSON/HTTP） | 传递依赖链庞大 | 绑定 Spring 生态 |
 | 开箱即用 | **静态工具类一行调用** | 需 Builder 装配 | 需 @Configuration + Bean |
-| 国产平台覆盖 | **11 个平台全覆盖**（含百度、智谱、豆包等） | 部分覆盖 | 部分覆盖 |
+| 国产平台覆盖 | **15 个平台全覆盖**（含百度、智谱、豆包等） | 部分覆盖 | 部分覆盖 |
 | 模块隔离 | **模块级零依赖**，只引入需要的平台 | 整体引入 | 整体引入 |
 | JDK 要求 | 21+（record/pattern matching） | 17+ | 17+ |
 
@@ -22,7 +22,7 @@
 - **零第三方运行期依赖**：内置轻量 JSON 解析与 HTTP 客户端，不引入 OkHttp/Jackson/Netty
 - **静态工具类开箱即用**：`OpenAiUtil.chat(model, prompt)` 一行完成对话
 - **模块级隔离**：只引入需要的平台模块，不引入无关依赖
-- **国产平台全覆盖**：OpenAI / Azure / Anthropic / Gemini / DeepSeek / 通义千问 / 智谱 / Moonshot / 豆包 / 百度千帆 / Ollama
+- **国产平台全覆盖**：OpenAI / Azure / Anthropic / Gemini / DeepSeek / 通义千问 / 智谱 / Moonshot / 豆包 / 百度千帆 / Ollama / Grok / Mistral / Cohere / llama.cpp
 - **流式调用**：统一 SSE 流式接口，逐片回调
 - **Function Calling**：工具声明与调用闭环
 - **Embedding**：向量生成（支持平台见下表）
@@ -34,6 +34,7 @@
 - **可观测性（重试回调/指标/限流）**：`RetryListener` 重试事件回调 + `MetricsCollector` 指标埋点（内置零依赖 `AiMetrics`）+ 客户端 QPS 限流（sure-core 令牌桶），`sure-ai-micrometer` 可选 Micrometer/Prometheus 桥接，未挂载零开销。见 [docs/observability.md](docs/observability.md)
 - **响应缓存**：`ChatCacheKey` 请求归一化 SHA-256 + `CacheStore` SPI + 内置 `LruCacheStore`（LRU+TTL，纯 JDK），默认关闭零开销，命中不触发网络/指标/重试，Redis 适配见文档示例。见 [docs/cache.md](docs/cache.md)
 - **Spring Boot Starter**：`sure-ai-spring-boot-starter` 自动配置（`sure.ai.<platform>.api-key` 等属性绑定 + `@ConditionalOnProperty` 条件装配 + `@Autowired` 注入），仅 Spring Boot 工程使用，core/平台模块零 Spring 依赖。见 [docs/spring-boot.md](docs/spring-boot.md)
+- **熔断器**：`CircuitBreaker` 三态状态机（CLOSED→OPEN→HALF_OPEN），滑动窗口失败计数+OPEN超时+HALF_OPEN探测，`AiConfig.circuitBreaker` 可选注入，默认关闭零开销，与重试/限流嵌套协作。见 [docs/circuit-breaker.md](docs/circuit-breaker.md)
 - **Rerank 重排序**：`RerankClient` 统一抽象，通义千问 qwen3-rerank 接入，二阶段精排可无缝接入 RAG 检索链路
 - **结构化输出**：`response_format` 统一抽象（json_object / JSON Schema），`JsonMapper` 零依赖强类型 record 反序列化，8 平台适配
 - **多模态图像理解**：`MessagePart` 内容块架构（文本 + 图片），OpenAI 兼容 / Gemini / Anthropic / 百度 图片输入归一
@@ -64,6 +65,10 @@
 | 豆包 | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ Seedance（异步） | ✅ seed-tts-2.0 | ✅ 录音文件识别 | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ 控制台 | ❌ | ❌ |
 | 百度千帆 | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token（自动缓存） | ✅ | ✅ | ✅ 文心一格（异步） | ❌ | ✅ 度小美 | ✅ 短语音识别 | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
 | Ollama | `sure-ai-ollama` | `http://localhost:11434` | 无（本地服务） | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Grok (xAI) | `sure-ai-grok` | `https://api.x.ai/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| Mistral | `sure-ai-mistral` | `https://api.mistral.ai/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Cohere | `sure-ai-cohere` | `https://api.cohere.com/v2` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| llama.cpp | `sure-ai-llamacpp` | `http://localhost:8080/v1` | 可选 Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 
 聚合模块：`sure-ai-all`（一个依赖引入全部平台）、`sure-ai-bom`（版本统一管理）。
 

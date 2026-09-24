@@ -37,6 +37,7 @@ import java.util.logging.Logger;
 
 import com.sure.ai.client.observability.MetricsCollector;
 import com.sure.ai.client.observability.RetryListener;
+import com.sure.ai.client.resilience.CircuitBreaker;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiAuthException;
 import com.sure.ai.exception.AiException;
@@ -57,6 +58,10 @@ import com.sure.tool.thread.RateLimiter;
  * 内置重试事件回调（{@link RetryListener}）、指标埋点（{@link MetricsCollector}）与
  * 客户端限流（{@link RateLimiter}）。未挂载时行为与重构前完全一致。</p>
  *
+ * <p>熔断（{@link CircuitBreaker}）：在重试循环之外再包一层——重试是单次请求内部的
+ * 指数退避，熔断是跨请求的故障状态机。未配置（null）时零开销，行为与之前完全一致；
+ * OPEN 时不发起网络、不触发重试/指标/限流，直接快速失败。</p>
+ *
  * @author sureai
  * @since 0.1.0
  */
@@ -74,6 +79,9 @@ public abstract class AbstractAiClient {
 	/** 客户端限流器，rateLimitQps &lt;= 0 时为 null（关闭，零开销） */
 	private final RateLimiter rateLimiter;
 
+	/** 熔断器，未配置时为 null（关闭，零开销） */
+	private final CircuitBreaker circuitBreaker;
+
 	/**
 	 * 构造并根据配置构建 HttpClient。
 	 *
@@ -89,6 +97,7 @@ public abstract class AbstractAiClient {
 		}
 		this.httpClient = cb.build();
 		this.rateLimiter = config.rateLimitQps() > 0 ? new RateLimiter(config.rateLimitQps()) : null;
+		this.circuitBreaker = config.circuitBreaker();
 	}
 
 	/** 解析 host:port 为 SocketAddress。 */
@@ -234,7 +243,45 @@ public abstract class AbstractAiClient {
 	}
 
 	/**
-	 * 统一重试执行模板：限流 → 指标开始 → 发送 → 2xx 成功 / 可重试退避 / 耗尽 mapError。
+	 * 统一执行模板（熔断外层）：熔断放行 → 重试内层。
+	 *
+	 * <p>熔断在重试循环之外再包一层：重试是单次请求内部的退避，熔断是跨请求的状态机。
+	 * 未配置熔断器（null）时直接走内层，零开销；配置后，OPEN 时 {@link CircuitBreaker#allowRequest()}
+	 * 返回 false，直接抛 {@link AiException} 快速失败——不发起网络、不触发重试/指标/限流。
+	 * 请求成功回调 {@link CircuitBreaker#onSuccess()}，任何异常回调 {@link CircuitBreaker#onFailure()}
+	 * 后原样抛出。</p>
+	 *
+	 * @param path            请求路径（回调与指标用）
+	 * @param requestSupplier 每次 attempt 构建一个新请求（含重试）
+	 * @param handler         响应体处理器
+	 * @param successMapper   2xx 时把响应体映射为最终结果
+	 * @param errorBodyReader 非 2xx 时把响应体读为错误字符串
+	 * @param <T>             响应体类型
+	 * @param <R>             最终结果类型
+	 * @return successMapper 的结果
+	 */
+	private <T, R> R executeWithRetry(String path, Supplier<HttpRequest> requestSupplier,
+			HttpResponse.BodyHandler<T> handler, Function<T, R> successMapper,
+			BiFunction<Integer, T, String> errorBodyReader) {
+		CircuitBreaker cb = this.circuitBreaker;
+		if (cb == null) {
+			return executeWithRetryInner(path, requestSupplier, handler, successMapper, errorBodyReader);
+		}
+		if (!cb.allowRequest()) {
+			throw new AiException("Circuit breaker is OPEN for " + getClass().getSimpleName());
+		}
+		try {
+			R result = executeWithRetryInner(path, requestSupplier, handler, successMapper, errorBodyReader);
+			cb.onSuccess();
+			return result;
+		} catch (Exception ex) {
+			cb.onFailure();
+			throw ex;
+		}
+	}
+
+	/**
+	 * 统一重试执行内层：限流 → 指标开始 → 发送 → 2xx 成功 / 可重试退避 / 耗尽 mapError。
 	 *
 	 * <p>重试语义与重构前完全一致：429/500/502/503/504 可重试，Retry-After 优先、
 	 * 否则 1s/2s/4s 指数退避，最多 maxRetries 次。IO/中断异常不重试，直接映射抛出。</p>
@@ -248,7 +295,7 @@ public abstract class AbstractAiClient {
 	 * @param <R>             最终结果类型
 	 * @return successMapper 的结果
 	 */
-	private <T, R> R executeWithRetry(String path, Supplier<HttpRequest> requestSupplier,
+	private <T, R> R executeWithRetryInner(String path, Supplier<HttpRequest> requestSupplier,
 			HttpResponse.BodyHandler<T> handler, Function<T, R> successMapper,
 			BiFunction<Integer, T, String> errorBodyReader) {
 		MetricsCollector mc = this.config.metricsCollector();

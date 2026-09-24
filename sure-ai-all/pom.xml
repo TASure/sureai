@@ -94,5 +94,21 @@
             <groupId>io.github.tasure</groupId>
             <artifactId>sure-ai-ollama</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-grok</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-mistral</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-llamacpp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-cohere</artifactId>
+        </dependency>
     </dependencies>
 </project>

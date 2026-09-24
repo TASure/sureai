@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Spring Boot Starter**：新模块 `sure-ai-spring-boot-starter`（`com.sure.ai.boot` 包）——`SureAiProperties`（`@ConfigurationProperties(prefix="sure.ai")`，11 平台嵌套属性 + rag/agent 预留）、`SureAiAutoConfiguration`（`@AutoConfiguration`，11 平台 `@Bean` + `@ConditionalOnMissingBean` + `@ConditionalOnProperty(name="api-key")`，缺 key 不装配）、`AutoConfiguration.imports` 注册。`spring-boot-autoconfigure` 仅本模块 compile，不进 sure-ai-all、不进运行期依赖链，core/平台模块零 Spring 依赖。5 个 `ApplicationContextRunner` 测试。文档 `docs/spring-boot.md`。
 - 开发治理：引入「软件研发小组」团队配置（`.team/`：manifest + team.yml + a1..a5 角色定义），新增 `docs/TEAM.md` 说明协作模式与迭代角色链（统筹 → 需求/验收 → 架构 → 实现 → 独立质检），README 中英文同步。
 
+- **可靠性——熔断器**：新包 `com.sure.ai.client.resilience`——`CircuitBreaker` 三态状态机（CLOSED→OPEN→HALF_OPEN），滑动窗口失败计数（默认5次内3次失败）+ OPEN超时（默认10s）+ HALF_OPEN探测（默认1次），ReentrantLock线程安全，Snapshot不可变快照；`AiConfig.circuitBreaker` 可选注入，默认关闭零开销；`AbstractAiClient.executeWithRetry` 最外层包裹，OPEN时快速失败不发网络/不触发重试/指标/限流，与重试嵌套协作。新增12测试，core行覆盖率85.7%。文档 `docs/circuit-breaker.md`。
+- **性能基准——JMH Benchmark**：新模块 `sure-ai-benchmark`（test scope，不进all/运行期链），jmh-core 1.37，4个基准类（JsonBenchmark/ChatRequestBenchmark/OpenAiCompatClientBenchmark/SseParseBenchmark），jacoco/spotbugs skip，默认verify不执行。文档 `docs/benchmark.md`。
+- **新平台——Grok (xAI)**：`sure-ai-grok`，OpenAI兼容（base https://api.x.ai/v1），chat/stream/models，无Embeddings（embed抛AiException），reasoning_effort透传，10测试，行覆盖率73.2%。
+- **新平台——Mistral**：`sure-ai-mistral`，OpenAI兼容（base https://api.mistral.ai/v1），chat/stream/embed/models，10测试，行覆盖率70.2%。
+- **新平台——Cohere v2**：`sure-ai-cohere`，独立协议（base https://api.cohere.com/v2），POST /chat（响应message.content[].text，无choices）、POST /embed（input_type必填，响应embeddings.float）、SSE命名事件流（content-delta/message-end，无[DONE]），无models列表API，4测试，行覆盖率61.8%。
+- **新平台——llama.cpp**：`sure-ai-llamacpp`，OpenAI兼容本地服务器（base http://localhost:8080/v1，可选鉴权），chat/stream/embed/models，10测试，行覆盖率92.7%。
+- 全量25模块701测试全绿（+46）。
 ## [1.0.0] - 2026-09-17
 
 ### Added
