@@ -2,6 +2,8 @@
 
 sureai 的演进路线图。欢迎通过 Issue 提交建议。
 
+> 治理：后续迭代由「软件研发小组」负责（统筹 → 需求/验收 → 架构 → 实现 → 独立质检），详见 [docs/TEAM.md](docs/TEAM.md)。
+
 ## P0 — 已完成（0.1.0）
 
 - [x] 多模块 Maven 工程骨架与质量门禁（jacoco / checkstyle / spotbugs / license）

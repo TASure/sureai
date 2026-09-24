@@ -457,6 +457,10 @@ This runs: compile → unit tests → checkstyle → spotbugs → jacoco coverag
 
 Issues and PRs are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Development & Governance Team
+
+Future iterations are run by the **Software R&D Team**: the team lead orchestrates scope & acceptance, the product manager defines requirements & acceptance criteria, the software architect designs modules & APIs, the engineer implements, and a full-stack code reviewer independently audits (P0/P1/P2 triage). See [docs/TEAM.md](docs/TEAM.md); machine-readable config lives in [`.team/`](.team/).
+
 ## License
 
 [Apache License 2.0](LICENSE) © sureai contributors

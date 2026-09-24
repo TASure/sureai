@@ -456,6 +456,10 @@ mvn -B clean verify
 
 欢迎提交 Issue 和 PR！详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+## 开发与治理团队
+
+后续迭代由「软件研发小组」负责：小组长统筹需求与验收，产品经理定需求与验收标准，软件架构师做模块与 API 设计，研发工程师实现，全栈代码质检官独立审查（P0/P1/P2 分级）。详见 [docs/TEAM.md](docs/TEAM.md)，机器可读配置见 [`.team/`](.team/)。
+
 ## License
 
 [Apache License 2.0](LICENSE) © sureai contributors

@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "type": "team",
+  "units": [
+    {
+      "unit_type": "team",
+      "ref": "t1",
+      "data": {
+        "leader_ref": "a1"
+      }
+    },
+    {
+      "unit_type": "agent",
+      "ref": "a1",
+      "data": {
+        "agent_type": "AILY_PERSONAL",
+        "team_ref": "t1"
+      }
+    },
+    {
+      "unit_type": "agent",
+      "ref": "a2",
+      "data": {
+        "agent_type": "AILY_PERSONAL",
+        "team_ref": "t1",
+        "parent_ref": "a1"
+      }
+    },
+    {
+      "unit_type": "agent",
+      "ref": "a3",
+      "data": {
+        "agent_type": "AILY_PERSONAL",
+        "team_ref": "t1",
+        "parent_ref": "a1"
+      }
+    },
+    {
+      "unit_type": "agent",
+      "ref": "a4",
+      "data": {
+        "agent_type": "AILY_PERSONAL",
+        "team_ref": "t1",
+        "parent_ref": "a1"
+      }
+    },
+    {
+      "unit_type": "agent",
+      "ref": "a5",
+      "data": {
+        "agent_type": "AILY_PERSONAL",
+        "team_ref": "t1",
+        "parent_ref": "a1"
+      }
+    }
+  ]
+}

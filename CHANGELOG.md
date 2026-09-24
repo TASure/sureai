@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- 开发治理：引入「软件研发小组」团队配置（`.team/`：manifest + team.yml + a1..a5 角色定义），新增 `docs/TEAM.md` 说明协作模式与迭代角色链（统筹 → 需求/验收 → 架构 → 实现 → 独立质检），README 中英文同步。
+
 ## [1.0.0] - 2026-09-17
 
 ### Added
