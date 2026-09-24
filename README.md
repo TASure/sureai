@@ -29,7 +29,7 @@
 - **图像生成**：`ImageClient` 统一抽象，支持 DALL·E / 通义万相 / CogView / 文心一格 / Gemini Imagen，异步平台内部轮询屏蔽，对外同步返回
 - **视频生成**：`VideoClient` 统一抽象，支持 Sora / 通义万相 Wan / CogVideoX / Seedance / Azure Sora 2，全平台异步任务轮询屏蔽，对外同步返回
 - **语音 TTS/STT**：`AudioClient` 统一抽象（TTS 合成 + STT 转录），支持 OpenAI / CosyVoice / GLM-TTS / 豆包 / 百度 / Azure Speech，二进制音频 / URL / Base64 三种响应形态
-- **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（文档加载器：本地文件/URL；分块：递归字符/Markdown/固定大小；向量存储；检索：向量 + BM25 关键词混合加权融合；增强生成）
+- **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（文档加载器：本地文件/URL；分块：递归字符/Markdown/固定大小；向量存储：内置 + Milvus/Chroma 外部适配；检索：向量 + BM25 关键词混合加权融合；Prompt 模板 + 查询改写；增强生成）。见 [docs/rag.md](docs/rag.md)、[docs/vector-stores.md](docs/vector-stores.md)、[docs/prompt-template.md](docs/prompt-template.md)
 - **Agent 编排（ReAct 多工具循环）**：`sure-ai-agent` 工具注册中心 + Function Calling 参数校验 + ReAct 编排器，任意 `AiClient` 可驱动，异常/超限/超时全防护
 - **可观测性（重试回调/指标/限流）**：`RetryListener` 重试事件回调 + `MetricsCollector` 指标埋点（内置零依赖 `AiMetrics`）+ 客户端 QPS 限流（sure-core 令牌桶），`sure-ai-micrometer` 可选 Micrometer/Prometheus 桥接，未挂载零开销。见 [docs/observability.md](docs/observability.md)
 - **响应缓存**：`ChatCacheKey` 请求归一化 SHA-256 + `CacheStore` SPI + 内置 `LruCacheStore`（LRU+TTL，纯 JDK），默认关闭零开销，命中不触发网络/指标/重试，Redis 适配见文档示例。见 [docs/cache.md](docs/cache.md)

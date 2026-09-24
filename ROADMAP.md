@@ -44,8 +44,8 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 - [x] **RAG 增强——文档加载器**：`DocumentLoader` + `TxtDocumentLoader`（本地文件/输入流/字符串）+ `UrlDocumentLoader`（JDK HttpClient + 基础 HTML 去标签）。见 [docs/rag.md](docs/rag.md#文档加载器)。
 - [x] **RAG 增强——混合检索**：`KeywordRetriever`（BM25 纯 JDK 实现）+ `HybridRetriever`（向量 + 关键词加权融合，可配权重）。见 [docs/rag.md](docs/rag.md#混合检索)。
 - [x] **RAG 增强——分块策略扩展**：`MarkdownTextSplitter`（按标题层级分块、保留标题上下文）+ `FixedSizeTextSplitter`（固定字符大小 + 重叠）。
-- [ ] **RAG 增强——外部向量库适配**：Milvus / pgvector / Chroma（重排序 Rerank 已在 P1 完成）。
-- [ ] **Prompt 模板**：变量替换、few-shot 管理、模板热加载。
+- [x] **RAG 增强——外部向量库适配**：Milvus / Chroma REST 适配（`MilvusVectorStore`/`ChromaVectorStore`），pgvector 以文档 JDBC 示例提供（重排序 Rerank 已在 P1 完成）。见 [docs/vector-stores.md](docs/vector-stores.md)。
+- [x] **Prompt 模板**：`PromptTemplate`（变量替换/默认值/严格模式/fromResource）+ `ChatTemplate`（多消息/few-shot）+ `QueryRewriter` 查询改写接口与 `ModelQueryRewriter` 实现。见 [docs/prompt-template.md](docs/prompt-template.md)。
 - [x] **Agent 编排——ReAct 多工具循环**：`sure-ai-agent`（`ToolRegistry`/`ReActAgent`/`ToolArgumentValidator`/`AgentListener`/`AgentUtil`），基于 sureai 原语，见 [docs/agent.md](docs/agent.md)。
 - [ ] **Agent 编排——Plan-and-Execute**：`PlanExecuteAgent` 当前为骨架（run 抛 UnsupportedOperationException），待后续迭代实现「JSON 步骤列表 → 逐步执行 → 汇总」。
 - [ ] **更多平台**：xAI (Grok)、Mistral、Cohere、Bedrock（AWS SigV4）、本地 llama.cpp server。
