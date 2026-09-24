@@ -177,4 +177,17 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- AiConfig 暴露调用方注入的 CacheStore SPI 引用（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         CacheStore 是调用方提供的共享有状态组件（内置 LruCacheStore 或外部 Redis 实现），
+         客户端按引用持有、不拥有其生命周期，与 metricsCollector / RagPipeline.Builder 暂存
+         共享组件同类惯例；调用方负责 store 的跨客户端共享与关闭。 -->
+    <Match>
+        <Class name="com.sure.ai.client.AiConfig"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="~com.sure.ai.client.AiConfig\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>

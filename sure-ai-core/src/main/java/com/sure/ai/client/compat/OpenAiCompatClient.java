@@ -28,6 +28,8 @@ import com.sure.ai.client.AiClient;
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AudioClient;
+import com.sure.ai.client.cache.CacheStore;
+import com.sure.ai.client.cache.ChatCacheKey;
 import com.sure.ai.client.EmbeddingClient;
 import com.sure.ai.client.FineTuneClient;
 import com.sure.ai.client.ImageClient;
@@ -149,9 +151,35 @@ public class OpenAiCompatClient extends AbstractAiClient
 
 	@Override
 	public ChatResponse chat(ChatRequest request) {
+		CacheStore cache = this.config.cacheStore();
+		if (cache != null && !request.stream()) {
+			return chatWithCache(request, cache);
+		}
 		JsonObject body = buildChatBody(request, false);
 		PostResult result = doPostRaw(this.chatPath, body);
 		return parseChatResponse(result.json(), result.rawBody());
+	}
+
+	/**
+	 * 带缓存的非流式 chat：命中直接返回（不触发网络/指标/重试），未命中走网络并回写。
+	 *
+	 * <p>设计说明：缓存命中意味着没有真实 HTTP 请求，因此不触发
+	 * {@code MetricsCollector} 的 onRequestStart/Success、也不计数重试；这是刻意的取舍——
+	 * 缓存命中不属于一次真实的模型调用。错误响应在 {@code doPostRaw} 阶段即抛出，
+	 * 不会进入缓存写入路径。</p>
+	 */
+	private ChatResponse chatWithCache(ChatRequest request, CacheStore cache) {
+		String key = ChatCacheKey.of(request);
+		ChatResponse cached = cache.get(key);
+		if (cached != null) {
+			return cached;
+		}
+		JsonObject body = buildChatBody(request, false);
+		PostResult result = doPostRaw(this.chatPath, body);
+		ChatResponse response = parseChatResponse(result.json(), result.rawBody());
+		long ttlMillis = this.config.cacheTtl() == null ? -1L : this.config.cacheTtl().toMillis();
+		cache.put(key, response, ttlMillis);
+		return response;
 	}
 
 	@Override

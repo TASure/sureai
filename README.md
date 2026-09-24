@@ -32,6 +32,8 @@
 - **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（文档加载器：本地文件/URL；分块：递归字符/Markdown/固定大小；向量存储；检索：向量 + BM25 关键词混合加权融合；增强生成）
 - **Agent 编排（ReAct 多工具循环）**：`sure-ai-agent` 工具注册中心 + Function Calling 参数校验 + ReAct 编排器，任意 `AiClient` 可驱动，异常/超限/超时全防护
 - **可观测性（重试回调/指标/限流）**：`RetryListener` 重试事件回调 + `MetricsCollector` 指标埋点（内置零依赖 `AiMetrics`）+ 客户端 QPS 限流（sure-core 令牌桶），`sure-ai-micrometer` 可选 Micrometer/Prometheus 桥接，未挂载零开销。见 [docs/observability.md](docs/observability.md)
+- **响应缓存**：`ChatCacheKey` 请求归一化 SHA-256 + `CacheStore` SPI + 内置 `LruCacheStore`（LRU+TTL，纯 JDK），默认关闭零开销，命中不触发网络/指标/重试，Redis 适配见文档示例。见 [docs/cache.md](docs/cache.md)
+- **Spring Boot Starter**：`sure-ai-spring-boot-starter` 自动配置（`sure.ai.<platform>.api-key` 等属性绑定 + `@ConditionalOnProperty` 条件装配 + `@Autowired` 注入），仅 Spring Boot 工程使用，core/平台模块零 Spring 依赖。见 [docs/spring-boot.md](docs/spring-boot.md)
 - **Rerank 重排序**：`RerankClient` 统一抽象，通义千问 qwen3-rerank 接入，二阶段精排可无缝接入 RAG 检索链路
 - **结构化输出**：`response_format` 统一抽象（json_object / JSON Schema），`JsonMapper` 零依赖强类型 record 反序列化，8 平台适配
 - **多模态图像理解**：`MessagePart` 内容块架构（文本 + 图片），OpenAI 兼容 / Gemini / Anthropic / 百度 图片输入归一

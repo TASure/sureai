@@ -60,6 +60,7 @@
         <module>sure-ai-rag</module>
         <module>sure-ai-agent</module>
         <module>sure-ai-micrometer</module>
+        <module>sure-ai-spring-boot-starter</module>
         <module>sure-ai-openai</module>
         <module>sure-ai-azure</module>
         <module>sure-ai-anthropic</module>

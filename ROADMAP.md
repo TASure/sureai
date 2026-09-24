@@ -17,7 +17,7 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 ## P1 — 进行中（0.2.0）
 
 - [x] **RAG 组件**：`sure-ai-rag` 模块——文本分块（递归字符分块）、向量存储抽象（内置进程内实现）、向量化适配、向量检索器、端到端 `RagPipeline`（索引 → 检索 → 增强 → 生成）。见 [docs/rag.md](docs/rag.md)。
-- [ ] **Spring Boot Starter**：`sure-ai-spring-boot-starter`，自动配置 + `@Autowired` 注入，配置属性 `sure.ai.<platform>.api-key` 等。
+- [x] **Spring Boot Starter**：`sure-ai-spring-boot-starter`，自动配置 + `@Autowired` 注入，配置属性 `sure.ai.<platform>.api-key` 等。见 [docs/spring-boot.md](docs/spring-boot.md)。
 - [x] **重试可观测性**：重试事件回调（RetryListener），指标埋点（内置零依赖 AiMetrics + Micrometer 可选适配），见 [docs/observability.md](docs/observability.md)。
 - [x] **图像生成**：`ImageClient` 抽象 + 6 平台接入（OpenAI DALL·E / Azure / 通义万相 / 智谱 CogView / 文心一格 / Gemini），异步平台内部轮询屏蔽，对外同步返回。见 [docs/images.md](docs/images.md)。
 - [x] **视频生成**：`VideoClient` 抽象 + 5 平台接入（OpenAI Sora / 通义万相 Wan / 智谱 CogVideoX / 火山 Seedance / Azure Sora 2），全平台异步任务轮询屏蔽，对外同步返回。见 [docs/video.md](docs/video.md)。
@@ -49,7 +49,7 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 - [x] **Agent 编排——ReAct 多工具循环**：`sure-ai-agent`（`ToolRegistry`/`ReActAgent`/`ToolArgumentValidator`/`AgentListener`/`AgentUtil`），基于 sureai 原语，见 [docs/agent.md](docs/agent.md)。
 - [ ] **Agent 编排——Plan-and-Execute**：`PlanExecuteAgent` 当前为骨架（run 抛 UnsupportedOperationException），待后续迭代实现「JSON 步骤列表 → 逐步执行 → 汇总」。
 - [ ] **更多平台**：xAI (Grok)、Mistral、Cohere、Bedrock（AWS SigV4）、本地 llama.cpp server。
-- [ ] **响应缓存**：基于 prompt hash 的本地 / Redis 缓存层。
+- [x] **响应缓存**：基于 prompt hash 的本地 / Redis 缓存层。`ChatCacheKey` 归一化 + `CacheStore` SPI + `LruCacheStore`（LRU+TTL），默认关闭零开销。见 [docs/cache.md](docs/cache.md)。
 - [x] **限流**：客户端 QPS 限流已完成（`AiConfig.rateLimitQps`，基于 sure-core `RateLimiter` 令牌桶，见 [docs/observability.md](docs/observability.md)）；熔断（circuit breaker）后续规划。
 - [ ] **Benchmark**：JMH 性能基准（序列化 / 反序列化 / 客户端吞吐）。
 

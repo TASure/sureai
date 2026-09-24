@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (c) 2026 sureai contributors
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.tasure</groupId>
+        <artifactId>sureai</artifactId>
+        <version>1.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>sure-ai-spring-boot-starter</artifactId>
+    <packaging>jar</packaging>
+    <name>sureai-spring-boot-starter</name>
+    <description>Spring Boot 自动装配 Starter：在 Spring Boot 工程中按配置自动注册各平台 AiClient Bean。
+        红线：spring 依赖仅限本模块，core 与各平台模块运行期零第三方依赖；本模块不进 sure-ai-all 聚合。</description>
+
+    <properties>
+        <!-- 固定 spring-boot BOM 版本（仅本模块内部使用，不上提父 POM dependencyManagement） -->
+        <spring-boot.version>3.3.5</spring-boot.version>
+        <!-- Starter 为自动装配骨架：无业务分支，跳过 JaCoCo 行覆盖率门禁（参考 suretool 惯例） -->
+        <jacoco.skip>true</jacoco.skip>
+        <!-- 自动配置骨架类跳过 SpotBugs 深度扫描（理由见类 JavaDoc） -->
+        <spotbugs.skip>true</spotbugs.skip>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- 聚合全部平台客户端（sure-ai-all 为 pom 打包，type=pom 传递引入 core 与各平台模块） -->
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-all</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+        </dependency>
+        <!-- 自动装配注解与条件（compile，仅限本模块，不污染 core/平台模块） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <!-- 配置元数据生成（可选，不影响运行期） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- 轻量容器测试（ApplicationContextRunner），test 作用域 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

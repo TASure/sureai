@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **响应缓存（core）**：`com.sure.ai.client.cache` 包——`CacheStore` SPI（get/put/remove/clear，TTL）、`ChatCacheKey` 请求归一化 SHA-256（参与字段：model/messages/temperature/topP/tools/responseFormat/reasoningEffort/thinkingConfig/grounding；不含 maxTokens/n/stream/extraHeaders，tools 按 name 排序保证顺序无关）、`LruCacheStore` 内置实现（LinkedHashMap accessOrder + synchronized，容量/TTL 可配，惰性过期）。`AiConfig` 新增 `cacheStore`/`cacheTtl`（默认 null=关闭，零开销）。`OpenAiCompatClient.chat()` 非流式请求查缓存，命中直接返回（不触发网络/指标/重试），未命中走原逻辑并回写；流式/错误不缓存。新增 19 个测试，core 行覆盖率 84.2%。文档 `docs/cache.md`（含 Redis CacheStore 可复制示例）。
+- **Spring Boot Starter**：新模块 `sure-ai-spring-boot-starter`（`com.sure.ai.boot` 包）——`SureAiProperties`（`@ConfigurationProperties(prefix="sure.ai")`，11 平台嵌套属性 + rag/agent 预留）、`SureAiAutoConfiguration`（`@AutoConfiguration`，11 平台 `@Bean` + `@ConditionalOnMissingBean` + `@ConditionalOnProperty(name="api-key")`，缺 key 不装配）、`AutoConfiguration.imports` 注册。`spring-boot-autoconfigure` 仅本模块 compile，不进 sure-ai-all、不进运行期依赖链，core/平台模块零 Spring 依赖。5 个 `ApplicationContextRunner` 测试。文档 `docs/spring-boot.md`。
 - 开发治理：引入「软件研发小组」团队配置（`.team/`：manifest + team.yml + a1..a5 角色定义），新增 `docs/TEAM.md` 说明协作模式与迭代角色链（统筹 → 需求/验收 → 架构 → 实现 → 独立质检），README 中英文同步。
 
 ## [1.0.0] - 2026-09-17

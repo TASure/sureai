@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.sure.ai.client.cache.CacheStore;
 import com.sure.ai.client.observability.MetricsCollector;
 import com.sure.ai.client.observability.RetryListener;
 import com.sure.tool.lang.Assert;
@@ -47,6 +48,8 @@ public final class AiConfig {
 	private final List<RetryListener> retryListeners;
 	private final MetricsCollector metricsCollector;
 	private final double rateLimitQps;
+	private final CacheStore cacheStore;
+	private final Duration cacheTtl;
 
 	private AiConfig(Builder b) {
 		this.apiKey = b.apiKey;
@@ -60,6 +63,8 @@ public final class AiConfig {
 		this.retryListeners = b.retryListeners == null ? List.of() : List.copyOf(b.retryListeners);
 		this.metricsCollector = b.metricsCollector;
 		this.rateLimitQps = b.rateLimitQps;
+		this.cacheStore = b.cacheStore;
+		this.cacheTtl = b.cacheTtl;
 	}
 
 	/**
@@ -97,6 +102,8 @@ public final class AiConfig {
 		private List<RetryListener> retryListeners;
 		private MetricsCollector metricsCollector;
 		private double rateLimitQps;
+		private CacheStore cacheStore;
+		private Duration cacheTtl;
 
 		private Builder() {
 		}
@@ -247,6 +254,30 @@ public final class AiConfig {
 		}
 
 		/**
+		 * 挂载对话响应缓存存储（可选，默认 null=关闭；关闭时零开销）。
+		 *
+		 * <p>仅非流式 chat 走缓存；缓存命中不触发网络、指标与重试。</p>
+		 *
+		 * @param cacheStore 缓存存储 SPI 实现
+		 * @return this
+		 */
+		public Builder cacheStore(CacheStore cacheStore) {
+			this.cacheStore = cacheStore;
+			return this;
+		}
+
+		/**
+		 * 缓存 TTL（可选；不设置时使用 store 自带默认 TTL）。
+		 *
+		 * @param ttl 缓存存活时长
+		 * @return this
+		 */
+		public Builder cacheTtl(Duration ttl) {
+			this.cacheTtl = ttl;
+			return this;
+		}
+
+		/**
 		 * 构建。
 		 *
 		 * @return 配置
@@ -310,5 +341,15 @@ public final class AiConfig {
 	/** 限流 QPS，0 表示关闭。 */
 	public double rateLimitQps() {
 		return this.rateLimitQps;
+	}
+
+	/** 对话响应缓存存储，未挂载时返回 null（缓存关闭）。 */
+	public CacheStore cacheStore() {
+		return this.cacheStore;
+	}
+
+	/** 缓存 TTL，未设置时返回 null（使用 store 默认 TTL）。 */
+	public Duration cacheTtl() {
+		return this.cacheTtl;
 	}
 }
