@@ -11,11 +11,22 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    # Windows 暂列为可选：Maven 路径分隔符/脚本行为尚未在 CI 全量验证，失败不阻断整体。
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
         java: [21, 25]
+        os: [ubuntu-latest, macos-latest]
+        include:
+          # JDK21 额外覆盖 Windows（允许失败）
+          - java: 21
+            os: windows-latest
+        exclude:
+          # JDK25 仅在 ubuntu 上验证，节省资源
+          - java: 25
+            os: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,5 +45,5 @@ jobs:
         if: matrix.java == '21'
         uses: actions/upload-artifact@v4
         with:
-          name: jacoco-report-jdk${{ matrix.java }}
+          name: jacoco-report-${{ matrix.os }}-jdk${{ matrix.java }}
           path: sure-ai-*/target/site/jacoco/

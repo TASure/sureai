@@ -36,16 +36,12 @@
     </properties>
 
     <dependencies>
+        <!-- sure-ai-all（pom 聚合）已传递引入 core/rag/agent/mcp 及全部平台模块，无需再单独声明 agent -->
         <dependency>
             <groupId>io.github.tasure</groupId>
             <artifactId>sure-ai-all</artifactId>
             <version>${project.version}</version>
             <type>pom</type>
-        </dependency>
-        <dependency>
-            <groupId>io.github.tasure</groupId>
-            <artifactId>sure-ai-agent</artifactId>
-            <version>${project.version}</version>
         </dependency>
     </dependencies>
 </project>

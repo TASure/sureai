@@ -387,6 +387,25 @@
     </distributionManagement>
 
     <profiles>
+        <!-- 快速回归 profile：mvn -Pfast test / verify。
+             通过 surefire excludedGroups 排除标注为 Slow（TTL/熔断时序）与 E2e（子进程回环）的测试，
+             仅保留纯单元测试；未标注任何 @Category 的测试默认即 unit，照常运行。
+             分类标记见 com.sure.ai.internal.test.tag.{Unit,Slow,E2e}。 -->
+        <profile>
+            <id>fast</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <excludedGroups>com.sure.ai.internal.test.tag.Slow,com.sure.ai.internal.test.tag.E2e</excludedGroups>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
         <!-- 发布 profile：源码/JavaDoc 附件 + GPG 签名 + OSSRH 暂存。
              本地日常构建（mvn verify）不激活。 -->
         <profile>

@@ -1,0 +1,51 @@
+# 发布到 Maven Central（OSSRH 暂存）。
+#
+# 触发方式：
+#   1. 打 tag 推送：git tag v1.4.0 && git push origin v1.4.0（push tags: v*）
+#   2. 在 Actions 页面手动触发（workflow_dispatch）
+#
+# 前置：需在 GitHub 仓库 Settings → Secrets and variables → Actions 配置以下 Repository secrets：
+#   OSSRH_USERNAME   Sonatype 账号用户名（https://central.sonatype.com/）
+#   OSSRH_PASSWORD   Sonatype 账号密码 / token
+#   GPG_PRIVATE_KEY  GPG 私钥（`gpg --armor --export-secret-keys <KEYID>` 输出全文，
+#                    含 -----BEGIN PGP PRIVATE KEY BLOCK----- 头尾）
+#   GPG_PASSPHRASE   GPG 私钥口令
+#
+# 说明：release profile（见 pom.xml / docs/RELEASING.md）会附加源码、JavaDoc 并 GPG 签名，
+# 上传到 OSSRH 暂存仓库（nexus-staging autoReleaseAfterClose=false），需在 Sonatype 控制台手动 Close + Release。
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+          # 写入 ~/.m2/settings.xml 的 <server id="ossrh">，与父 pom distributionManagement/nexus 插件 serverId 对齐
+          server-id: ossrh
+          server-username: ${{ secrets.OSSRH_USERNAME }}
+          server-password: ${{ secrets.OSSRH_PASSWORD }}
+          # 导入 GPG 私钥并配置口令
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Build and deploy to OSSRH
+        env:
+          MAVEN_OPTS: -Xmx1024m
+        # -Dgpg.keyname= 留空：使用导入的默认私钥；-Dgpg.passphrase 透传口令
+        run: mvn -B -Prelease clean deploy -Dgpg.keyname= -Dgpg.passphrase=${{ secrets.GPG_PASSPHRASE }}
