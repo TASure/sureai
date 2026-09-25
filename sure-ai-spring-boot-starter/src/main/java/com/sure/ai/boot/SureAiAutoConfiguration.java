@@ -25,10 +25,15 @@ import org.springframework.context.annotation.Bean;
 import com.sure.ai.anthropic.AnthropicClient;
 import com.sure.ai.azure.AzureClient;
 import com.sure.ai.baidu.BaiduClient;
+import com.sure.ai.bedrock.BedrockClient;
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.cohere.CohereClient;
 import com.sure.ai.deepseek.DeepSeekClient;
 import com.sure.ai.doubao.DoubaoClient;
 import com.sure.ai.gemini.GeminiClient;
+import com.sure.ai.grok.GrokClient;
+import com.sure.ai.llamacpp.LlamaCppClient;
+import com.sure.ai.mistral.MistralClient;
 import com.sure.ai.moonshot.MoonshotClient;
 import com.sure.ai.ollama.OllamaClient;
 import com.sure.ai.openai.OpenAiClient;
@@ -58,24 +63,52 @@ public class SureAiAutoConfiguration {
 	/**
 	 * 由通用平台属性构建 AiConfig。
 	 *
-	 * <p>仅映射 AiConfig 真正持有的字段（apiKey/baseUrl/timeout/maxRetries）；
+	 * <p>映射 {@code AiConfig} 中可由 yml 直接表达的字段：apiKey/baseUrl/timeout/connectTimeout/
+	 * proxy/organization/maxRetries/rateLimitQps/cacheTtl/extraHeaders；
 	 * {@code model} 是请求级参数，不进入 AiConfig。</p>
+	 *
+	 * <p>对象型扩展点（{@code cacheStore/circuitBreaker/retryListeners/metricsCollector}）
+	 * 无法由字符串实例化，starter 不代为注入——用户需在自己的 {@code @Configuration} 中
+	 * 声明对应 {@code @Bean} 后通过 {@code AiConfig.Builder} 编程式挂载。</p>
 	 *
 	 * @param p 平台属性
 	 * @return AiConfig
 	 */
 	private static AiConfig buildConfig(PlatformProperties p) {
 		AiConfig.Builder b = AiConfig.builder().apiKey(p.getApiKey());
-		if (p.getBaseUrl() != null && !p.getBaseUrl().isBlank()) {
+		if (notBlank(p.getBaseUrl())) {
 			b.baseUrl(p.getBaseUrl());
+		}
+		if (p.getConnectTimeout() != null) {
+			b.connectTimeout(p.getConnectTimeout());
 		}
 		if (p.getTimeout() != null) {
 			b.timeout(p.getTimeout());
 		}
+		if (notBlank(p.getProxy())) {
+			b.proxy(p.getProxy());
+		}
+		if (notBlank(p.getOrganization())) {
+			b.organization(p.getOrganization());
+		}
 		if (p.getMaxRetries() != null) {
 			b.maxRetries(p.getMaxRetries());
 		}
+		if (p.getRateLimitQps() != null) {
+			b.rateLimitQps(p.getRateLimitQps());
+		}
+		if (p.getCacheTtl() != null) {
+			b.cacheTtl(p.getCacheTtl());
+		}
+		if (p.getExtraHeaders() != null) {
+			p.getExtraHeaders().forEach(b::extraHeader);
+		}
 		return b.build();
+	}
+
+	/** 字符串非空判空。 */
+	private static boolean notBlank(String s) {
+		return s != null && !s.isBlank();
 	}
 
 	/**
@@ -198,6 +231,11 @@ public class SureAiAutoConfiguration {
 	/**
 	 * 装配百度智能云客户端。
 	 *
+	 * <p>百度千帆需要「API Key + Secret Key」双凭证。{@code BaiduClient} 从
+	 * {@code extraHeaders("secretKey", ...)} 读取 Secret Key，因此这里把
+	 * {@code sure.ai.baidu.secret-key} 显式塞进 extraHeaders（键名对齐
+	 * {@link BaiduClient#SECRET_KEY_HEADER}），其余字段仍走 {@link #buildConfig}。</p>
+	 *
 	 * @param props 配置
 	 * @return BaiduClient
 	 */
@@ -205,7 +243,107 @@ public class SureAiAutoConfiguration {
 	@ConditionalOnMissingBean
 	@ConditionalOnProperty(prefix = "sure.ai.baidu", name = "api-key")
 	public BaiduClient baiduClient(SureAiProperties props) {
-		return new BaiduClient(buildConfig(props.getBaidu()));
+		PlatformProperties bp = props.getBaidu();
+		AiConfig.Builder b = AiConfig.builder().apiKey(bp.getApiKey());
+		if (notBlank(bp.getBaseUrl())) {
+			b.baseUrl(bp.getBaseUrl());
+		}
+		if (bp.getConnectTimeout() != null) {
+			b.connectTimeout(bp.getConnectTimeout());
+		}
+		if (bp.getTimeout() != null) {
+			b.timeout(bp.getTimeout());
+		}
+		if (notBlank(bp.getProxy())) {
+			b.proxy(bp.getProxy());
+		}
+		if (bp.getMaxRetries() != null) {
+			b.maxRetries(bp.getMaxRetries());
+		}
+		if (bp.getRateLimitQps() != null) {
+			b.rateLimitQps(bp.getRateLimitQps());
+		}
+		if (bp.getCacheTtl() != null) {
+			b.cacheTtl(bp.getCacheTtl());
+		}
+		if (bp.getExtraHeaders() != null) {
+			bp.getExtraHeaders().forEach(b::extraHeader);
+		}
+		if (notBlank(bp.getSecretKey())) {
+			b.extraHeader(BaiduClient.SECRET_KEY_HEADER, bp.getSecretKey());
+		}
+		return new BaiduClient(b.build());
+	}
+
+	/**
+	 * 装配 xAI Grok 客户端（OpenAI 兼容协议）。
+	 *
+	 * @param props 配置
+	 * @return GrokClient
+	 */
+	@Bean
+	@ConditionalOnMissingBean
+	@ConditionalOnProperty(prefix = "sure.ai.grok", name = "api-key")
+	public GrokClient grokClient(SureAiProperties props) {
+		return new GrokClient(buildConfig(props.getGrok()));
+	}
+
+	/**
+	 * 装配 Mistral AI 客户端。
+	 *
+	 * @param props 配置
+	 * @return MistralClient
+	 */
+	@Bean
+	@ConditionalOnMissingBean
+	@ConditionalOnProperty(prefix = "sure.ai.mistral", name = "api-key")
+	public MistralClient mistralClient(SureAiProperties props) {
+		return new MistralClient(buildConfig(props.getMistral()));
+	}
+
+	/**
+	 * 装配 Llama.cpp 本地客户端（OpenAI 兼容协议）。
+	 *
+	 * @param props 配置
+	 * @return LlamaCppClient
+	 */
+	@Bean
+	@ConditionalOnMissingBean
+	@ConditionalOnProperty(prefix = "sure.ai.llamacpp", name = "api-key")
+	public LlamaCppClient llamacppClient(SureAiProperties props) {
+		return new LlamaCppClient(buildConfig(props.getLlamacpp()));
+	}
+
+	/**
+	 * 装配 Cohere 客户端。
+	 *
+	 * @param props 配置
+	 * @return CohereClient
+	 */
+	@Bean
+	@ConditionalOnMissingBean
+	@ConditionalOnProperty(prefix = "sure.ai.cohere", name = "api-key")
+	public CohereClient cohereClient(SureAiProperties props) {
+		return new CohereClient(buildConfig(props.getCohere()));
+	}
+
+	/**
+	 * 装配 AWS Bedrock 客户端。
+	 *
+	 * <p>Bedrock 不走单 API Key，条件改为 {@code sure.ai.bedrock.access-key}；
+	 * 凭证四元组（accessKey/secretKey/sessionToken/region）+ 默认 modelId 直接传给
+	 * {@link BedrockClient} 公开构造器。region 必填，为空由构造器抛错。</p>
+	 *
+	 * @param props 配置
+	 * @return BedrockClient
+	 */
+	@Bean
+	@ConditionalOnMissingBean
+	@ConditionalOnProperty(prefix = "sure.ai.bedrock", name = "access-key")
+	public BedrockClient bedrockClient(SureAiProperties props) {
+		BedrockProperties bp = props.getBedrock();
+		return new BedrockClient(bp.getAccessKey(), bp.getSecretKey(), bp.getSessionToken(),
+			bp.getRegion(), bp.getModel());
 	}
 
 	/**

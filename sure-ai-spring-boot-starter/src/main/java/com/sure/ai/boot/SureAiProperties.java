@@ -74,6 +74,21 @@ public class SureAiProperties {
 	/** Ollama（本地服务，默认 http://localhost:11434，无需真实 Key）。 */
 	private PlatformProperties ollama = new PlatformProperties();
 
+	/** xAI Grok（OpenAI 兼容协议）。 */
+	private PlatformProperties grok = new PlatformProperties();
+
+	/** Mistral AI。 */
+	private PlatformProperties mistral = new PlatformProperties();
+
+	/** Llama.cpp（本地 OpenAI 兼容服务）。 */
+	private PlatformProperties llamacpp = new PlatformProperties();
+
+	/** Cohere。 */
+	private PlatformProperties cohere = new PlatformProperties();
+
+	/** AWS Bedrock（SigV4 鉴权，独立四元组凭证，不复用 PlatformProperties）。 */
+	private BedrockProperties bedrock = new BedrockProperties();
+
 	/** RAG 相关配置（预留，当前仅声明开关）。 */
 	private Rag rag = new Rag();
 
@@ -222,6 +237,46 @@ public class SureAiProperties {
 
 	public void setOllama(PlatformProperties ollama) {
 		this.ollama = ollama;
+	}
+
+	public PlatformProperties getGrok() {
+		return grok;
+	}
+
+	public void setGrok(PlatformProperties grok) {
+		this.grok = grok;
+	}
+
+	public PlatformProperties getMistral() {
+		return mistral;
+	}
+
+	public void setMistral(PlatformProperties mistral) {
+		this.mistral = mistral;
+	}
+
+	public PlatformProperties getLlamacpp() {
+		return llamacpp;
+	}
+
+	public void setLlamacpp(PlatformProperties llamacpp) {
+		this.llamacpp = llamacpp;
+	}
+
+	public PlatformProperties getCohere() {
+		return cohere;
+	}
+
+	public void setCohere(PlatformProperties cohere) {
+		this.cohere = cohere;
+	}
+
+	public BedrockProperties getBedrock() {
+		return bedrock;
+	}
+
+	public void setBedrock(BedrockProperties bedrock) {
+		this.bedrock = bedrock;
 	}
 
 	public Rag getRag() {
