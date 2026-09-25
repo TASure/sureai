@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - Unreleased
+
+### Fixed
+- **P0-1 配置字段静默丢失**：`AiConfig` 新增 `withBaseUrl(String)` 实例方法，返回包含全部 14 个字段的新配置（apiKey/baseUrl/timeout/connectTimeout/proxy/organization/extraHeaders/maxRetries/retryListeners/metricsCollector/rateLimitQps/cacheStore/cacheTtl/circuitBreaker），仅替换 baseUrl。替换 OpenAi/DeepSeek/Grok/LlamaCpp/Mistral/Qwen 等 6 处 `applyDefaultBaseUrl` 静态方法及 Azure/Baidu/Doubao/Cohere/Moonshot/Zhipu 等平台的 `rebuild/withDefaults/withDefaultBaseUrl` 样板（共 19 个源文件），全部改为委托 `withBaseUrl`，消除用户配置的 metrics/retryListeners/限流/缓存/熔断字段在补默认 baseUrl 时静默丢失的问题。新增 `AiConfigWithBaseUrlTest` 6 个测试逐字段断言。
+- **P1-3 MCP NDJSON 帧大小上限**：`LineFrameMcpTransport` 新增 `MAX_LINE_BYTES=64MB` 常量与 `LineLimitedInputStream`，每行读取超过 64MB 抛 IOException 并关闭传输，防止恶意 MCP server 持续写字节不发 `\n` 导致 OOM。新增包级 4 参构造器便于测试注入小上限。
+- **P1-4 MCP 子进程强杀**：`StdioMcpTransport.doClose()` 改为 `destroy()` → `waitFor(5, SECONDS)` → 超时 `destroyForcibly()` 并再 `waitFor`，消除子进程忽略 SIGTERM 时 `close()` 永久阻塞的问题。
+- **P1-5 MCP 断连测试**：补充读超时（对端永不回复）、对端异常断开（EOF）、超大帧关闭传输三类测试，以及忽略 SIGTERM 子进程强杀测试（`sh -c "trap '' TERM; sleep infinity"`），共 5 个新测试。
+
+### Security
+- **P0-3 Milvus filter 注入**：`MilvusVectorStore.delete()` 中 id 直接拼进 Milvus 过滤表达式 `"id in [\"" + id + "\"]"`，恶意 id（如 `x" or "1"="1`）可逃逸字符串字面量匹配全表导致误删。新增 `escapeFilterString` 私有方法转义反斜杠（`\`→`\\`）与双引号（`"`→`\"`），delete 方法使用转义后的 id。新增 3 个注入测试（恶意双引号/反斜杠/正常 id 回归）。
+- **P1-1 HttpTool SSRF + 响应体 OOM**：新增 `SSRFGuard` 工具类（纯 JDK `InetAddress`，零新依赖），在 `HttpTool.execute` 中对目标 URL 的 host 解析全部 IP 后校验，拒绝回环（127.0.0.0/8、::1）、私有段（10/8、172.16/12、192.168/16、fc00::/7）、链路本地（169.254.0.0/16、fe80::/10，含云元数据 169.254.169.254）、0.0.0.0/8、多播地址及 IPv4-mapped IPv6 嵌入内网地址（`::ffff:127.0.0.1`），DNS 轮询任一 IP 危险即拒绝。响应体从 `BodyHandlers.ofString()` 全量入内存改为 `BodyHandlers.ofInputStream()` 流式限长读取（`maxChars * 4` 字节上限，UTF-8 最坏情况），超过立即中止并截断，防止恶意服务器发超大响应导致 OOM。`HttpTool.Builder` 新增 `ssrfProtection(boolean)` 选项（默认 true，内网部署可关）。新增 `SSRFGuardTest` 12 个测试 + HttpTool 默认 SSRF 拦截测试 1 个。
+
+### Docs
+- **P2-1 版本徽章与依赖片段过期**：`README.md` / `README.en.md` 中 Maven Central 徽章从 `0.1.0` 更新为 `1.2.1`，12 处 Maven 依赖片段 `<version>0.1.0</version>` 同步更新；`docs/platforms/` 下 11 个平台文档的 `<version>0.1.0-SNAPSHOT</version>` 更新为 `1.2.1-SNAPSHOT`；`.github/ISSUE_TEMPLATE/bug_report.md` 模板版本同步。全仓搜索确认无其他过期 0.1.0 硬编码（CHANGELOG 历史记录除外）。
+
+- 全量 27 模块 770 测试全绿（+27），行覆盖率 core 86.4%（≥0.70）、其余模块均 ≥0.60，checkstyle/spotbugs/license 零违规。
+
 ## [1.2.0] - 2026-09-25
 
 ### Added
