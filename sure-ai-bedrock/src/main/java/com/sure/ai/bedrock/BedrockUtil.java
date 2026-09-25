@@ -19,6 +19,7 @@ package com.sure.ai.bedrock;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
@@ -78,11 +79,9 @@ public final class BedrockUtil {
 	/** AWS 标准 Region 兜底变量。 */
 	public static final String AWS_DEFAULT_REGION = "AWS_DEFAULT_REGION";
 
-	/** 单例客户端。 */
-	private static volatile BedrockClient client;
-
-	/** 初始化锁对象。 */
-	private static final Object LOCK = new Object();
+	/** 单例客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<BedrockClient> HOLDER =
+		new SingletonHolder<>(() -> create(System.getenv()));
 
 	private BedrockUtil() {
 		throw new AssertionError("No instances");
@@ -153,9 +152,7 @@ public final class BedrockUtil {
 	 */
 	public static void init(String accessKey, String secretKey, String sessionToken,
 			String region, String modelId) {
-		synchronized (LOCK) {
-			client = new BedrockClient(accessKey, secretKey, sessionToken, region, modelId);
-		}
+		HOLDER.set(new BedrockClient(accessKey, secretKey, sessionToken, region, modelId));
 	}
 
 	/**
@@ -164,9 +161,7 @@ public final class BedrockUtil {
 	 * @param bedrockClient 预构建客户端
 	 */
 	public static void init(BedrockClient bedrockClient) {
-		synchronized (LOCK) {
-			client = bedrockClient;
-		}
+		HOLDER.set(bedrockClient);
 	}
 
 	/**
@@ -176,24 +171,12 @@ public final class BedrockUtil {
 	 * @throws AiException 未初始化且环境变量缺凭证时抛出
 	 */
 	public static BedrockClient client() {
-		BedrockClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = create(System.getenv());
-					client = c;
-				}
-			}
-		}
-		return c;
+		return HOLDER.get();
 	}
 
 	/** 重置单例客户端（主要用于测试与环境切换）。 */
 	public static void resetClient() {
-		synchronized (LOCK) {
-			client = null;
-		}
+		HOLDER.reset();
 	}
 
 	// ==================== 一行调用 ====================

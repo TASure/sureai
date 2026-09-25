@@ -19,6 +19,7 @@ package com.sure.ai.openai;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.BatchRequest;
 import com.sure.ai.model.BatchResponse;
@@ -58,22 +59,17 @@ public final class OpenAiUtil {
 	/** 环境变量名：baseUrl 覆盖。 */
 	public static final String ENV_BASE_URL = "SURE_AI_OPENAI_BASE_URL";
 
-	private static volatile OpenAiClient client;
+	/** 主客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<OpenAiClient> HOLDER =
+		new SingletonHolder<>(OpenAiUtil::loadFromEnv);
 
-	/** 初始化锁对象（避免静态 synchronized 暴露 class 锁）。 */
-	private static final Object LOCK = new Object();
+	/** 批处理客户端容器。 */
+	private static final SingletonHolder<OpenAiBatchClient> BATCH =
+		new SingletonHolder<>(() -> new OpenAiBatchClient(buildConfigFromEnv()));
 
-	/** 批处理客户端单例。 */
-	private static volatile OpenAiBatchClient batchClient;
-
-	/** 批处理客户端初始化锁。 */
-	private static final Object BATCH_LOCK = new Object();
-
-	/** Realtime 客户端单例（需事件监听，不提供静态便捷方法）。 */
-	private static volatile OpenAiRealtimeClient realtimeClient;
-
-	/** Realtime 客户端初始化锁。 */
-	private static final Object REALTIME_LOCK = new Object();
+	/** Realtime 客户端容器（构造参数依赖调用参数，用 getOrCreate 懒加载）。 */
+	private static final SingletonHolder<OpenAiRealtimeClient> REALTIME =
+		new SingletonHolder<>(null);
 
 	private OpenAiUtil() {
 		throw new AssertionError("No instances");
@@ -85,9 +81,7 @@ public final class OpenAiUtil {
 	 * @param apiKey API Key
 	 */
 	public static void init(String apiKey) {
-		synchronized (LOCK) {
-			client = new OpenAiClient(AiConfig.of(apiKey));
-		}
+		HOLDER.set(new OpenAiClient(AiConfig.of(apiKey)));
 	}
 
 	/**
@@ -96,9 +90,7 @@ public final class OpenAiUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new OpenAiClient(config);
-		}
+		HOLDER.set(new OpenAiClient(config));
 	}
 
 	/**
@@ -108,17 +100,7 @@ public final class OpenAiUtil {
 	 * @throws AiException 未初始化且未设置 {@code SURE_AI_OPENAI_API_KEY}
 	 */
 	public static OpenAiClient client() {
-		OpenAiClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = loadFromEnv();
-					client = c;
-				}
-			}
-		}
-		return c;
+		return HOLDER.get();
 	}
 
 	/** 从环境变量构造客户端。 */
@@ -302,17 +284,7 @@ public final class OpenAiUtil {
 	 * @throws AiException 未初始化且未设置 {@code SURE_AI_OPENAI_API_KEY}
 	 */
 	public static OpenAiBatchClient batchClient() {
-		OpenAiBatchClient c = batchClient;
-		if (c == null) {
-			synchronized (BATCH_LOCK) {
-				c = batchClient;
-				if (c == null) {
-					c = new OpenAiBatchClient(buildConfigFromEnv());
-					batchClient = c;
-				}
-			}
-		}
-		return c;
+		return BATCH.get();
 	}
 
 	/**
@@ -339,9 +311,7 @@ public final class OpenAiUtil {
 	 * 重置批处理单例客户端（测试清理用）。
 	 */
 	public static void resetBatchClient() {
-		synchronized (BATCH_LOCK) {
-			batchClient = null;
-		}
+		BATCH.reset();
 	}
 
 	// ==================== Realtime（全双工语音对话） ====================
@@ -359,25 +329,14 @@ public final class OpenAiUtil {
 	 */
 	public static OpenAiRealtimeClient realtimeClient(String model,
 			RealtimeEventListener eventListener) {
-		OpenAiRealtimeClient c = realtimeClient;
-		if (c == null) {
-			synchronized (REALTIME_LOCK) {
-				c = realtimeClient;
-				if (c == null) {
-					c = new OpenAiRealtimeClient(buildConfigFromEnv(), model, eventListener);
-					realtimeClient = c;
-				}
-			}
-		}
-		return c;
+		return REALTIME.getOrCreate(() ->
+			new OpenAiRealtimeClient(buildConfigFromEnv(), model, eventListener));
 	}
 
 	/**
 	 * 重置 Realtime 单例客户端（测试清理用）。
 	 */
 	public static void resetRealtimeClient() {
-		synchronized (REALTIME_LOCK) {
-			realtimeClient = null;
-		}
+		REALTIME.reset();
 	}
 }

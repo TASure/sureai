@@ -19,6 +19,7 @@ package com.sure.ai.gemini;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.client.realtime.RealtimeEventListener;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
@@ -42,17 +43,13 @@ public final class GeminiUtil {
 	/** 默认 baseUrl。 */
 	private static final String DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
-	/** 单例客户端。 */
-	private static volatile GeminiClient client;
+	/** 主客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<GeminiClient> HOLDER =
+		new SingletonHolder<>(GeminiUtil::loadFromEnv);
 
-	/** 初始化锁对象。 */
-	private static final Object LOCK = new Object();
-
-	/** Realtime 客户端单例（需事件监听，不提供静态便捷方法）。 */
-	private static volatile GeminiRealtimeClient realtimeClient;
-
-	/** Realtime 客户端初始化锁。 */
-	private static final Object REALTIME_LOCK = new Object();
+	/** Realtime 客户端容器（构造参数依赖调用参数，用 getOrCreate 懒加载）。 */
+	private static final SingletonHolder<GeminiRealtimeClient> REALTIME =
+		new SingletonHolder<>(null);
 
 	private GeminiUtil() {
 		throw new AssertionError("No instances");
@@ -73,9 +70,7 @@ public final class GeminiUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new GeminiClient(config);
-		}
+		HOLDER.set(new GeminiClient(config));
 	}
 
 	/**
@@ -84,22 +79,17 @@ public final class GeminiUtil {
 	 * @return 客户端
 	 */
 	public static GeminiClient client() {
-		GeminiClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					String apiKey = System.getenv("SURE_AI_GEMINI_API_KEY");
-					String baseUrl = System.getenv("SURE_AI_GEMINI_BASE_URL");
-					if (baseUrl == null || baseUrl.isBlank()) {
-						baseUrl = DEFAULT_BASE_URL;
-					}
-					c = new GeminiClient(AiConfig.builder().apiKey(apiKey).baseUrl(baseUrl).build());
-					client = c;
-				}
-			}
+		return HOLDER.get();
+	}
+
+	/** 从环境变量懒加载构造客户端。 */
+	private static GeminiClient loadFromEnv() {
+		String apiKey = System.getenv("SURE_AI_GEMINI_API_KEY");
+		String baseUrl = System.getenv("SURE_AI_GEMINI_BASE_URL");
+		if (baseUrl == null || baseUrl.isBlank()) {
+			baseUrl = DEFAULT_BASE_URL;
 		}
-		return c;
+		return new GeminiClient(AiConfig.builder().apiKey(apiKey).baseUrl(baseUrl).build());
 	}
 
 	/**
@@ -189,27 +179,17 @@ public final class GeminiUtil {
 	 */
 	public static GeminiRealtimeClient realtimeClient(String model,
 			RealtimeEventListener eventListener) {
-		GeminiRealtimeClient c = realtimeClient;
-		if (c == null) {
-			synchronized (REALTIME_LOCK) {
-				c = realtimeClient;
-				if (c == null) {
-					String apiKey = System.getenv("SURE_AI_GEMINI_API_KEY");
-					c = new GeminiRealtimeClient(AiConfig.of(apiKey), model, eventListener);
-					realtimeClient = c;
-				}
-			}
-		}
-		return c;
+		return REALTIME.getOrCreate(() -> {
+			String apiKey = System.getenv("SURE_AI_GEMINI_API_KEY");
+			return new GeminiRealtimeClient(AiConfig.of(apiKey), model, eventListener);
+		});
 	}
 
 	/**
 	 * 重置 Realtime 单例客户端（测试清理用）。
 	 */
 	public static void resetRealtimeClient() {
-		synchronized (REALTIME_LOCK) {
-			realtimeClient = null;
-		}
+		REALTIME.reset();
 	}
 
 	/**

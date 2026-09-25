@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
@@ -50,17 +51,13 @@ public final class CohereUtil {
 	/** 环境变量：baseUrl。 */
 	public static final String ENV_BASE_URL = "SURE_AI_COHERE_BASE_URL";
 
-	/** 全局单例。 */
-	private static volatile CohereClient client;
+	/** 主客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<CohereClient> MAIN =
+		new SingletonHolder<>(CohereUtil::buildFromEnv);
 
-	/** 初始化锁。 */
-	private static final Object LOCK = new Object();
-
-	/** 重排客户端单例。 */
-	private static volatile CohereRerankClient rerankClient;
-
-	/** 重排客户端初始化锁。 */
-	private static final Object RERANK_LOCK = new Object();
+	/** 重排客户端容器。 */
+	private static final SingletonHolder<CohereRerankClient> RERANK =
+		new SingletonHolder<>(() -> new CohereRerankClient(envConfig()));
 
 	/** 工具类禁止实例化。 */
 	private CohereUtil() {
@@ -73,9 +70,7 @@ public final class CohereUtil {
 	 * @param apiKey Cohere API Key
 	 */
 	public static void init(String apiKey) {
-		synchronized (LOCK) {
-			client = new CohereClient(AiConfig.builder().apiKey(apiKey).build());
-		}
+		MAIN.set(new CohereClient(AiConfig.builder().apiKey(apiKey).build()));
 	}
 
 	/**
@@ -84,9 +79,7 @@ public final class CohereUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new CohereClient(config);
-		}
+		MAIN.set(new CohereClient(config));
 	}
 
 	/**
@@ -96,17 +89,7 @@ public final class CohereUtil {
 	 * @throws AiException 环境变量缺失时抛出
 	 */
 	public static CohereClient client() {
-		CohereClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = buildFromEnv();
-					client = c;
-				}
-			}
-		}
-		return c;
+		return MAIN.get();
 	}
 
 	/** 从环境变量构建客户端。 */
@@ -178,17 +161,7 @@ public final class CohereUtil {
 	 * @throws AiException 未初始化且未设置 {@code SURE_AI_COHERE_API_KEY}
 	 */
 	public static CohereRerankClient rerankClient() {
-		CohereRerankClient c = rerankClient;
-		if (c == null) {
-			synchronized (RERANK_LOCK) {
-				c = rerankClient;
-				if (c == null) {
-					c = new CohereRerankClient(envConfig());
-					rerankClient = c;
-				}
-			}
-		}
-		return c;
+		return RERANK.get();
 	}
 
 	/**
@@ -220,8 +193,6 @@ public final class CohereUtil {
 	 * 重置重排单例客户端（测试清理用）。
 	 */
 	public static void resetRerankClient() {
-		synchronized (RERANK_LOCK) {
-			rerankClient = null;
-		}
+		RERANK.reset();
 	}
 }

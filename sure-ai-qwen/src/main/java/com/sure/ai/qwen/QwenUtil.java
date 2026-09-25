@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.client.realtime.RealtimeEventListener;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatRequest;
@@ -59,34 +60,25 @@ public final class QwenUtil {
 	/** 环境变量名：baseUrl 覆盖。 */
 	public static final String ENV_BASE_URL = "SURE_AI_QWEN_BASE_URL";
 
-	private static volatile QwenClient client;
+	/** 主客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<QwenClient> HOLDER =
+		new SingletonHolder<>(() -> new QwenClient(buildConfigFromEnv()));
 
-	/** 初始化锁对象。 */
-	private static final Object LOCK = new Object();
+	/** 图像生成客户端容器。 */
+	private static final SingletonHolder<QwenImageClient> IMAGE =
+		new SingletonHolder<>(() -> new QwenImageClient(buildConfigFromEnv()));
 
-	/** 图像生成客户端单例。 */
-	private static volatile QwenImageClient imageClient;
+	/** 视频生成客户端容器。 */
+	private static final SingletonHolder<QwenVideoClient> VIDEO =
+		new SingletonHolder<>(() -> new QwenVideoClient(buildConfigFromEnv()));
 
-	/** 图像客户端初始化锁。 */
-	private static final Object IMAGE_LOCK = new Object();
+	/** 重排客户端容器。 */
+	private static final SingletonHolder<QwenRerankClient> RERANK =
+		new SingletonHolder<>(() -> new QwenRerankClient(buildConfigFromEnv()));
 
-	/** 视频生成客户端单例。 */
-	private static volatile QwenVideoClient videoClient;
-
-	/** 视频客户端初始化锁。 */
-	private static final Object VIDEO_LOCK = new Object();
-
-	/** 重排客户端单例。 */
-	private static volatile QwenRerankClient rerankClient;
-
-	/** 重排客户端初始化锁。 */
-	private static final Object RERANK_LOCK = new Object();
-
-	/** Realtime 客户端单例（需事件监听，不提供静态便捷方法）。 */
-	private static volatile QwenRealtimeClient realtimeClient;
-
-	/** Realtime 客户端初始化锁。 */
-	private static final Object REALTIME_LOCK = new Object();
+	/** Realtime 客户端容器（构造参数依赖调用参数，用 getOrCreate 懒加载）。 */
+	private static final SingletonHolder<QwenRealtimeClient> REALTIME =
+		new SingletonHolder<>(null);
 
 	private QwenUtil() {
 		throw new AssertionError("No instances");
@@ -98,9 +90,7 @@ public final class QwenUtil {
 	 * @param apiKey API Key
 	 */
 	public static void init(String apiKey) {
-		synchronized (LOCK) {
-			client = new QwenClient(AiConfig.of(apiKey));
-		}
+		HOLDER.set(new QwenClient(AiConfig.of(apiKey)));
 	}
 
 	/**
@@ -109,9 +99,7 @@ public final class QwenUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new QwenClient(config);
-		}
+		HOLDER.set(new QwenClient(config));
 	}
 
 	/**
@@ -121,17 +109,7 @@ public final class QwenUtil {
 	 * @throws AiException 未初始化且未设置 {@code SURE_AI_QWEN_API_KEY}
 	 */
 	public static QwenClient client() {
-		QwenClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = new QwenClient(buildConfigFromEnv());
-					client = c;
-				}
-			}
-		}
-		return c;
+		return HOLDER.get();
 	}
 
 	/** 从环境变量构造配置。 */
@@ -218,17 +196,7 @@ public final class QwenUtil {
 	 * @throws AiException 未初始化且未设置 {@code SURE_AI_QWEN_API_KEY}
 	 */
 	public static QwenImageClient imageClient() {
-		QwenImageClient c = imageClient;
-		if (c == null) {
-			synchronized (IMAGE_LOCK) {
-				c = imageClient;
-				if (c == null) {
-					c = new QwenImageClient(buildConfigFromEnv());
-					imageClient = c;
-				}
-			}
-		}
-		return c;
+		return IMAGE.get();
 	}
 
 	/**
@@ -256,9 +224,7 @@ public final class QwenUtil {
 	 * 重置图像单例客户端（测试清理用）。
 	 */
 	public static void resetImageClient() {
-		synchronized (IMAGE_LOCK) {
-			imageClient = null;
-		}
+		IMAGE.reset();
 	}
 
 	/**
@@ -268,17 +234,7 @@ public final class QwenUtil {
 	 * @throws AiException 未初始化且未设置 {@code SURE_AI_QWEN_API_KEY}
 	 */
 	public static QwenVideoClient videoClient() {
-		QwenVideoClient c = videoClient;
-		if (c == null) {
-			synchronized (VIDEO_LOCK) {
-				c = videoClient;
-				if (c == null) {
-					c = new QwenVideoClient(buildConfigFromEnv());
-					videoClient = c;
-				}
-			}
-		}
-		return c;
+		return VIDEO.get();
 	}
 
 	/**
@@ -306,9 +262,7 @@ public final class QwenUtil {
 	 * 重置视频单例客户端（测试清理用）。
 	 */
 	public static void resetVideoClient() {
-		synchronized (VIDEO_LOCK) {
-			videoClient = null;
-		}
+		VIDEO.reset();
 	}
 
 	/**
@@ -363,17 +317,7 @@ public final class QwenUtil {
 	 * @throws AiException 未初始化且未设置 {@code SURE_AI_QWEN_API_KEY}
 	 */
 	public static QwenRerankClient rerankClient() {
-		QwenRerankClient c = rerankClient;
-		if (c == null) {
-			synchronized (RERANK_LOCK) {
-				c = rerankClient;
-				if (c == null) {
-					c = new QwenRerankClient(buildConfigFromEnv());
-					rerankClient = c;
-				}
-			}
-		}
-		return c;
+		return RERANK.get();
 	}
 
 	/**
@@ -405,9 +349,7 @@ public final class QwenUtil {
 	 * 重置重排单例客户端（测试清理用）。
 	 */
 	public static void resetRerankClient() {
-		synchronized (RERANK_LOCK) {
-			rerankClient = null;
-		}
+		RERANK.reset();
 	}
 
 	// ==================== Realtime（全双工语音对话） ====================
@@ -425,25 +367,14 @@ public final class QwenUtil {
 	 */
 	public static QwenRealtimeClient realtimeClient(String model,
 			RealtimeEventListener eventListener) {
-		QwenRealtimeClient c = realtimeClient;
-		if (c == null) {
-			synchronized (REALTIME_LOCK) {
-				c = realtimeClient;
-				if (c == null) {
-					c = new QwenRealtimeClient(buildConfigFromEnv(), model, eventListener);
-					realtimeClient = c;
-				}
-			}
-		}
-		return c;
+		return REALTIME.getOrCreate(() ->
+			new QwenRealtimeClient(buildConfigFromEnv(), model, eventListener));
 	}
 
 	/**
 	 * 重置 Realtime 单例客户端（测试清理用）。
 	 */
 	public static void resetRealtimeClient() {
-		synchronized (REALTIME_LOCK) {
-			realtimeClient = null;
-		}
+		REALTIME.reset();
 	}
 }

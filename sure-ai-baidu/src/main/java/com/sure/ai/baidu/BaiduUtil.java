@@ -19,6 +19,7 @@ package com.sure.ai.baidu;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
@@ -57,17 +58,13 @@ public final class BaiduUtil {
 	/** 环境变量：baseUrl。 */
 	public static final String ENV_BASE_URL = "SURE_AI_BAIDU_BASE_URL";
 
-	/** 全局单例。 */
-	private static volatile BaiduClient client;
+	/** 主客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<BaiduClient> MAIN =
+		new SingletonHolder<>(BaiduUtil::buildFromEnv);
 
-	/** 初始化锁。 */
-	private static final Object LOCK = new Object();
-
-	/** 图像生成客户端单例。 */
-	private static volatile BaiduImageClient imageClient;
-
-	/** 图像客户端初始化锁。 */
-	private static final Object IMAGE_LOCK = new Object();
+	/** 图像生成客户端容器。 */
+	private static final SingletonHolder<BaiduImageClient> IMAGE =
+		new SingletonHolder<>(BaiduUtil::buildImageClientFromEnv);
 
 	/** 工具类禁止实例化。 */
 	private BaiduUtil() {
@@ -81,13 +78,11 @@ public final class BaiduUtil {
 	 * @param secretKey 千帆 Secret Key
 	 */
 	public static void init(String apiKey, String secretKey) {
-		synchronized (LOCK) {
-			AiConfig cfg = AiConfig.builder()
-				.apiKey(apiKey)
-				.extraHeader(BaiduClient.SECRET_KEY_HEADER, secretKey)
-				.build();
-			client = new BaiduClient(cfg);
-		}
+		AiConfig cfg = AiConfig.builder()
+			.apiKey(apiKey)
+			.extraHeader(BaiduClient.SECRET_KEY_HEADER, secretKey)
+			.build();
+		MAIN.set(new BaiduClient(cfg));
 	}
 
 	/**
@@ -96,9 +91,7 @@ public final class BaiduUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new BaiduClient(config);
-		}
+		MAIN.set(new BaiduClient(config));
 	}
 
 	/**
@@ -108,17 +101,7 @@ public final class BaiduUtil {
 	 * @throws AiException 环境变量缺失时抛出
 	 */
 	public static BaiduClient client() {
-		BaiduClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = buildFromEnv();
-					client = c;
-				}
-			}
-		}
-		return c;
+		return MAIN.get();
 	}
 
 	/** 从环境变量构建客户端。 */
@@ -189,17 +172,7 @@ public final class BaiduUtil {
 	 * @throws AiException 环境变量缺失时抛出
 	 */
 	public static BaiduImageClient imageClient() {
-		BaiduImageClient c = imageClient;
-		if (c == null) {
-			synchronized (IMAGE_LOCK) {
-				c = imageClient;
-				if (c == null) {
-					c = buildImageClientFromEnv();
-					imageClient = c;
-				}
-			}
-		}
-		return c;
+		return IMAGE.get();
 	}
 
 	/** 从环境变量构建图像客户端：apiKey + secretKey 放入 extraHeaders。 */
@@ -293,8 +266,6 @@ public final class BaiduUtil {
 	 * 重置图像单例客户端（测试清理用）。
 	 */
 	public static void resetImageClient() {
-		synchronized (IMAGE_LOCK) {
-			imageClient = null;
-		}
+		IMAGE.reset();
 	}
 }

@@ -19,6 +19,7 @@ package com.sure.ai.zhipu;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.client.realtime.RealtimeEventListener;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.BatchRequest;
@@ -61,29 +62,21 @@ public final class ZhipuUtil {
 	/** 环境变量：视频客户端 baseUrl（主机根，缺省 https://open.bigmodel.cn）。 */
 	public static final String ENV_VIDEO_BASE_URL = "SURE_AI_ZHIPU_VIDEO_BASE_URL";
 
-	/** 全局单例。 */
-	private static volatile ZhipuClient client;
+	/** 主客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<ZhipuClient> HOLDER =
+		new SingletonHolder<>(ZhipuUtil::buildFromEnv);
 
-	/** 初始化锁（避免公开类锁被外部代码争抢）。 */
-	private static final Object LOCK = new Object();
+	/** 视频生成客户端容器（端点与鉴权独立）。 */
+	private static final SingletonHolder<ZhipuVideoClient> VIDEO =
+		new SingletonHolder<>(ZhipuUtil::buildVideoClientFromEnv);
 
-	/** 视频生成客户端单例（端点与鉴权独立）。 */
-	private static volatile ZhipuVideoClient videoClient;
+	/** 批处理客户端容器。 */
+	private static final SingletonHolder<ZhipuBatchClient> BATCH =
+		new SingletonHolder<>(() -> new ZhipuBatchClient(buildBatchConfigFromEnv()));
 
-	/** 视频客户端初始化锁。 */
-	private static final Object VIDEO_LOCK = new Object();
-
-	/** 批处理客户端单例。 */
-	private static volatile ZhipuBatchClient batchClient;
-
-	/** 批处理客户端初始化锁。 */
-	private static final Object BATCH_LOCK = new Object();
-
-	/** Realtime 客户端单例（需事件监听，不提供静态便捷方法）。 */
-	private static volatile ZhipuRealtimeClient realtimeClient;
-
-	/** Realtime 客户端初始化锁。 */
-	private static final Object REALTIME_LOCK = new Object();
+	/** Realtime 客户端容器（构造参数依赖调用参数，用 getOrCreate 懒加载）。 */
+	private static final SingletonHolder<ZhipuRealtimeClient> REALTIME =
+		new SingletonHolder<>(null);
 
 	/** 工具类禁止实例化。 */
 	private ZhipuUtil() {
@@ -96,9 +89,7 @@ public final class ZhipuUtil {
 	 * @param apiKey 智谱 apiKey
 	 */
 	public static void init(String apiKey) {
-		synchronized (LOCK) {
-			client = new ZhipuClient(AiConfig.of(apiKey));
-		}
+		HOLDER.set(new ZhipuClient(AiConfig.of(apiKey)));
 	}
 
 	/**
@@ -107,9 +98,7 @@ public final class ZhipuUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new ZhipuClient(config);
-		}
+		HOLDER.set(new ZhipuClient(config));
 	}
 
 	/**
@@ -119,17 +108,7 @@ public final class ZhipuUtil {
 	 * @throws AiException 环境变量缺失时抛出
 	 */
 	public static ZhipuClient client() {
-		ZhipuClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = buildFromEnv();
-					client = c;
-				}
-			}
-		}
-		return c;
+		return HOLDER.get();
 	}
 
 	/** 从环境变量构建客户端。 */
@@ -215,17 +194,7 @@ public final class ZhipuUtil {
 	 * @throws AiException 环境变量缺失时抛出
 	 */
 	public static ZhipuVideoClient videoClient() {
-		ZhipuVideoClient c = videoClient;
-		if (c == null) {
-			synchronized (VIDEO_LOCK) {
-				c = videoClient;
-				if (c == null) {
-					c = buildVideoClientFromEnv();
-					videoClient = c;
-				}
-			}
-		}
-		return c;
+		return VIDEO.get();
 	}
 
 	/** 从环境变量构建视频客户端。 */
@@ -267,9 +236,7 @@ public final class ZhipuUtil {
 	 * 重置视频单例客户端（测试清理用）。
 	 */
 	public static void resetVideoClient() {
-		synchronized (VIDEO_LOCK) {
-			videoClient = null;
-		}
+		VIDEO.reset();
 	}
 
 	/**
@@ -324,17 +291,7 @@ public final class ZhipuUtil {
 	 * @throws AiException 环境变量缺失时抛出
 	 */
 	public static ZhipuBatchClient batchClient() {
-		ZhipuBatchClient c = batchClient;
-		if (c == null) {
-			synchronized (BATCH_LOCK) {
-				c = batchClient;
-				if (c == null) {
-					c = new ZhipuBatchClient(buildBatchConfigFromEnv());
-					batchClient = c;
-				}
-			}
-		}
-		return c;
+		return BATCH.get();
 	}
 
 	/** 从环境变量构建批处理客户端配置。 */
@@ -375,9 +332,7 @@ public final class ZhipuUtil {
 	 * 重置批处理单例客户端（测试清理用）。
 	 */
 	public static void resetBatchClient() {
-		synchronized (BATCH_LOCK) {
-			batchClient = null;
-		}
+		BATCH.reset();
 	}
 
 	// ==================== Realtime（GLM 全双工语音对话） ====================
@@ -395,25 +350,14 @@ public final class ZhipuUtil {
 	 */
 	public static ZhipuRealtimeClient realtimeClient(String model,
 			RealtimeEventListener eventListener) {
-		ZhipuRealtimeClient c = realtimeClient;
-		if (c == null) {
-			synchronized (REALTIME_LOCK) {
-				c = realtimeClient;
-				if (c == null) {
-					c = new ZhipuRealtimeClient(buildBatchConfigFromEnv(), model, eventListener);
-					realtimeClient = c;
-				}
-			}
-		}
-		return c;
+		return REALTIME.getOrCreate(() ->
+			new ZhipuRealtimeClient(buildBatchConfigFromEnv(), model, eventListener));
 	}
 
 	/**
 	 * 重置 Realtime 单例客户端（测试清理用）。
 	 */
 	public static void resetRealtimeClient() {
-		synchronized (REALTIME_LOCK) {
-			realtimeClient = null;
-		}
+		REALTIME.reset();
 	}
 }

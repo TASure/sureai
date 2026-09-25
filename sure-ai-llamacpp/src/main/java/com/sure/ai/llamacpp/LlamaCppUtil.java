@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
@@ -45,11 +46,9 @@ public final class LlamaCppUtil {
 	/** 默认 baseUrl。 */
 	private static final String DEFAULT_BASE_URL = "http://localhost:8080/v1";
 
-	/** 单例客户端。 */
-	private static volatile LlamaCppClient client;
-
-	/** 初始化锁对象。 */
-	private static final Object LOCK = new Object();
+	/** 单例客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<LlamaCppClient> HOLDER =
+		new SingletonHolder<>(LlamaCppUtil::loadFromEnv);
 
 	private LlamaCppUtil() {
 		throw new AssertionError("No instances");
@@ -68,9 +67,7 @@ public final class LlamaCppUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new LlamaCppClient(config);
-		}
+		HOLDER.set(new LlamaCppClient(config));
 	}
 
 	/**
@@ -79,25 +76,20 @@ public final class LlamaCppUtil {
 	 * @return 客户端
 	 */
 	public static LlamaCppClient client() {
-		LlamaCppClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					String baseUrl = System.getenv("SURE_AI_LLAMACPP_BASE_URL");
-					if (baseUrl == null || baseUrl.isBlank()) {
-						baseUrl = DEFAULT_BASE_URL;
-					}
-					String apiKey = System.getenv("SURE_AI_LLAMACPP_API_KEY");
-					if (apiKey == null || apiKey.isBlank()) {
-						apiKey = LlamaCppClient.DEFAULT_API_KEY;
-					}
-					c = new LlamaCppClient(AiConfig.builder().apiKey(apiKey).baseUrl(baseUrl).build());
-					client = c;
-				}
-			}
+		return HOLDER.get();
+	}
+
+	/** 从环境变量懒加载构造客户端。 */
+	private static LlamaCppClient loadFromEnv() {
+		String baseUrl = System.getenv("SURE_AI_LLAMACPP_BASE_URL");
+		if (baseUrl == null || baseUrl.isBlank()) {
+			baseUrl = DEFAULT_BASE_URL;
 		}
-		return c;
+		String apiKey = System.getenv("SURE_AI_LLAMACPP_API_KEY");
+		if (apiKey == null || apiKey.isBlank()) {
+			apiKey = LlamaCppClient.DEFAULT_API_KEY;
+		}
+		return new LlamaCppClient(AiConfig.builder().apiKey(apiKey).baseUrl(baseUrl).build());
 	}
 
 	/**

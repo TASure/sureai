@@ -19,6 +19,7 @@ package com.sure.ai.anthropic;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
@@ -37,11 +38,9 @@ public final class AnthropicUtil {
 	/** 默认 baseUrl。 */
 	private static final String DEFAULT_BASE_URL = "https://api.anthropic.com/v1";
 
-	/** 单例客户端。 */
-	private static volatile AnthropicClient client;
-
-	/** 初始化锁对象。 */
-	private static final Object LOCK = new Object();
+	/** 单例客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<AnthropicClient> HOLDER =
+		new SingletonHolder<>(AnthropicUtil::loadFromEnv);
 
 	private AnthropicUtil() {
 		throw new AssertionError("No instances");
@@ -62,9 +61,7 @@ public final class AnthropicUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new AnthropicClient(config);
-		}
+		HOLDER.set(new AnthropicClient(config));
 	}
 
 	/**
@@ -73,22 +70,17 @@ public final class AnthropicUtil {
 	 * @return 客户端
 	 */
 	public static AnthropicClient client() {
-		AnthropicClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					String apiKey = System.getenv("SURE_AI_ANTHROPIC_API_KEY");
-					String baseUrl = System.getenv("SURE_AI_ANTHROPIC_BASE_URL");
-					if (baseUrl == null || baseUrl.isBlank()) {
-						baseUrl = DEFAULT_BASE_URL;
-					}
-					c = new AnthropicClient(AiConfig.builder().apiKey(apiKey).baseUrl(baseUrl).build());
-					client = c;
-				}
-			}
+		return HOLDER.get();
+	}
+
+	/** 从环境变量懒加载构造客户端。 */
+	private static AnthropicClient loadFromEnv() {
+		String apiKey = System.getenv("SURE_AI_ANTHROPIC_API_KEY");
+		String baseUrl = System.getenv("SURE_AI_ANTHROPIC_BASE_URL");
+		if (baseUrl == null || baseUrl.isBlank()) {
+			baseUrl = DEFAULT_BASE_URL;
 		}
-		return c;
+		return new AnthropicClient(AiConfig.builder().apiKey(apiKey).baseUrl(baseUrl).build());
 	}
 
 	/**

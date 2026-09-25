@@ -19,6 +19,7 @@ package com.sure.ai.doubao;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.client.realtime.RealtimeEventListener;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatRequest;
@@ -54,35 +55,25 @@ public final class DoubaoUtil {
 	/** 环境变量：baseUrl。 */
 	public static final String ENV_BASE_URL = "SURE_AI_DOUBAO_BASE_URL";
 
-	/** 全局单例。 */
-	private static volatile DoubaoClient client;
+	/** 主客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<DoubaoClient> HOLDER =
+		new SingletonHolder<>(DoubaoUtil::buildFromEnv);
 
-	/** 初始化锁。 */
-	private static final Object LOCK = new Object();
+	/** 视频生成客户端容器（方舟原生端点）。 */
+	private static final SingletonHolder<DoubaoVideoClient> VIDEO =
+		new SingletonHolder<>(DoubaoUtil::buildVideoClientFromEnv);
 
-	/** 视频生成客户端单例（方舟原生端点）。 */
-	private static volatile DoubaoVideoClient videoClient;
+	/** TTS 客户端容器（openspeech 端点，鉴权头不同）。 */
+	private static final SingletonHolder<DoubaoTtsClient> TTS =
+		new SingletonHolder<>(() -> new DoubaoTtsClient(baseConfigFromEnv()));
 
-	/** 视频客户端初始化锁。 */
-	private static final Object VIDEO_LOCK = new Object();
+	/** STT 客户端容器（openspeech 端点，异步 submit+query）。 */
+	private static final SingletonHolder<DoubaoSttClient> STT =
+		new SingletonHolder<>(() -> new DoubaoSttClient(baseConfigFromEnv()));
 
-	/** TTS 客户端单例（openspeech 端点，鉴权头不同）。 */
-	private static volatile DoubaoTtsClient ttsClient;
-
-	/** TTS 客户端初始化锁。 */
-	private static final Object TTS_LOCK = new Object();
-
-	/** STT 客户端单例（openspeech 端点，异步 submit+query）。 */
-	private static volatile DoubaoSttClient sttClient;
-
-	/** STT 客户端初始化锁。 */
-	private static final Object STT_LOCK = new Object();
-
-	/** Realtime 客户端单例（需事件监听，不提供静态便捷方法）。 */
-	private static volatile DoubaoRealtimeClient realtimeClient;
-
-	/** Realtime 客户端初始化锁。 */
-	private static final Object REALTIME_LOCK = new Object();
+	/** Realtime 客户端容器（构造参数依赖调用参数，用 getOrCreate 懒加载）。 */
+	private static final SingletonHolder<DoubaoRealtimeClient> REALTIME =
+		new SingletonHolder<>(null);
 
 	/** 工具类禁止实例化。 */
 	private DoubaoUtil() {
@@ -95,9 +86,7 @@ public final class DoubaoUtil {
 	 * @param apiKey 方舟 API Key
 	 */
 	public static void init(String apiKey) {
-		synchronized (LOCK) {
-			client = new DoubaoClient(AiConfig.of(apiKey));
-		}
+		HOLDER.set(new DoubaoClient(AiConfig.of(apiKey)));
 	}
 
 	/**
@@ -106,9 +95,7 @@ public final class DoubaoUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new DoubaoClient(config);
-		}
+		HOLDER.set(new DoubaoClient(config));
 	}
 
 	/**
@@ -118,17 +105,7 @@ public final class DoubaoUtil {
 	 * @throws AiException 环境变量缺失时抛出
 	 */
 	public static DoubaoClient client() {
-		DoubaoClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = buildFromEnv();
-					client = c;
-				}
-			}
-		}
-		return c;
+		return HOLDER.get();
 	}
 
 	/** 从环境变量构建客户端。 */
@@ -193,17 +170,7 @@ public final class DoubaoUtil {
 	 * @throws AiException 环境变量缺失时抛出
 	 */
 	public static DoubaoVideoClient videoClient() {
-		DoubaoVideoClient c = videoClient;
-		if (c == null) {
-			synchronized (VIDEO_LOCK) {
-				c = videoClient;
-				if (c == null) {
-					c = buildVideoClientFromEnv();
-					videoClient = c;
-				}
-			}
-		}
-		return c;
+		return VIDEO.get();
 	}
 
 	/** 从环境变量构建视频客户端。 */
@@ -236,9 +203,7 @@ public final class DoubaoUtil {
 	 * 重置视频单例客户端（测试清理用）。
 	 */
 	public static void resetVideoClient() {
-		synchronized (VIDEO_LOCK) {
-			videoClient = null;
-		}
+		VIDEO.reset();
 	}
 
 	/**
@@ -248,17 +213,7 @@ public final class DoubaoUtil {
 	 * @throws AiException 环境变量缺失时抛出
 	 */
 	public static DoubaoTtsClient ttsClient() {
-		DoubaoTtsClient c = ttsClient;
-		if (c == null) {
-			synchronized (TTS_LOCK) {
-				c = ttsClient;
-				if (c == null) {
-					c = new DoubaoTtsClient(baseConfigFromEnv());
-					ttsClient = c;
-				}
-			}
-		}
-		return c;
+		return TTS.get();
 	}
 
 	/**
@@ -287,9 +242,7 @@ public final class DoubaoUtil {
 	 * 重置 TTS 单例客户端（测试清理用）。
 	 */
 	public static void resetTtsClient() {
-		synchronized (TTS_LOCK) {
-			ttsClient = null;
-		}
+		TTS.reset();
 	}
 
 	/**
@@ -299,17 +252,7 @@ public final class DoubaoUtil {
 	 * @throws AiException 环境变量缺失时抛出
 	 */
 	public static DoubaoSttClient sttClient() {
-		DoubaoSttClient c = sttClient;
-		if (c == null) {
-			synchronized (STT_LOCK) {
-				c = sttClient;
-				if (c == null) {
-					c = new DoubaoSttClient(baseConfigFromEnv());
-					sttClient = c;
-				}
-			}
-		}
-		return c;
+		return STT.get();
 	}
 
 	/**
@@ -337,9 +280,7 @@ public final class DoubaoUtil {
 	 * 重置 STT 单例客户端（测试清理用）。
 	 */
 	public static void resetSttClient() {
-		synchronized (STT_LOCK) {
-			sttClient = null;
-		}
+		STT.reset();
 	}
 
 	// ==================== Realtime（全双工语音对话） ====================
@@ -357,26 +298,15 @@ public final class DoubaoUtil {
 	 */
 	public static DoubaoRealtimeClient realtimeClient(String model,
 			RealtimeEventListener eventListener) {
-		DoubaoRealtimeClient c = realtimeClient;
-		if (c == null) {
-			synchronized (REALTIME_LOCK) {
-				c = realtimeClient;
-				if (c == null) {
-					c = new DoubaoRealtimeClient(baseConfigFromEnv(), model, eventListener);
-					realtimeClient = c;
-				}
-			}
-		}
-		return c;
+		return REALTIME.getOrCreate(() ->
+			new DoubaoRealtimeClient(baseConfigFromEnv(), model, eventListener));
 	}
 
 	/**
 	 * 重置 Realtime 单例客户端（测试清理用）。
 	 */
 	public static void resetRealtimeClient() {
-		synchronized (REALTIME_LOCK) {
-			realtimeClient = null;
-		}
+		REALTIME.reset();
 	}
 
 	/** 从环境变量构建基础配置（视频/TTS/STT/Realtime 客户端共用 apiKey）。 */

@@ -19,6 +19,7 @@ package com.sure.ai.mistral;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
@@ -47,10 +48,9 @@ public final class MistralUtil {
 	/** 环境变量名：baseUrl 覆盖。 */
 	public static final String ENV_BASE_URL = "SURE_AI_MISTRAL_BASE_URL";
 
-	private static volatile MistralClient client;
-
-	/** 初始化锁对象。 */
-	private static final Object LOCK = new Object();
+	/** 单例客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<MistralClient> HOLDER =
+		new SingletonHolder<>(() -> new MistralClient(buildConfigFromEnv()));
 
 	private MistralUtil() {
 		throw new AssertionError("No instances");
@@ -62,9 +62,7 @@ public final class MistralUtil {
 	 * @param apiKey API Key
 	 */
 	public static void init(String apiKey) {
-		synchronized (LOCK) {
-			client = new MistralClient(AiConfig.of(apiKey));
-		}
+		HOLDER.set(new MistralClient(AiConfig.of(apiKey)));
 	}
 
 	/**
@@ -73,9 +71,7 @@ public final class MistralUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new MistralClient(config);
-		}
+		HOLDER.set(new MistralClient(config));
 	}
 
 	/**
@@ -85,17 +81,7 @@ public final class MistralUtil {
 	 * @throws AiException 未初始化且未设置 {@code SURE_AI_MISTRAL_API_KEY}
 	 */
 	public static MistralClient client() {
-		MistralClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = new MistralClient(buildConfigFromEnv());
-					client = c;
-				}
-			}
-		}
-		return c;
+		return HOLDER.get();
 	}
 
 	/** 从环境变量构造配置。 */
@@ -125,9 +111,7 @@ public final class MistralUtil {
 
 	/** 重置单例客户端（主要用于测试与环境切换）。 */
 	public static void resetClient() {
-		synchronized (LOCK) {
-			client = null;
-		}
+		HOLDER.reset();
 	}
 
 	/**

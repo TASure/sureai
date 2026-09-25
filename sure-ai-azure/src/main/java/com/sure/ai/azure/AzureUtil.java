@@ -19,6 +19,7 @@ package com.sure.ai.azure;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.BatchRequest;
 import com.sure.ai.model.BatchResponse;
@@ -70,34 +71,25 @@ public final class AzureUtil {
 	/** 环境变量名：Speech 区域（TTS 端点 {region}.tts.speech.microsoft.com）。 */
 	public static final String ENV_SPEECH_REGION = "SURE_AI_AZURE_SPEECH_REGION";
 
-	private static volatile AzureClient client;
+	/** 主客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<AzureClient> HOLDER =
+		new SingletonHolder<>(() -> new AzureClient(buildConfigFromEnv()));
 
-	/** 初始化锁对象。 */
-	private static final Object LOCK = new Object();
+	/** 视频生成客户端容器。 */
+	private static final SingletonHolder<AzureVideoClient> VIDEO =
+		new SingletonHolder<>(() -> new AzureVideoClient(buildConfigFromEnv()));
 
-	/** 视频生成客户端单例。 */
-	private static volatile AzureVideoClient videoClient;
+	/** TTS 客户端容器。 */
+	private static final SingletonHolder<AzureTtsClient> TTS =
+		new SingletonHolder<>(() -> new AzureTtsClient(buildSpeechConfig(false)));
 
-	/** 视频客户端初始化锁。 */
-	private static final Object VIDEO_LOCK = new Object();
+	/** STT 客户端容器。 */
+	private static final SingletonHolder<AzureSttClient> STT =
+		new SingletonHolder<>(() -> new AzureSttClient(buildSpeechConfig(true)));
 
-	/** TTS 客户端单例。 */
-	private static volatile AzureTtsClient ttsClient;
-
-	/** TTS 客户端初始化锁。 */
-	private static final Object TTS_LOCK = new Object();
-
-	/** STT 客户端单例。 */
-	private static volatile AzureSttClient sttClient;
-
-	/** STT 客户端初始化锁。 */
-	private static final Object STT_LOCK = new Object();
-
-	/** 批处理客户端单例。 */
-	private static volatile AzureBatchClient batchClient;
-
-	/** 批处理客户端初始化锁。 */
-	private static final Object BATCH_LOCK = new Object();
+	/** 批处理客户端容器。 */
+	private static final SingletonHolder<AzureBatchClient> BATCH =
+		new SingletonHolder<>(() -> new AzureBatchClient(buildConfigFromEnv()));
 
 	private AzureUtil() {
 		throw new AssertionError("No instances");
@@ -109,9 +101,7 @@ public final class AzureUtil {
 	 * @param apiKey API Key
 	 */
 	public static void init(String apiKey) {
-		synchronized (LOCK) {
-			client = new AzureClient(AiConfig.of(apiKey));
-		}
+		HOLDER.set(new AzureClient(AiConfig.of(apiKey)));
 	}
 
 	/**
@@ -120,9 +110,7 @@ public final class AzureUtil {
 	 * @param config 配置（deployment/api-version 经 extraHeaders 传入）
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new AzureClient(config);
-		}
+		HOLDER.set(new AzureClient(config));
 	}
 
 	/**
@@ -132,17 +120,7 @@ public final class AzureUtil {
 	 * @throws AiException 未初始化且未设置 {@code SURE_AI_AZURE_API_KEY}
 	 */
 	public static AzureClient client() {
-		AzureClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = new AzureClient(buildConfigFromEnv());
-					client = c;
-				}
-			}
-		}
-		return c;
+		return HOLDER.get();
 	}
 
 	/** 从环境变量构造配置。 */
@@ -255,17 +233,7 @@ public final class AzureUtil {
 	 * @throws AiException 未初始化且未设置 {@code SURE_AI_AZURE_API_KEY}
 	 */
 	public static AzureVideoClient videoClient() {
-		AzureVideoClient c = videoClient;
-		if (c == null) {
-			synchronized (VIDEO_LOCK) {
-				c = videoClient;
-				if (c == null) {
-					c = new AzureVideoClient(buildConfigFromEnv());
-					videoClient = c;
-				}
-			}
-		}
-		return c;
+		return VIDEO.get();
 	}
 
 	/**
@@ -291,9 +259,7 @@ public final class AzureUtil {
 
 	/** 重置视频单例客户端（测试清理用）。 */
 	public static void resetVideoClient() {
-		synchronized (VIDEO_LOCK) {
-			videoClient = null;
-		}
+		VIDEO.reset();
 	}
 
 	// ==================== TTS ====================
@@ -305,17 +271,7 @@ public final class AzureUtil {
 	 * @throws AiException 缺少 Speech 密钥或区域时抛出
 	 */
 	public static AzureTtsClient ttsClient() {
-		AzureTtsClient c = ttsClient;
-		if (c == null) {
-			synchronized (TTS_LOCK) {
-				c = ttsClient;
-				if (c == null) {
-					c = new AzureTtsClient(buildSpeechConfig(false));
-					ttsClient = c;
-				}
-			}
-		}
-		return c;
+		return TTS.get();
 	}
 
 	/**
@@ -342,9 +298,7 @@ public final class AzureUtil {
 
 	/** 重置 TTS 单例客户端（测试清理用）。 */
 	public static void resetTtsClient() {
-		synchronized (TTS_LOCK) {
-			ttsClient = null;
-		}
+		TTS.reset();
 	}
 
 	// ==================== STT ====================
@@ -356,17 +310,7 @@ public final class AzureUtil {
 	 * @throws AiException 缺少 Speech 密钥或区域时抛出
 	 */
 	public static AzureSttClient sttClient() {
-		AzureSttClient c = sttClient;
-		if (c == null) {
-			synchronized (STT_LOCK) {
-				c = sttClient;
-				if (c == null) {
-					c = new AzureSttClient(buildSpeechConfig(true));
-					sttClient = c;
-				}
-			}
-		}
-		return c;
+		return STT.get();
 	}
 
 	/**
@@ -392,9 +336,7 @@ public final class AzureUtil {
 
 	/** 重置 STT 单例客户端（测试清理用）。 */
 	public static void resetSttClient() {
-		synchronized (STT_LOCK) {
-			sttClient = null;
-		}
+		STT.reset();
 	}
 
 	// ==================== 批处理（Batches） ====================
@@ -406,17 +348,7 @@ public final class AzureUtil {
 	 * @throws AiException 未初始化且未设置 {@code SURE_AI_AZURE_API_KEY}
 	 */
 	public static AzureBatchClient batchClient() {
-		AzureBatchClient c = batchClient;
-		if (c == null) {
-			synchronized (BATCH_LOCK) {
-				c = batchClient;
-				if (c == null) {
-					c = new AzureBatchClient(buildConfigFromEnv());
-					batchClient = c;
-				}
-			}
-		}
-		return c;
+		return BATCH.get();
 	}
 
 	/**
@@ -443,9 +375,7 @@ public final class AzureUtil {
 	 * 重置批处理单例客户端（测试清理用）。
 	 */
 	public static void resetBatchClient() {
-		synchronized (BATCH_LOCK) {
-			batchClient = null;
-		}
+		BATCH.reset();
 	}
 
 	/** 从环境变量构造 Speech（TTS/STT）配置。 */

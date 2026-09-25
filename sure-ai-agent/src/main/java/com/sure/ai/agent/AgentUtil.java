@@ -20,6 +20,7 @@ import com.sure.ai.agent.react.ReActAgent;
 import com.sure.ai.agent.tool.ToolHandler;
 import com.sure.ai.agent.tool.ToolRegistry;
 import com.sure.ai.client.AiClient;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ToolFunction;
 
@@ -43,8 +44,9 @@ import com.sure.ai.model.ToolFunction;
  */
 public final class AgentUtil {
 
-	/** 全局注册中心（双检锁懒加载）。 */
-	private static volatile ToolRegistry globalRegistry;
+	/** 全局注册中心容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<ToolRegistry> HOLDER =
+		new SingletonHolder<>(ToolRegistry::new);
 
 	private AgentUtil() {
 		throw new AssertionError("No instances");
@@ -56,14 +58,7 @@ public final class AgentUtil {
 	 * @return 全局注册中心
 	 */
 	public static ToolRegistry registry() {
-		if (globalRegistry == null) {
-			synchronized (AgentUtil.class) {
-				if (globalRegistry == null) {
-					globalRegistry = new ToolRegistry();
-				}
-			}
-		}
-		return globalRegistry;
+		return HOLDER.get();
 	}
 
 	/**
@@ -104,8 +99,6 @@ public final class AgentUtil {
 	 * 重置全局注册中心（清空所有工具，主要用于测试隔离）。
 	 */
 	public static void resetRegistry() {
-		synchronized (AgentUtil.class) {
-			globalRegistry = new ToolRegistry();
-		}
+		HOLDER.set(new ToolRegistry());
 	}
 }
