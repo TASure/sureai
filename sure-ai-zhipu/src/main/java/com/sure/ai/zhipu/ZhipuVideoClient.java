@@ -111,7 +111,7 @@ public class ZhipuVideoClient extends AbstractAiClient implements VideoClient {
 		String lastRaw = submit.rawBody();
 		while (System.currentTimeMillis() < deadline) {
 			sleepQuietly();
-			PostResult poll = doGetRaw(POLL_PATH_PREFIX + taskId);
+			PostResult poll = doGetRaw(POLL_PATH_PREFIX + encodePathSegment(taskId));
 			lastRaw = poll.rawBody();
 			String status = poll.json().optString("task_status", "");
 			if ("SUCCESS".equals(status)) {

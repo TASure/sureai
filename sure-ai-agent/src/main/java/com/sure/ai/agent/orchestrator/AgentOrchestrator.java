@@ -43,14 +43,14 @@ import com.sure.ai.agent.react.ReActAgent;
  * </ol>
  *
  * <p><b>线程池生命周期：</b>若未通过 {@link Builder#executor(ExecutorService)} 注入，
- * 编排器会自建一个 {@code fixedThreadPool(4)}。<b>该默认线程池不会自动关闭，
- * 调用方负责在不再使用时调用 {@code shutdown()} 释放；生产环境强烈建议注入独立的、
- * 受调用方管理的 {@link ExecutorService}。</b></p>
+ * 编排器会自建一个 {@code fixedThreadPool(4)}。编排器实现 {@link AutoCloseable}，
+ * 调用 {@link #close()} 时只会关闭<b>内部自建</b>的线程池；外部注入的线程池仍由调用方管理。
+ * 生产环境强烈建议注入独立的、受调用方管理的 {@link ExecutorService}。</p>
  *
  * @author sureai
  * @since 1.1.0
  */
-public final class AgentOrchestrator {
+public final class AgentOrchestrator implements AutoCloseable {
 
 	/** 默认整体超时。 */
 	public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
@@ -58,13 +58,16 @@ public final class AgentOrchestrator {
 	private final TaskSplitter splitter;
 	private final ResultAggregator aggregator;
 	private final ExecutorService executor;
+	private final boolean ownsExecutor;
 	private final long timeoutMillis;
 	private final Function<String, ReActAgent> agentFactory;
+	private volatile boolean closed;
 
 	private AgentOrchestrator(Builder b) {
 		this.splitter = b.splitter;
 		this.aggregator = b.aggregator;
 		this.executor = b.executor;
+		this.ownsExecutor = b.ownsExecutor;
 		this.timeoutMillis = b.timeoutMillis;
 		this.agentFactory = b.agentFactory;
 	}
@@ -145,6 +148,20 @@ public final class AgentOrchestrator {
 	}
 
 	/**
+	 * 关闭编排器：仅关闭内部自建的线程池；外部注入的 ExecutorService 不受影响。
+	 */
+	@Override
+	public void close() {
+		if (this.closed) {
+			return;
+		}
+		this.closed = true;
+		if (this.ownsExecutor && this.executor != null) {
+			this.executor.shutdownNow();
+		}
+	}
+
+	/**
 	 * Builder。
 	 */
 	public static final class Builder {
@@ -153,6 +170,7 @@ public final class AgentOrchestrator {
 		private TaskSplitter splitter = new SimpleTaskSplitter();
 		private ResultAggregator aggregator = new ConcatenatingAggregator();
 		private ExecutorService executor;
+		private boolean ownsExecutor;
 		private long timeoutMillis = DEFAULT_TIMEOUT.toMillis();
 
 		private Builder(Function<String, ReActAgent> agentFactory) {
@@ -189,7 +207,8 @@ public final class AgentOrchestrator {
 		}
 
 		/**
-		 * 注入执行线程池。未注入时编排器自建 fixedThreadPool(4)，调用方负责 shutdown。
+		 * 注入执行线程池。未注入时编排器自建 fixedThreadPool(4)，并在 {@link AgentOrchestrator#close()}
+		 * 时自动关闭；注入的线程池由调用方管理，编排器不关闭。
 		 *
 		 * @param executor 执行器
 		 * @return this
@@ -222,6 +241,9 @@ public final class AgentOrchestrator {
 		public AgentOrchestrator build() {
 			if (this.executor == null) {
 				this.executor = Executors.newFixedThreadPool(4);
+				this.ownsExecutor = true;
+			} else {
+				this.ownsExecutor = false;
 			}
 			return new AgentOrchestrator(this);
 		}

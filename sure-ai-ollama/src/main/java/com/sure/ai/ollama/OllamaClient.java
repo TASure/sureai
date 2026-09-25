@@ -204,6 +204,9 @@ public class OllamaClient extends AbstractAiClient implements AiClient, Embeddin
 	/**
 	 * 自行实现 NDJSON 流式 POST：逐行读取 InputStream，每行解析为 JSON 对象。
 	 *
+	 * <p><b>注意：此路径直接使用 HttpClient，不经过基类的重试/熔断/指标机制。</b>
+	 * （Ollama 返回 NDJSON 而非 SSE，基类 doPostStream 仅支持 SSE，故单独实现。）</p>
+	 *
 	 * @param body     请求体
 	 * @param consumer 分片消费者
 	 */

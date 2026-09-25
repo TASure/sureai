@@ -106,6 +106,13 @@ public abstract class AbstractRealtimeClient implements RealtimeClient {
 		}
 		this.connected = false;
 		this.eventListener.onClose();
+		if (this.connector instanceof AutoCloseable ac) {
+			try {
+				ac.close();
+			} catch (Exception ex) {
+				this.eventListener.onError("connector close failed: " + ex.getMessage());
+			}
+		}
 	}
 
 	@Override

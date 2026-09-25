@@ -121,7 +121,7 @@ public class OpenAiBatchClient extends AbstractAiClient implements BatchClient {
 
 	@Override
 	public BatchResponse getBatch(String batchId) {
-		PostResult result = doGetRaw(BATCHES_PATH + "/" + batchId);
+		PostResult result = doGetRaw(BATCHES_PATH + "/" + encodePathSegment(batchId));
 		return parseBatch(result.json(), result.rawBody());
 	}
 

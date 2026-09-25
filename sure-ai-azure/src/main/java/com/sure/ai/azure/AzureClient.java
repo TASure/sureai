@@ -120,7 +120,7 @@ public class AzureClient extends OpenAiCompatClient {
 	 */
 	@Override
 	public FineTuneResponse getFineTune(String jobId) {
-		PostResult result = doGetRaw("/openai/fine_tuning/jobs/" + jobId
+		PostResult result = doGetRaw("/openai/fine_tuning/jobs/" + encodePathSegment(jobId)
 			+ "?api-version=" + this.apiVersion);
 		return parseFineTuneResponse(result.json(), result.rawBody());
 	}

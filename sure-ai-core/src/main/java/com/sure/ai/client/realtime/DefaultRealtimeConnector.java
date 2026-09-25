@@ -20,6 +20,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import com.sure.ai.exception.AiException;
 
@@ -30,13 +32,25 @@ import com.sure.ai.exception.AiException;
  * 鉴权头（如 {@code Authorization: Bearer <apiKey>}）写入 {@link WebSocket.Builder}。
  * 测试时改用 {@code FakeRealtimeConnector} 注入，实现零真实网络。</p>
  *
+ * <p>本类持有一个共享的 {@link HttpClient}（及其专用 Executor），多次 {@link #connect}
+ * 复用同一实例；用完后应调用 {@link #close()} 关闭 Executor，避免线程/连接泄漏。</p>
+ *
  * @author sureai
  * @since 0.2.0
  */
-public final class DefaultRealtimeConnector implements RealtimeConnector {
+public final class DefaultRealtimeConnector implements RealtimeConnector, AutoCloseable {
 
 	/** 握手阶段附加的请求头（不可变拷贝）。 */
 	private final Map<String, String> headers;
+
+	/** HttpClient 的专用 Executor（close 时关闭）。 */
+	private final ExecutorService executor;
+
+	/** 共享的 HttpClient（懒创建后复用）。 */
+	private final HttpClient httpClient;
+
+	/** 是否已关闭。 */
+	private volatile boolean closed;
 
 	/**
 	 * 构造连接器。
@@ -45,13 +59,21 @@ public final class DefaultRealtimeConnector implements RealtimeConnector {
 	 */
 	public DefaultRealtimeConnector(Map<String, String> headers) {
 		this.headers = headers == null ? Map.of() : Map.copyOf(headers);
+		this.executor = Executors.newFixedThreadPool(2, r -> {
+			Thread t = new Thread(r, "sureai-websocket-connector");
+			t.setDaemon(true);
+			return t;
+		});
+		this.httpClient = HttpClient.newBuilder().executor(this.executor).build();
 	}
 
 	@Override
 	public WebSocket connect(URI uri, WebSocket.Listener listener) {
+		if (this.closed) {
+			throw new AiException("connector is closed");
+		}
 		try {
-			HttpClient client = HttpClient.newHttpClient();
-			WebSocket.Builder builder = client.newWebSocketBuilder();
+			WebSocket.Builder builder = this.httpClient.newWebSocketBuilder();
 			for (Map.Entry<String, String> e : this.headers.entrySet()) {
 				builder.header(e.getKey(), e.getValue());
 			}
@@ -62,5 +84,14 @@ public final class DefaultRealtimeConnector implements RealtimeConnector {
 		} catch (java.util.concurrent.ExecutionException ex) {
 			throw new AiException("websocket connect failed: " + ex.getMessage(), ex);
 		}
+	}
+
+	/**
+	 * 关闭共享的 HttpClient Executor，释放后台线程。
+	 */
+	@Override
+	public void close() {
+		this.closed = true;
+		this.executor.shutdownNow();
 	}
 }

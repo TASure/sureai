@@ -18,6 +18,7 @@ package com.sure.ai.deepseek;
 
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.compat.OpenAiCompatClient;
+import com.sure.ai.exception.AiException;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 
@@ -37,7 +38,7 @@ import com.sure.ai.model.EmbeddingResponse;
  * </ul>
  *
  * <p>DeepSeek 暂无官方 embeddings API，故 {@link #embed} 直接抛出
- * {@link UnsupportedOperationException}。</p>
+ * {@link AiException}。</p>
  *
  * <p>官方文档：<a href="https://api-docs.deepseek.com/">https://api-docs.deepseek.com/</a></p>
  *
@@ -65,7 +66,7 @@ public class DeepSeekClient extends OpenAiCompatClient {
 
 	@Override
 	public EmbeddingResponse embed(EmbeddingRequest request) {
-		throw new UnsupportedOperationException("DeepSeek 暂不提供官方 embeddings API");
+		throw new AiException("DeepSeek does not provide embeddings API");
 	}
 
 	/**

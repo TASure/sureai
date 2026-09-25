@@ -164,7 +164,7 @@ public class QwenVideoClient extends AbstractAiClient implements VideoClient {
 
 	/** 轮询任务结果，直到成功、失败或超时。 */
 	private VideoResponse waitForResult(String taskId) {
-		String path = TASK_PATH_PREFIX + taskId;
+		String path = TASK_PATH_PREFIX + encodePathSegment(taskId);
 		long deadline = System.currentTimeMillis() + MAX_WAIT_MS;
 		while (true) {
 			PostResult poll = doGetRaw(path);

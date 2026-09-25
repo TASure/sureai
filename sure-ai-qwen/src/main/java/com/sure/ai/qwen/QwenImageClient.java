@@ -155,7 +155,7 @@ public class QwenImageClient extends AbstractAiClient implements ImageClient {
 
 	/** 轮询任务结果，直到成功、失败或超时。 */
 	private ImageResponse waitForResult(String taskId) {
-		String path = "/api/v1/tasks/" + taskId;
+		String path = "/api/v1/tasks/" + encodePathSegment(taskId);
 		long deadline = System.currentTimeMillis() + MAX_WAIT_MS;
 		while (true) {
 			PostResult poll = doGetRaw(path);

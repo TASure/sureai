@@ -127,7 +127,7 @@ public class AzureVideoClient extends AbstractAiClient implements VideoClient {
 
 	/** 轮询任务状态直到终态。 */
 	private VideoResponse pollUntilDone(String taskId) {
-		String pollPath = "/openai/v1/video/generations/jobs/" + taskId
+		String pollPath = "/openai/v1/video/generations/jobs/" + encodePathSegment(taskId)
 			+ "?api-version=" + this.apiVersion;
 		long deadline = System.currentTimeMillis() + MAX_WAIT_MS;
 		String lastRaw = "";
@@ -175,7 +175,7 @@ public class AzureVideoClient extends AbstractAiClient implements VideoClient {
 	/** 拼接视频内容下载绝对 URL。 */
 	private String downloadUrl(String generationId) {
 		String base = this.config.baseUrl();
-		String path = "/openai/v1/video/generations/" + generationId
+		String path = "/openai/v1/video/generations/" + encodePathSegment(generationId)
 			+ "/content/video?api-version=" + this.apiVersion;
 		if (base.endsWith("/")) {
 			return base + path.substring(1);

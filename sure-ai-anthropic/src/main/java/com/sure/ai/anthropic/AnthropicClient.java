@@ -386,6 +386,9 @@ public class AnthropicClient extends AbstractAiClient implements AiClient, Model
 	/**
 	 * 自行实现流式 POST：使用 SseLineReader 获取命名事件，按事件类型分发。
 	 *
+	 * <p><b>注意：此路径直接使用 HttpClient，不经过基类的重试/熔断/指标机制。</b>
+	 * （Anthropic 流式协议含命名事件，基类 doPostStream 不支持，故单独实现。）</p>
+	 *
 	 * @param body     请求体
 	 * @param consumer 分片消费者
 	 */

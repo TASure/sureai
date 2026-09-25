@@ -261,7 +261,7 @@ public class OpenAiCompatClient extends AbstractAiClient
 				Thread.currentThread().interrupt();
 				throw new AiException("video polling interrupted", ex);
 			}
-			PostResult poll = doGetRaw(this.videosPath + "/" + taskId);
+			PostResult poll = doGetRaw(this.videosPath + "/" + encodePathSegment(taskId));
 			lastRaw = poll.rawBody();
 			String status = poll.json().optString("status", "");
 			if ("completed".equals(status)) {
@@ -800,7 +800,7 @@ public class OpenAiCompatClient extends AbstractAiClient
 
 	@Override
 	public FineTuneResponse getFineTune(String jobId) {
-		PostResult result = doGetRaw(this.fineTunePath + "/" + jobId);
+		PostResult result = doGetRaw(this.fineTunePath + "/" + encodePathSegment(jobId));
 		return parseFineTuneResponse(result.json(), result.rawBody());
 	}
 

@@ -118,7 +118,7 @@ public class AzureBatchClient extends AbstractAiClient implements BatchClient {
 
 	@Override
 	public BatchResponse getBatch(String batchId) {
-		PostResult result = doGetRaw(batchesPath("/" + batchId));
+		PostResult result = doGetRaw(batchesPath("/" + encodePathSegment(batchId)));
 		return parseBatch(result.json(), result.rawBody());
 	}
 
