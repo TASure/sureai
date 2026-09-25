@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - Unreleased
+
+### Added
+- **P1-12 Cohere Rerank**：新增 `CohereRerankClient`（`extends AbstractAiClient implements RerankClient`），对接 Cohere v2 `/rerank` API（Bearer 鉴权、documents 字符串列表、top_n 可选、results index/relevance_score/document 映射到 core RerankResponse）；`CohereUtil` 新增 `rerankClient()` 单例与 `rerank()` 静态入口；`CohereModels` 新增 `RERANK_V3_5` 常量；5 个 mock 测试；docs/cohere.md 与 README 能力矩阵 Cohere Rerank 列 ❌→✅。
+- **P1-13 四平台 Demo**：examples 新增 `CohereDemo`、`GrokDemo`、`LlamaCppDemo`、`MistralDemo`（与现有 Demo 同风格，零真实密钥可编译，缺 key 优雅提示），`ExamplesRunner` 注册 4 个新 case。
+- **P1-8 Spring Starter 补 5 平台**：`SureAiProperties` 新增 grok/mistral/llamacpp/cohere（PlatformProperties）+ bedrock（BedrockProperties）属性块；`SureAiAutoConfiguration` 新增对应 5 个 @Bean（含 Bedrock accessKey/secretKey/sessionToken/region/model 配置）；`BedrockProperties` 新类。
+- **P1-9 PlatformProperties 字段对齐**：新增 connectTimeout/proxy/organization/rateLimitQps/cacheTtl/extraHeaders/secretKey 共 7 字段；`buildConfig()` 同步映射；对象型扩展点（cacheStore/circuitBreaker/retryListeners/metricsCollector）JavaDoc 说明需编程式 @Bean 注入。
+
+### Changed
+- **P0-2 Bedrock 接入基类**：`BedrockClient` 从 `implements AiClient` 改为 `extends AbstractAiClient implements AiClient`，复用基类的重试/限流/熔断/指标/代理/超时能力；core `AbstractAiClient` 新增通用 `signRequest(method, url, body)` 受保护钩子（默认 no-op，不为 Bedrock 单点开洞），接入 newRequest/buildGetRequest/buildMultipartRequest 三处请求构建；Bedrock `chat()` 走 `doPostRaw`、`chatStream()` 走 `doPostStream`；删除自建 HttpClient、硬编码超时、newRequestBuilder、ensureSuccess；IOException 自动升级为 `AiTimeoutException`。
+- **P1-11 BedrockUtil 静态入口**：补齐 `init(ak,sk,region)` / `init(ak,sk,token,region,modelId)` / `init(BedrockClient)` / `client()` / `resetClient()` / `chat(model,prompt)` / `chat(request)` / `chatStream(...)`，与其余 15 平台范式一致；保留 `create()` 显式工厂。
+- **P1-2 百度密钥出 URL**：BaiduClient/BaiduImageClient OAuth 换 token 从 URL 查询串改为 POST body（`application/x-www-form-urlencoded`，client_id/client_secret 经 URLEncoder）；业务 API 从 `?access_token=` 改为 `Authorization: Bearer` 头（重写 `applyAuth`，基类 doPost/doPostStream 自动回调）；8 处路径移除 access_token；TTS/STT token 本就在 body 不在 URL，保持原样。
+- **P1-10 Baidu secretKey Spring 配置**：PlatformProperties 新增 `secretKey` 字段；`SureAiAutoConfiguration.baiduClient()` 把 secret-key 写入 `extraHeader("secretKey", ...)`（BaiduClient 从该 header 读取）。
+- **P2-4 路径参数 URL encode**：core `AbstractAiClient` 新增 `encodePathSegment()` 工具方法；OpenAiCompatClient/OpenAiBatchClient/Azure*/DoubaoVideo/ZhipuVideo/Qwen* 共 11 处 taskId/jobId/batchId/generationId 路径拼接改为编码。
+- **P2-11 DefaultRealtimeConnector 资源泄漏**：HttpClient 从每次 connect() 新建提升为 final 字段复用，专用 daemon Executor，实现 `AutoCloseable`；`AbstractRealtimeClient.close()` 关闭 connector。
+- **P2-12 AgentOrchestrator AutoCloseable**：实现 `AutoCloseable`，新增 `ownsExecutor` 标志，`close()` 只 shutdownNow 内部创建的线程池（外部注入的不动）。
+- **P2-15 绕过基类流式路径 JavaDoc 标注**：AnthropicClient.streamMessages（命名 SSE）、OllamaClient.streamChat（NDJSON）、BaiduClient.postForm/postJson/getAccessToken（TTS/STT/OAuth 独立端点）均加"不经过基类重试/熔断/指标"标注；Baidu chatStream 已正确走基类 doPostStream。
+- **P2-20 flaky 测试修复**：CircuitBreakerIntegrationTest `Thread.sleep(300L)` 改为轮询 cb.state() 直到 HALF_OPEN（5s 上限）；LruCacheStoreTest 三个 TTL 测试固定 sleep 改为 `waitUntilExpired()` 轮询辅助（10ms 间隔，5s 上限）。
+
+### Fixed
+- **P1-7 零断言测试修复**：DoubaoStt/Tts/VideoClientTest 的 `testUtilReset()` 从仅一行 reset 改为反射注入→reset→assertNull 断言字段置 null；AzureVideo/BaiduImage/QwenImage/QwenVideo 测试的 `assertEquals(0,0)` 无意义断言同样修复。
+- **P1-14 异常体系统一**：DeepSeekClient.embed 从 `UnsupportedOperationException` 改为 `AiException("DeepSeek does not provide embeddings API")`；测试断言类型同步更新。
+- **P1-6 CI 覆盖率通配**：`.github/workflows/ci.yml` 覆盖率 artifact 从逐模块列举 12 个改为通配 `sure-ai-*/target/site/jacoco/`，覆盖全部 21 个有报告模块。
+- **P2-16 SSE 边界测试**：SseLineReaderTest 从 6 个增至 11 个，新增 `[DONE]` 标记、malformed JSON 原样投递、空响应、仅注释、chunked 分块重组（3 字节 read 模拟）5 个测试。
+
+- 全量 27 模块 799 测试全绿（+29），行覆盖率 core 86.0%（≥0.70）、其余模块均 ≥0.60，checkstyle/spotbugs/license 零违规。
+
 ## [1.2.1] - 2026-09-25
 
 ### Fixed
