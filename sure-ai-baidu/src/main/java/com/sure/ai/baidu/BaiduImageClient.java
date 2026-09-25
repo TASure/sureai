@@ -18,11 +18,14 @@ package com.sure.ai.baidu;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiConfig;
@@ -41,12 +44,13 @@ import com.sure.ai.model.ImageResult;
 /**
  * 百度文心一格（ERNIE-ViLG）文生图客户端。
  *
- * <p>鉴权与 {@link BaiduClient} 一致：OAuth access_token 拼在 URL 查询串，按 {@code expires_in}
- * 缓存（提前 60 秒刷新），并发下只刷新一次。任务模式为异步轮询：</p>
+ * <p>鉴权与 {@link BaiduClient} 一致：OAuth 凭证以 {@code application/x-www-form-urlencoded}
+ * 表单 POST 提交（不进 URL 查询串），access_token 通过 {@code Authorization: Bearer} 头传递，
+ * 按 {@code expires_in} 缓存（提前 60 秒刷新），并发下只刷新一次。任务模式为异步轮询：</p>
  * <ul>
- *   <li>提交任务：{@code POST /rpc/2.0/ernievilg/v1/txt2imgv2?access_token=<token>}，
+ *   <li>提交任务：{@code POST /rpc/2.0/ernievilg/v1/txt2imgv2}，
  *       body 为 {@code prompt/width/height/image_num}，成功时 {@code code=0}。</li>
- *   <li>轮询结果：{@code POST /rpc/2.0/ernievilg/v1/getImgv2?access_token=<token>}，
+ *   <li>轮询结果：{@code POST /rpc/2.0/ernievilg/v1/getImgv2}，
  *       body 为 {@code {"task_id":"..."}}；{@code data.status} 0=等待 1=运行 2=成功 3=失败。</li>
  * </ul>
  *
@@ -103,20 +107,19 @@ public class BaiduImageClient extends AbstractAiClient implements ImageClient {
 
 	@Override
 	protected void applyAuth(HttpRequest.Builder requestBuilder, AiConfig cfg) {
-		// 百度鉴权走 URL 查询串 access_token，不走 Authorization 头
+		// 业务接口统一通过 Authorization: Bearer 头传递 access_token，不再拼在 URL 查询串
+		requestBuilder.header("Authorization", "Bearer " + getAccessToken());
 	}
 
 	@Override
 	public ImageResponse generate(ImageRequest request) {
-		String token = getAccessToken();
 		int[] wh = parseSize(request.size());
 		JsonObject body = Json.object();
 		body.put("prompt", request.prompt());
 		body.put("width", wh[0]);
 		body.put("height", wh[1]);
 		body.put("image_num", request.n() != null ? request.n() : 1);
-		PostResult submit = doPostRaw(
-			"/rpc/2.0/ernievilg/v1/txt2imgv2?access_token=" + token, body);
+		PostResult submit = doPostRaw("/rpc/2.0/ernievilg/v1/txt2imgv2", body);
 		JsonObject resp = submit.json();
 		int code = resp.optInt("code", 0);
 		if (code != 0) {
@@ -125,12 +128,12 @@ public class BaiduImageClient extends AbstractAiClient implements ImageClient {
 		}
 		JsonObject data = resp.getJsonObject("data");
 		String taskId = data.getString("task_id");
-		return pollResult(taskId, token);
+		return pollResult(taskId);
 	}
 
 	/** 轮询任务结果，直到成功、失败或超时。 */
-	private ImageResponse pollResult(String taskId, String token) {
-		String path = "/rpc/2.0/ernievilg/v1/getImgv2?access_token=" + token;
+	private ImageResponse pollResult(String taskId) {
+		String path = "/rpc/2.0/ernievilg/v1/getImgv2";
 		JsonObject body = Json.object();
 		body.put("task_id", taskId);
 		long deadline = System.currentTimeMillis() + MAX_WAIT_MS;
@@ -220,12 +223,16 @@ public class BaiduImageClient extends AbstractAiClient implements ImageClient {
 		if (this.secretKey == null || this.secretKey.isBlank()) {
 			throw new AiException("baidu secretKey is not configured (extraHeaders secretKey)");
 		}
-		String url = this.config.baseUrl() + "/oauth/2.0/token?grant_type=client_credentials"
-			+ "&client_id=" + this.config.apiKey() + "&client_secret=" + this.secretKey;
-		HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+		// 凭证走 POST body（application/x-www-form-urlencoded），不拼在 URL 查询串，
+		// 避免 client_secret 进入代理访问日志与服务器 access log。
+		Map<String, String> form = new LinkedHashMap<>();
+		form.put("grant_type", "client_credentials");
+		form.put("client_id", this.config.apiKey());
+		form.put("client_secret", this.secretKey);
+		HttpRequest request = HttpRequest.newBuilder(URI.create(this.config.baseUrl() + "/oauth/2.0/token"))
 			.timeout(this.config.timeout())
-			.header("Content-Type", "application/json")
-			.POST(HttpRequest.BodyPublishers.noBody())
+			.header("Content-Type", "application/x-www-form-urlencoded")
+			.POST(HttpRequest.BodyPublishers.ofString(encodeForm(form), StandardCharsets.UTF_8))
 			.build();
 		HttpResponse<String> resp;
 		try {
@@ -247,6 +254,20 @@ public class BaiduImageClient extends AbstractAiClient implements ImageClient {
 		this.cachedToken = o.getString("access_token");
 		long expiresInSec = o.get("expires_in").getAsLong();
 		this.tokenExpireAt = System.currentTimeMillis() + expiresInSec * 1000L;
+	}
+
+	/** 表单编码：UTF-8 URL 编码，& 连接。 */
+	private static String encodeForm(Map<String, String> form) {
+		StringBuilder sb = new StringBuilder();
+		for (Map.Entry<String, String> e : form.entrySet()) {
+			if (sb.length() > 0) {
+				sb.append('&');
+			}
+			sb.append(URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8));
+			sb.append('=');
+			sb.append(URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8));
+		}
+		return sb.toString();
 	}
 
 	/** baseUrl 为空时补默认地址，其余配置通过 {@link AiConfig#withBaseUrl} 原样保留。 */

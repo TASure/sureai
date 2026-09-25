@@ -78,6 +78,12 @@ public class BaiduClientTest {
 	private final AtomicReference<String> ttsBody = new AtomicReference<>();
 	private final AtomicReference<String> sttBody = new AtomicReference<>();
 	private final AtomicReference<String> sttPath = new AtomicReference<>();
+	private final AtomicReference<String> oauthMethod = new AtomicReference<>();
+	private final AtomicReference<String> oauthQuery = new AtomicReference<>();
+	private final AtomicReference<String> oauthContentType = new AtomicReference<>();
+	private final AtomicReference<String> oauthBody = new AtomicReference<>();
+	private final AtomicReference<String> lastChatAuthz = new AtomicReference<>();
+	private final AtomicReference<String> lastBizAuthz = new AtomicReference<>();
 
 	/** TTS/STT 失败模式：null=正常，"ttsErr"=TTS 返回 JSON 错误，"sttErr"=STT 返回 err_no!=0。 */
 	private String audioMode;
@@ -96,6 +102,12 @@ public class BaiduClientTest {
 		this.ttsBody.set(null);
 		this.sttBody.set(null);
 		this.sttPath.set(null);
+		this.oauthMethod.set(null);
+		this.oauthQuery.set(null);
+		this.oauthContentType.set(null);
+		this.oauthBody.set(null);
+		this.lastChatAuthz.set(null);
+		this.lastBizAuthz.set(null);
 		this.audioMode = null;
 		registerHandlers();
 		setSingleton(null);
@@ -126,12 +138,19 @@ public class BaiduClientTest {
 			String query = exchange.getRequestURI().getQuery();
 			if (path.equals("/oauth/2.0/token")) {
 				this.tokenHits.incrementAndGet();
+				this.oauthMethod.set(exchange.getRequestMethod());
+				this.oauthQuery.set(query);
+				this.oauthContentType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
+				byte[] tokenIn = exchange.getRequestBody().readAllBytes();
+				this.oauthBody.set(new String(tokenIn, StandardCharsets.UTF_8));
 				String body = "{\"access_token\":\"" + TOKEN + "\",\"expires_in\":2592000}";
 				respond(exchange, 200, body, "application/json");
 				return;
 			}
 			if (path.contains("/chat/")) {
-				this.lastChatPath.set(path + "?" + query);
+				this.lastChatPath.set(path + (query == null ? "" : "?" + query));
+				this.lastChatAuthz.set(exchange.getRequestHeaders().getFirst("Authorization"));
+				this.lastBizAuthz.set(exchange.getRequestHeaders().getFirst("Authorization"));
 				byte[] in = exchange.getRequestBody().readAllBytes();
 				this.lastChatBody.set(new String(in, StandardCharsets.UTF_8));
 				String req = this.lastChatBody.get();
@@ -151,6 +170,7 @@ public class BaiduClientTest {
 				return;
 			}
 			if (path.contains("/embeddings/")) {
+				this.lastBizAuthz.set(exchange.getRequestHeaders().getFirst("Authorization"));
 				String body = "{\"id\":\"e\",\"data\":[{\"embedding\":[0.1,0.2,0.3]}],"
 					+ "\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":0,\"total_tokens\":1}}";
 				respond(exchange, 200, body, "application/json");
@@ -183,6 +203,7 @@ public class BaiduClientTest {
 				return;
 			}
 			if (path.contains("/finetune/create")) {
+				this.lastBizAuthz.set(exchange.getRequestHeaders().getFirst("Authorization"));
 				byte[] in = exchange.getRequestBody().readAllBytes();
 				this.lastChatBody.set(new String(in, StandardCharsets.UTF_8));
 				respond(exchange, 200, "{\"taskId\":\"ft-1\",\"status\":\"Running\",\"baseModel\":\"ernie-4.5\"}",
@@ -190,11 +211,13 @@ public class BaiduClientTest {
 				return;
 			}
 			if (path.contains("/finetune/get")) {
+				this.lastBizAuthz.set(exchange.getRequestHeaders().getFirst("Authorization"));
 				respond(exchange, 200, "{\"taskId\":\"ft-1\",\"status\":\"Done\","
 					+ "\"baseModel\":\"ernie-4.5\",\"fineTunedModel\":\"ernie-4.5-sft-1\"}", "application/json");
 				return;
 			}
 			if (path.contains("/files/upload")) {
+				this.lastBizAuthz.set(exchange.getRequestHeaders().getFirst("Authorization"));
 				respond(exchange, 200, "{\"fileId\":\"file-123\",\"fileName\":\"train.jsonl\"}",
 					"application/json");
 				return;
@@ -257,13 +280,47 @@ public class BaiduClientTest {
 		client.close();
 	}
 
-	/** access_token 在 URL 查询串中。 */
+	/** OAuth 凭证走 POST body 表单，URL 查询串不含 client_secret/client_id。 */
 	@Test
-	public void testAccessTokenInQuery() {
+	public void testOauthCredentialsInRequestBody() {
 		BaiduClient client = newClient();
 		client.chat(ChatRequest.builder().model("ernie-speed-128k").messages(ChatMessage.user("hi")).build());
-		assertTrue(this.lastChatPath.get().contains("access_token=" + TOKEN));
+		assertEquals("POST", this.oauthMethod.get());
+		assertEquals("application/x-www-form-urlencoded", this.oauthContentType.get());
+		String body = this.oauthBody.get();
+		assertNotNull(body);
+		assertTrue("oauth body must contain grant_type: " + body,
+			body.contains("grant_type=client_credentials"));
+		assertTrue("oauth body must contain client_id: " + body,
+			body.contains("client_id=" + API_KEY));
+		assertTrue("oauth body must contain client_secret: " + body,
+			body.contains("client_secret=" + SECRET_KEY));
+		// URL 查询串不得携带任何 OAuth 凭证
+		String q = this.oauthQuery.get();
+		assertTrue("oauth query must be empty: " + q, q == null || q.isBlank());
+		assertFalse("oauth query must not contain client_secret: " + q,
+			q != null && q.contains("client_secret="));
+		client.close();
+	}
+
+	/** 业务 API 用 Authorization: Bearer 头，URL 查询串不含 access_token。 */
+	@Test
+	public void testBusinessApiUsesBearerHeader() {
+		BaiduClient client = newClient();
+		client.chat(ChatRequest.builder().model("ernie-speed-128k").messages(ChatMessage.user("hi")).build());
+		assertEquals("Bearer " + TOKEN, this.lastChatAuthz.get());
 		assertTrue(this.lastChatPath.get().contains("/chat/ernie-speed-128k"));
+		assertFalse("chat URL must not contain access_token: " + this.lastChatPath.get(),
+			this.lastChatPath.get().contains("access_token"));
+		client.close();
+	}
+
+	/** embed 业务接口同样走 Bearer 头，URL 不带 access_token。 */
+	@Test
+	public void testEmbedUsesBearerHeader() {
+		BaiduClient client = newClient();
+		client.embed(new EmbeddingRequest("embedding-v1", List.of("hi")));
+		assertEquals("Bearer " + TOKEN, this.lastBizAuthz.get());
 		client.close();
 	}
 
@@ -506,6 +563,7 @@ public class BaiduClientTest {
 		BaiduClient client = newClient();
 		String fileId = client.uploadTrainingFile("train.jsonl", "{\"q\":\"a\"}".getBytes(StandardCharsets.UTF_8));
 		assertEquals("file-123", fileId);
+		assertEquals("Bearer " + TOKEN, this.lastBizAuthz.get());
 		client.close();
 	}
 }

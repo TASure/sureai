@@ -69,8 +69,10 @@ import com.sure.ai.model.TtsResponse;
  *
  * <p>自研实现，不复用 OpenAI 兼容引擎。差异点：</p>
  * <ul>
- *   <li>两步鉴权：先用 API Key + Secret Key 调 OAuth 换 access_token，再把 token 拼在请求 URL 查询串上；
- *       token 按 {@code expires_in} 缓存（提前 60 秒刷新），并发下只刷新一次。</li>
+ *   <li>两步鉴权：先用 API Key + Secret Key 以 {@code application/x-www-form-urlencoded}
+ *       表单 POST 调 OAuth 换 access_token（凭证不进 URL 查询串），后续业务接口通过
+ *       {@code Authorization: Bearer <token>} 请求头传递 token；token 按
+ *       {@code expires_in} 缓存（提前 60 秒刷新），并发下只刷新一次。</li>
  *   <li>对话模型是路径参数：{@code /rpc/2.0/ai_custom/v1/wenxinworkshop/chat/{model}}，请求体无 model 字段。</li>
  *   <li>非流式响应正文在 {@code result} 字段，流式 SSE 每个分片的增量在 {@code result}，结束标志 {@code is_end=true}。</li>
  *   <li>错误体为 {@code {error_code, error_msg}}，映射到 {@link AiApiException#getErrorCode()}。</li>
@@ -164,14 +166,13 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 
 	@Override
 	protected void applyAuth(HttpRequest.Builder requestBuilder, AiConfig cfg) {
-		// 百度鉴权走 URL 查询串 access_token，不走 Authorization 头
+		// 业务接口统一通过 Authorization: Bearer 头传递 access_token，不再拼在 URL 查询串
+		requestBuilder.header("Authorization", "Bearer " + getAccessToken());
 	}
 
 	@Override
 	public ChatResponse chat(ChatRequest request) {
-		String token = getAccessToken();
-		String path = "/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/" + request.model()
-			+ "?access_token=" + token;
+		String path = "/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/" + request.model();
 		JsonObject body = buildChatBody(request, false);
 		try {
 			PostResult result = doPostRaw(path, body);
@@ -183,9 +184,7 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 
 	@Override
 	public void chatStream(ChatRequest request, Consumer<ChatStreamChunk> consumer) {
-		String token = getAccessToken();
-		String path = "/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/" + request.model()
-			+ "?access_token=" + token;
+		String path = "/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/" + request.model();
 		JsonObject body = buildChatBody(request, true);
 		try {
 			doPostStream(path, body, el -> consumer.accept(parseStreamChunk(el)));
@@ -196,9 +195,7 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 
 	@Override
 	public EmbeddingResponse embed(EmbeddingRequest request) {
-		String token = getAccessToken();
-		String path = "/rpc/2.0/ai_custom/v1/wenxinworkshop/embeddings/" + request.model()
-			+ "?access_token=" + token;
+		String path = "/rpc/2.0/ai_custom/v1/wenxinworkshop/embeddings/" + request.model();
 		JsonObject body = Json.object();
 		JsonArray input = Json.array();
 		for (String s : request.input()) {
@@ -239,7 +236,12 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 		throw parseTtsError(raw);
 	}
 
-	/** 发送 x-www-form-urlencoded POST，返回字节响应（非 2xx 经 mapError 抛出）。 */
+	/**
+	 * 发送 x-www-form-urlencoded POST，返回字节响应（非 2xx 经 mapError 抛出）。
+	 *
+	 * <p><b>注意：此路径直接使用 HttpClient，不经过基类的重试/熔断/指标机制。</b>
+	 * （TTS 为 form-urlencoded + 二进制音频响应，不适用基类 JSON 封装。）</p>
+	 */
 	private HttpResponse<byte[]> postForm(String url, Map<String, String> form) {
 		String body = encodeForm(form);
 		HttpRequest request = HttpRequest.newBuilder(URI.create(url))
@@ -349,7 +351,12 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 		return SttResponse.ofText(text);
 	}
 
-	/** 向绝对 URL 发送 JSON POST，返回解析后的对象（非 2xx 经 mapError 抛出）。 */
+	/**
+	 * 向绝对 URL 发送 JSON POST，返回解析后的对象（非 2xx 经 mapError 抛出）。
+	 *
+	 * <p><b>注意：此路径直接使用 HttpClient，不经过基类的重试/熔断/指标机制。</b>
+	 * （STT 等接口使用 access-token 鉴权与独立端点，不适用基类 doPost。）</p>
+	 */
 	private JsonObject postJson(String url, JsonObject body) {
 		String payload = Json.stringify(body);
 		HttpRequest request = HttpRequest.newBuilder(URI.create(url))
@@ -518,7 +525,12 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 		}
 	}
 
-	/** 获取有效 access_token：缓存未过期复用，否则双检锁重新换取。 */
+	/**
+	 * 获取有效 access_token：缓存未过期复用，否则双检锁重新换取。
+	 *
+	 * <p><b>注意：此路径直接使用 HttpClient，不经过基类的重试/熔断/指标机制。</b>
+	 * （OAuth token 端点非业务接口，按 Baidu OAuth 协议单独实现。）</p>
+	 */
 	private String getAccessToken() {
 		String token = this.cachedToken;
 		if (token != null && System.currentTimeMillis() < this.tokenExpireAt - TOKEN_LEEWAY_MS) {
@@ -538,12 +550,17 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 		if (this.secretKey == null || this.secretKey.isBlank()) {
 			throw new AiException("baidu secretKey is not configured (extraHeaders secretKey)");
 		}
-		String url = this.config.baseUrl() + "/oauth/2.0/token?grant_type=client_credentials"
-			+ "&client_id=" + this.config.apiKey() + "&client_secret=" + this.secretKey;
-		HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+		// 凭证走 POST body（application/x-www-form-urlencoded），不拼在 URL 查询串，
+		// 避免 client_secret 进入代理访问日志与服务器 access log。
+		Map<String, String> form = new LinkedHashMap<>();
+		form.put("grant_type", "client_credentials");
+		form.put("client_id", this.config.apiKey());
+		form.put("client_secret", this.secretKey);
+		String formBody = encodeForm(form);
+		HttpRequest request = HttpRequest.newBuilder(URI.create(this.config.baseUrl() + "/oauth/2.0/token"))
 			.timeout(this.config.timeout())
-			.header("Content-Type", "application/json")
-			.POST(java.net.http.HttpRequest.BodyPublishers.noBody())
+			.header("Content-Type", "application/x-www-form-urlencoded")
+			.POST(HttpRequest.BodyPublishers.ofString(formBody, StandardCharsets.UTF_8))
 			.build();
 		HttpResponse<String> resp;
 		try {
@@ -607,7 +624,6 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 	 */
 	@Override
 	public FineTuneResponse createFineTune(FineTuneRequest request) {
-		String token = getAccessToken();
 		JsonObject body = Json.object();
 		body.put("baseModel", request.model());
 		body.put("trainType", "sft");
@@ -618,7 +634,7 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 		if (request.hyperparameters() != null) {
 			body.set("hyperParameters", Json.toElement(request.hyperparameters()));
 		}
-		PostResult pr = doPostRaw(FINETUNE_BASE + "/create?access_token=" + token, body);
+		PostResult pr = doPostRaw(FINETUNE_BASE + "/create", body);
 		return parseFineTune(pr.rawBody(), request.model());
 	}
 
@@ -630,10 +646,9 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 	 */
 	@Override
 	public FineTuneResponse getFineTune(String jobId) {
-		String token = getAccessToken();
 		JsonObject body = Json.object();
 		body.put("taskId", jobId);
-		PostResult pr = doPostRaw(FINETUNE_BASE + "/get?access_token=" + token, body);
+		PostResult pr = doPostRaw(FINETUNE_BASE + "/get", body);
 		return parseFineTune(pr.rawBody(), null);
 	}
 
@@ -650,12 +665,11 @@ public class BaiduClient extends AbstractAiClient implements AiClient, Embedding
 	 */
 	@Override
 	public String uploadTrainingFile(String fileName, byte[] content) {
-		String token = getAccessToken();
 		JsonObject body = Json.object();
 		body.put("fileName", fileName);
 		body.put("fileType", "jsonl");
 		body.put("content", Base64.getEncoder().encodeToString(content));
-		PostResult pr = doPostRaw(FILE_UPLOAD_PATH + "?access_token=" + token, body);
+		PostResult pr = doPostRaw(FILE_UPLOAD_PATH, body);
 		JsonObject resp = pr.json();
 		String id = resp.optString("fileId", resp.optString("id", null));
 		if (id == null) {

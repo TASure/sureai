@@ -17,7 +17,9 @@
 package com.sure.ai.baidu;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -62,6 +64,10 @@ public class BaiduImageClientTest {
 	private final AtomicReference<String> tokenQuery = new AtomicReference<>();
 	private final AtomicReference<String> submitPath = new AtomicReference<>();
 	private final AtomicReference<String> submitBody = new AtomicReference<>();
+	private final AtomicReference<String> oauthMethod = new AtomicReference<>();
+	private final AtomicReference<String> oauthContentType = new AtomicReference<>();
+	private final AtomicReference<String> oauthBody = new AtomicReference<>();
+	private final AtomicReference<String> submitAuthz = new AtomicReference<>();
 
 	/** 失败模式：null=正常，"submitFail"=提交失败，"failed"=任务失败，"pending"=一直运行。 */
 	private String mode;
@@ -74,6 +80,10 @@ public class BaiduImageClientTest {
 		this.baseUrl = "http://127.0.0.1:" + this.server.getAddress().getPort();
 		this.tokenHits.set(0);
 		this.pollHits.set(0);
+		this.oauthMethod.set(null);
+		this.oauthContentType.set(null);
+		this.oauthBody.set(null);
+		this.submitAuthz.set(null);
 		this.mode = null;
 		registerHandlers();
 	}
@@ -95,13 +105,18 @@ public class BaiduImageClientTest {
 			if (path.equals("/oauth/2.0/token")) {
 				this.tokenHits.incrementAndGet();
 				this.tokenQuery.set(query);
+				this.oauthMethod.set(exchange.getRequestMethod());
+				this.oauthContentType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
+				byte[] tin = exchange.getRequestBody().readAllBytes();
+				this.oauthBody.set(new String(tin, StandardCharsets.UTF_8));
 				respond(exchange, 200,
 					"{\"access_token\":\"" + TOKEN + "\",\"expires_in\":2592000}",
 					"application/json");
 				return;
 			}
 			if (path.equals("/rpc/2.0/ernievilg/v1/txt2imgv2")) {
-				this.submitPath.set(path + "?" + query);
+				this.submitPath.set(path + (query == null ? "" : "?" + query));
+				this.submitAuthz.set(exchange.getRequestHeaders().getFirst("Authorization"));
 				byte[] in = exchange.getRequestBody().readAllBytes();
 				this.submitBody.set(new String(in, StandardCharsets.UTF_8));
 				if ("submitFail".equals(this.mode)) {
@@ -154,7 +169,7 @@ public class BaiduImageClientTest {
 		return new BaiduImageClient(cfg);
 	}
 
-	/** 成功：token 查询串正确，提交 body 含 prompt，轮询两次返回图片 URL。 */
+	/** 成功：OAuth 凭证走 POST body，提交/轮询走 Bearer 头，轮询两次返回图片 URL。 */
 	@Test
 	public void testImageGenerationSuccess() {
 		BaiduImageClient client = newClient();
@@ -162,10 +177,22 @@ public class BaiduImageClientTest {
 			.model(BaiduModels.ERNIE_VILG_V2).prompt("红玫瑰").size("1024*1024").build());
 		assertEquals(IMAGE_URL, resp.firstUrl());
 		assertEquals(1, resp.data().size());
+		// OAuth：POST + form-urlencoded，凭证在 body，不在 URL 查询串
+		assertEquals("POST", this.oauthMethod.get());
+		assertEquals("application/x-www-form-urlencoded", this.oauthContentType.get());
+		String ob = this.oauthBody.get();
+		assertTrue("oauth body must contain client_id: " + ob, ob.contains("client_id=" + API_KEY));
+		assertTrue("oauth body must contain client_secret: " + ob,
+			ob.contains("client_secret=" + SECRET_KEY));
+		assertTrue(ob.contains("grant_type=client_credentials"));
 		String q = this.tokenQuery.get();
-		assertTrue(q.contains("client_id=" + API_KEY));
-		assertTrue(q.contains("client_secret=" + SECRET_KEY));
-		assertTrue(this.submitPath.get().contains("access_token=" + TOKEN));
+		assertTrue("oauth query must be empty: " + q, q == null || q.isBlank());
+		assertFalse("oauth query must not contain client_secret: " + q,
+			q != null && q.contains("client_secret="));
+		// 业务提交：Bearer 头，URL 不带 access_token
+		assertEquals("Bearer " + TOKEN, this.submitAuthz.get());
+		assertFalse("submit URL must not contain access_token: " + this.submitPath.get(),
+			this.submitPath.get().contains("access_token"));
 		String body = this.submitBody.get();
 		assertTrue(body.contains("\"prompt\":\"红玫瑰\""));
 		assertTrue(body.contains("\"width\":1024"));
@@ -237,10 +264,14 @@ public class BaiduImageClientTest {
 		}
 	}
 
-	/** Util 重置方法。 */
+	/** Util 重置方法：注入 imageClient 后 reset，反射断言字段置 null。 */
 	@Test
-	public void testUtilReset() {
+	public void testUtilReset() throws Exception {
+		java.lang.reflect.Field f = BaiduUtil.class.getDeclaredField("imageClient");
+		f.setAccessible(true);
+		f.set(null, newClient());
+		assertNotNull(f.get(null));
 		BaiduUtil.resetImageClient();
-		assertEquals(0, 0);
+		assertNull(f.get(null));
 	}
 }
