@@ -39,7 +39,7 @@ https://aip.baidubce.com
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-baidu</artifactId>
-    <version>1.2.1-SNAPSHOT</version>
+    <version>1.2.1</version>
 </dependency>
 ```
 

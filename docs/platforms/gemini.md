@@ -36,7 +36,7 @@ https://generativelanguage.googleapis.com/v1beta
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-gemini</artifactId>
-    <version>1.2.1-SNAPSHOT</version>
+    <version>1.2.1</version>
 </dependency>
 ```
 

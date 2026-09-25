@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.1] - Unreleased
+## [1.2.1] - 2026-09-25
 
 ### Fixed
 - **P0-1 配置字段静默丢失**：`AiConfig` 新增 `withBaseUrl(String)` 实例方法，返回包含全部 14 个字段的新配置（apiKey/baseUrl/timeout/connectTimeout/proxy/organization/extraHeaders/maxRetries/retryListeners/metricsCollector/rateLimitQps/cacheStore/cacheTtl/circuitBreaker），仅替换 baseUrl。替换 OpenAi/DeepSeek/Grok/LlamaCpp/Mistral/Qwen 等 6 处 `applyDefaultBaseUrl` 静态方法及 Azure/Baidu/Doubao/Cohere/Moonshot/Zhipu 等平台的 `rebuild/withDefaults/withDefaultBaseUrl` 样板（共 19 个源文件），全部改为委托 `withBaseUrl`，消除用户配置的 metrics/retryListeners/限流/缓存/熔断字段在补默认 baseUrl 时静默丢失的问题。新增 `AiConfigWithBaseUrlTest` 6 个测试逐字段断言。

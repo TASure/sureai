@@ -38,7 +38,7 @@ https://api.openai.com/v1
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-openai</artifactId>
-    <version>1.2.1-SNAPSHOT</version>
+    <version>1.2.1</version>
 </dependency>
 ```
 

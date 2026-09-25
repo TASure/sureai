@@ -37,7 +37,7 @@ https://api.moonshot.cn/v1
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-moonshot</artifactId>
-    <version>1.2.1-SNAPSHOT</version>
+    <version>1.2.1</version>
 </dependency>
 ```
 

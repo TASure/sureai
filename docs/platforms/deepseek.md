@@ -33,7 +33,7 @@ https://api.deepseek.com
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-deepseek</artifactId>
-    <version>1.2.1-SNAPSHOT</version>
+    <version>1.2.1</version>
 </dependency>
 ```
 
