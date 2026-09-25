@@ -34,6 +34,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiAuthException;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatMessage;
@@ -79,9 +80,9 @@ public class DeepSeekClientTest {
 
 	/** 反射清空静态单例。 */
 	private static void resetUtil() throws Exception {
-		Field f = DeepSeekUtil.class.getDeclaredField("client");
+		Field f = DeepSeekUtil.class.getDeclaredField("HOLDER");
 		f.setAccessible(true);
-		f.set(null, null);
+		((SingletonHolder<?>) f.get(null)).reset();
 	}
 
 	/** 构造客户端。 */

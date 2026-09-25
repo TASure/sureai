@@ -37,6 +37,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiAuthException;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatMessage;
@@ -92,9 +93,9 @@ public class AzureClientTest {
 
 	/** 反射清空静态单例。 */
 	private static void resetUtil() throws Exception {
-		Field f = AzureUtil.class.getDeclaredField("client");
+		Field f = AzureUtil.class.getDeclaredField("HOLDER");
 		f.setAccessible(true);
-		f.set(null, null);
+		((SingletonHolder<?>) f.get(null)).reset();
 	}
 
 	/** 构造客户端（deployment/api-version 经 extraHeaders 传入）。 */

@@ -35,6 +35,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiAuthException;
 import com.sure.ai.exception.AiException;
@@ -93,9 +94,9 @@ public class OpenAiClientTest {
 
 	/** 反射清空 OpenAiUtil 静态单例，避免测试间串扰。 */
 	private static void resetUtil() throws Exception {
-		Field f = OpenAiUtil.class.getDeclaredField("client");
+		Field f = OpenAiUtil.class.getDeclaredField("HOLDER");
 		f.setAccessible(true);
-		f.set(null, null);
+		((SingletonHolder<?>) f.get(null)).reset();
 	}
 
 	/** 构造客户端（baseUrl 指向本地 mock）。 */

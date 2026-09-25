@@ -19,12 +19,12 @@ package com.sure.ai.baidu;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -39,6 +39,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiTimeoutException;
 import com.sure.ai.model.ImageRequest;
@@ -264,14 +265,17 @@ public class BaiduImageClientTest {
 		}
 	}
 
-	/** Util 重置方法：注入 imageClient 后 reset，反射断言字段置 null。 */
+	/** Util 重置方法：注入 imageClient 后 reset，断言容器置空。 */
 	@Test
+	@SuppressWarnings("unchecked")
 	public void testUtilReset() throws Exception {
-		java.lang.reflect.Field f = BaiduUtil.class.getDeclaredField("imageClient");
+		Field f = BaiduUtil.class.getDeclaredField("IMAGE");
 		f.setAccessible(true);
-		f.set(null, newClient());
-		assertNotNull(f.get(null));
+		SingletonHolder<BaiduImageClient> holder =
+			(SingletonHolder<BaiduImageClient>) f.get(null);
+		holder.set(newClient());
+		assertTrue(holder.isInitialized());
 		BaiduUtil.resetImageClient();
-		assertNull(f.get(null));
+		assertFalse(holder.isInitialized());
 	}
 }

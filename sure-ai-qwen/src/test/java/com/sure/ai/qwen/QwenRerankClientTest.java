@@ -37,6 +37,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.model.RerankRequest;
 import com.sure.ai.model.RerankResponse;
@@ -179,11 +180,12 @@ public class QwenRerankClientTest {
 	}
 
 	/** Util 便捷方法：反射注入指向 mock 的单例后调用 rerank(query, documents)。 */
+	@SuppressWarnings("unchecked")
 	@Test
 	public void testUtilRerankConvenience() throws Exception {
-		Field f = QwenUtil.class.getDeclaredField("rerankClient");
+		Field f = QwenUtil.class.getDeclaredField("RERANK");
 		f.setAccessible(true);
-		f.set(null, newClient());
+		((SingletonHolder<QwenRerankClient>) f.get(null)).set(newClient());
 		RerankResponse resp = QwenUtil.rerank("什么是重排", List.of("doc-A", "doc-B"));
 		assertEquals(2, resp.results().size());
 		assertEquals("doc-B", resp.results().get(0).document());

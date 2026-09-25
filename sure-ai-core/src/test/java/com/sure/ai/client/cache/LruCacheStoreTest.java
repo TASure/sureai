@@ -24,15 +24,20 @@ import static org.junit.Assert.assertSame;
 import java.util.List;
 
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
+import com.sure.ai.internal.test.tag.Slow;
 import com.sure.ai.model.ChatResponse;
 
 /**
  * {@link LruCacheStore} 单元测试。
  *
+ * <p>含 TTL 过期时序等待，标注为 {@link Slow}，在 {@code -Pfast} 构建中排除。</p>
+ *
  * @author sureai
  * @since 1.1.0
  */
+@Category(Slow.class)
 public class LruCacheStoreTest {
 
 	/** 构造一个测试响应。 */

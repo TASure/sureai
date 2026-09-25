@@ -17,8 +17,8 @@
 package com.sure.ai.qwen;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -38,6 +38,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiTimeoutException;
 import com.sure.ai.model.VideoRequest;
@@ -195,13 +196,16 @@ public class QwenVideoClientTest {
 
 	/** Util 静态入口：videoClient/resetVideoClient。 */
 	@Test
+	@SuppressWarnings("unchecked")
 	public void testUtilEntry() throws Exception {
-		java.lang.reflect.Field f = QwenUtil.class.getDeclaredField("videoClient");
+		java.lang.reflect.Field f = QwenUtil.class.getDeclaredField("VIDEO");
 		f.setAccessible(true);
-		f.set(null, newClient());
-		assertNotNull(f.get(null));
+		SingletonHolder<QwenVideoClient> holder =
+			(SingletonHolder<QwenVideoClient>) f.get(null);
+		holder.set(newClient());
+		assertTrue(holder.isInitialized());
 		QwenUtil.resetVideoClient();
-		assertNull(f.get(null));
+		assertFalse(holder.isInitialized());
 		assertNotNull(QwenModels.WAN2_6_T2V);
 		assertNotNull(QwenModels.WAN2_5_T2V);
 		assertNotNull(QwenModels.WANX2_1_T2V);

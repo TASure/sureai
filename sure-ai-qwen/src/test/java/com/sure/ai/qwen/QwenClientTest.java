@@ -38,6 +38,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiAuthException;
 import com.sure.ai.exception.AiException;
@@ -89,9 +90,9 @@ public class QwenClientTest {
 
 	/** 反射清空静态单例。 */
 	private static void resetUtil() throws Exception {
-		Field f = QwenUtil.class.getDeclaredField("client");
+		Field f = QwenUtil.class.getDeclaredField("HOLDER");
 		f.setAccessible(true);
-		f.set(null, null);
+		((SingletonHolder<?>) f.get(null)).reset();
 	}
 
 	/** 构造客户端。 */

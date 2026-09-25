@@ -18,8 +18,7 @@ package com.sure.ai.doubao;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -37,6 +36,7 @@ import org.junit.Test;
 import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.model.TtsRequest;
 import com.sure.ai.model.TtsResponse;
@@ -145,14 +145,17 @@ public class DoubaoTtsClientTest {
 		assertEquals("https://openspeech.bytedance.com", DoubaoTtsClient.DEFAULT_BASE_URL);
 	}
 
-	/** Util：resetTtsClient 将单例字段置 null（反射注入→reset→断言为 null）。 */
+	/** Util：resetTtsClient 将单例容器置空（反射注入→reset→断言未初始化）。 */
 	@Test
+	@SuppressWarnings("unchecked")
 	public void testUtilReset() throws Exception {
-		java.lang.reflect.Field f = DoubaoUtil.class.getDeclaredField("ttsClient");
+		java.lang.reflect.Field f = DoubaoUtil.class.getDeclaredField("TTS");
 		f.setAccessible(true);
-		f.set(null, newClient());
-		assertNotNull(f.get(null));
+		SingletonHolder<DoubaoTtsClient> holder =
+			(SingletonHolder<DoubaoTtsClient>) f.get(null);
+		holder.set(newClient());
+		assertTrue(holder.isInitialized());
 		DoubaoUtil.resetTtsClient();
-		assertNull(f.get(null));
+		assertFalse(holder.isInitialized());
 	}
 }

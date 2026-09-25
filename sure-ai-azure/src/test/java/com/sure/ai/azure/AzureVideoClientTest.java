@@ -37,6 +37,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiTimeoutException;
 import com.sure.ai.model.VideoRequest;
@@ -202,35 +203,39 @@ public class AzureVideoClientTest {
 		assertEquals("preview", newClient().apiVersion());
 	}
 
-	/** Util 重置方法：注入三个单例后 reset，反射断言字段均置 null。 */
+	/** Util 重置方法：注入三个单例后 reset，反射断言 Holder 内部实例均置 null。 */
+	@SuppressWarnings("unchecked")
 	@Test
 	public void testUtilReset() throws Exception {
 		AiConfig cfg = AiConfig.builder().apiKey(API_KEY).baseUrl(this.baseUrl).build();
-		setField("videoClient", new AzureVideoClient(cfg));
-		setField("ttsClient", new AzureTtsClient(cfg));
-		setField("sttClient", new AzureSttClient(cfg));
-		assertNotNull(getField("videoClient"));
-		assertNotNull(getField("ttsClient"));
-		assertNotNull(getField("sttClient"));
+		SingletonHolder<AzureVideoClient> video = (SingletonHolder<AzureVideoClient>) holder("VIDEO");
+		SingletonHolder<AzureTtsClient> tts = (SingletonHolder<AzureTtsClient>) holder("TTS");
+		SingletonHolder<AzureSttClient> stt = (SingletonHolder<AzureSttClient>) holder("STT");
+		video.set(new AzureVideoClient(cfg));
+		tts.set(new AzureTtsClient(cfg));
+		stt.set(new AzureSttClient(cfg));
+		assertNotNull(instanceOf(video));
+		assertNotNull(instanceOf(tts));
+		assertNotNull(instanceOf(stt));
 		AzureUtil.resetVideoClient();
 		AzureUtil.resetTtsClient();
 		AzureUtil.resetSttClient();
-		assertNull(getField("videoClient"));
-		assertNull(getField("ttsClient"));
-		assertNull(getField("sttClient"));
+		assertNull(instanceOf(video));
+		assertNull(instanceOf(tts));
+		assertNull(instanceOf(stt));
 	}
 
-	/** 反射写入 AzureUtil 私有静态字段。 */
-	private static void setField(String name, Object val) throws Exception {
+	/** 反射读取 AzureUtil 指定的 SingletonHolder 容器。 */
+	private static SingletonHolder<?> holder(String name) throws Exception {
 		java.lang.reflect.Field f = AzureUtil.class.getDeclaredField(name);
 		f.setAccessible(true);
-		f.set(null, val);
+		return (SingletonHolder<?>) f.get(null);
 	}
 
-	/** 反射读取 AzureUtil 私有静态字段。 */
-	private static Object getField(String name) throws Exception {
-		java.lang.reflect.Field f = AzureUtil.class.getDeclaredField(name);
+	/** 反射读取 SingletonHolder 内部的实例字段（用于断言是否已清空）。 */
+	private static Object instanceOf(SingletonHolder<?> holder) throws Exception {
+		java.lang.reflect.Field f = SingletonHolder.class.getDeclaredField("instance");
 		f.setAccessible(true);
-		return f.get(null);
+		return f.get(holder);
 	}
 }

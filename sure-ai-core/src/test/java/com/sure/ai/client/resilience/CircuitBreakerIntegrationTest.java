@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -38,6 +39,7 @@ import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.compat.OpenAiCompatClient;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiException;
+import com.sure.ai.internal.test.tag.Slow;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 
@@ -45,11 +47,13 @@ import com.sure.ai.model.ChatRequest;
  * 熔断器集成测试：本地 HttpServer mock，零真实网络。
  *
  * <p>用 {@code maxRetries=0} 保证每次 chat 恰好 1 次 HTTP 请求，便于精确断言
- * 熔断器 OPEN 后不再发请求。</p>
+ * 熔断器 OPEN 后不再发请求。含熔断时间窗口等待，标注为 {@link Slow}，
+ * 在 {@code -Pfast} 构建中排除。</p>
  *
  * @author sureai
  * @since 1.1.0
  */
+@Category(Slow.class)
 public class CircuitBreakerIntegrationTest {
 
 	private static final String OK = "{\"id\":\"c\",\"model\":\"gpt\",\"choices\":[{\"index\":0,"

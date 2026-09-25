@@ -26,18 +26,22 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
 import com.sure.ai.internal.json.Json;
+import com.sure.ai.internal.test.tag.E2e;
 import com.sure.ai.mcp.model.McpToolResult;
 
 /**
  * 端到端测试：用 ProcessBuilder 启动 {@code EchoMcpServer.java} 子进程，走完整 stdio NDJSON 握手回环。
  *
- * <p>零第三方网络：echo server 仅用 JDK 单文件源码模式（{@code java EchoMcpServer.java}）启动。</p>
+ * <p>零第三方网络：echo server 仅用 JDK 单文件源码模式（{@code java EchoMcpServer.java}）启动。
+ * 标注为 {@link E2e}，在 {@code -Pfast} 构建中排除。</p>
  *
  * @author sureai
  * @since 1.2.0
  */
+@Category(E2e.class)
 public class McpClientE2ETest {
 
 	/** 完整握手 + tools/list + tools/call。 */

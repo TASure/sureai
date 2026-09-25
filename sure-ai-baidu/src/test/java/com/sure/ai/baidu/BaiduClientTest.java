@@ -39,6 +39,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatMessage;
@@ -121,11 +122,17 @@ public class BaiduClientTest {
 	}
 
 	/** 反射设置 Util 单例。 */
+	@SuppressWarnings("unchecked")
 	private static void setSingleton(BaiduClient c) {
 		try {
-			Field f = BaiduUtil.class.getDeclaredField("client");
+			Field f = BaiduUtil.class.getDeclaredField("MAIN");
 			f.setAccessible(true);
-			f.set(null, c);
+			SingletonHolder<BaiduClient> holder = (SingletonHolder<BaiduClient>) f.get(null);
+			if (c == null) {
+				holder.reset();
+			} else {
+				holder.set(c);
+			}
 		} catch (ReflectiveOperationException ex) {
 			throw new IllegalStateException(ex);
 		}

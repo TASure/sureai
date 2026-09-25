@@ -74,11 +74,19 @@ public class RateLimitTest {
 		this.server.stop(0);
 	}
 
-	/** 读取 AbstractAiClient 的 rateLimiter 字段。 */
+	/**
+	 * 读取客户端的 rateLimiter 字段。
+	 *
+	 * <p>god-class 拆分后，限流持有者从 AbstractAiClient 内联字段迁移到了其持有的
+	 * {@code RetryExecutor}，这里做两跳反射：client → retryExecutor → rateLimiter。</p>
+	 */
 	private static Object rateLimiterOf(OpenAiCompatClient c) throws Exception {
-		Field f = c.getClass().getSuperclass().getDeclaredField("rateLimiter");
-		f.setAccessible(true);
-		return f.get(c);
+		Field executorField = c.getClass().getSuperclass().getDeclaredField("retryExecutor");
+		executorField.setAccessible(true);
+		Object executor = executorField.get(c);
+		Field limiterField = executor.getClass().getDeclaredField("rateLimiter");
+		limiterField.setAccessible(true);
+		return limiterField.get(executor);
 	}
 
 	/** 发一次 chat。 */

@@ -32,6 +32,7 @@ import org.junit.Test;
 import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
@@ -94,11 +95,17 @@ public class ZhipuUtilTest {
 	}
 
 	/** 反射设置单例字段。 */
+	@SuppressWarnings("unchecked")
 	private static void setSingleton(ZhipuClient c) {
 		try {
-			Field f = ZhipuUtil.class.getDeclaredField("client");
+			Field f = ZhipuUtil.class.getDeclaredField("HOLDER");
 			f.setAccessible(true);
-			f.set(null, c);
+			SingletonHolder<ZhipuClient> holder = (SingletonHolder<ZhipuClient>) f.get(null);
+			if (c == null) {
+				holder.reset();
+			} else {
+				holder.set(c);
+			}
 		} catch (ReflectiveOperationException ex) {
 			throw new IllegalStateException(ex);
 		}

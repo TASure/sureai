@@ -35,6 +35,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
@@ -84,9 +85,9 @@ public class LlamaCppClientTest {
 
 	/** 反射清空 LlamaCppUtil 静态单例。 */
 	private static void resetUtil() throws Exception {
-		Field f = LlamaCppUtil.class.getDeclaredField("client");
+		Field f = LlamaCppUtil.class.getDeclaredField("HOLDER");
 		f.setAccessible(true);
-		f.set(null, null);
+		((SingletonHolder<?>) f.get(null)).reset();
 	}
 
 	/** 构造客户端（baseUrl 指向本地 mock，默认 dummy key 不发送鉴权头）。 */
