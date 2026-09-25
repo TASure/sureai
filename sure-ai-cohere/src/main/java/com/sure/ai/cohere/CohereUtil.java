@@ -16,6 +16,7 @@
 
 package com.sure.ai.cohere;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
@@ -25,6 +26,8 @@ import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.RerankRequest;
+import com.sure.ai.model.RerankResponse;
 
 /**
  * Cohere v2 静态入口。
@@ -52,6 +55,12 @@ public final class CohereUtil {
 
 	/** 初始化锁。 */
 	private static final Object LOCK = new Object();
+
+	/** 重排客户端单例。 */
+	private static volatile CohereRerankClient rerankClient;
+
+	/** 重排客户端初始化锁。 */
+	private static final Object RERANK_LOCK = new Object();
 
 	/** 工具类禁止实例化。 */
 	private CohereUtil() {
@@ -102,6 +111,11 @@ public final class CohereUtil {
 
 	/** 从环境变量构建客户端。 */
 	private static CohereClient buildFromEnv() {
+		return new CohereClient(envConfig());
+	}
+
+	/** 从环境变量构建配置：{@code SURE_AI_COHERE_API_KEY} 必填，{@code SURE_AI_COHERE_BASE_URL} 可选。 */
+	static AiConfig envConfig() {
 		String key = System.getenv(ENV_API_KEY);
 		if (key == null || key.isBlank()) {
 			throw new AiException("env " + ENV_API_KEY + " is not set");
@@ -111,7 +125,7 @@ public final class CohereUtil {
 		if (base != null && !base.isBlank()) {
 			b.baseUrl(base);
 		}
-		return new CohereClient(b.build());
+		return b.build();
 	}
 
 	/**
@@ -153,5 +167,61 @@ public final class CohereUtil {
 	 */
 	public static EmbeddingResponse embed(EmbeddingRequest request) {
 		return client().embed(request);
+	}
+
+	// ==================== 重排（Rerank） ====================
+
+	/**
+	 * 获取重排单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 重排客户端
+	 * @throws AiException 未初始化且未设置 {@code SURE_AI_COHERE_API_KEY}
+	 */
+	public static CohereRerankClient rerankClient() {
+		CohereRerankClient c = rerankClient;
+		if (c == null) {
+			synchronized (RERANK_LOCK) {
+				c = rerankClient;
+				if (c == null) {
+					c = new CohereRerankClient(envConfig());
+					rerankClient = c;
+				}
+			}
+		}
+		return c;
+	}
+
+	/**
+	 * 便捷重排：查询 + 候选文档，默认模型 {@link CohereModels#RERANK_V3_5}。
+	 *
+	 * @param query      查询文本
+	 * @param documents  候选文档列表
+	 * @return 重排响应
+	 */
+	public static RerankResponse rerank(String query, List<String> documents) {
+		return rerank(RerankRequest.builder()
+			.model(CohereModels.RERANK_V3_5)
+			.query(query)
+			.documents(documents)
+			.build());
+	}
+
+	/**
+	 * 重排。
+	 *
+	 * @param request 重排请求
+	 * @return 重排响应
+	 */
+	public static RerankResponse rerank(RerankRequest request) {
+		return rerankClient().rerank(request);
+	}
+
+	/**
+	 * 重置重排单例客户端（测试清理用）。
+	 */
+	public static void resetRerankClient() {
+		synchronized (RERANK_LOCK) {
+			rerankClient = null;
+		}
 	}
 }

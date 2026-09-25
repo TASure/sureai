@@ -38,6 +38,9 @@ public final class CohereModels {
 	/** embed-v4.0：Cohere 通用文本向量模型。 */
 	public static final String EMBED_V4 = "embed-v4.0";
 
+	/** rerank-v3.5：Cohere 重排（Rerank）模型。 */
+	public static final String RERANK_V3_5 = "rerank-v3.5";
+
 	/** 工具类禁止实例化。 */
 	private CohereModels() {
 		throw new AssertionError("No instances");

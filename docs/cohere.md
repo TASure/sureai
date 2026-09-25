@@ -27,6 +27,8 @@ ChatResponse resp = client.chat(ChatRequest.builder()
 ```java
 ChatResponse resp = CohereUtil.chat(CohereModels.COMMAND_R_PLUS, "你好");
 EmbeddingResponse emb = CohereUtil.embed(CohereModels.EMBED_V4, "文本");
+RerankResponse reranked = CohereUtil.rerank("什么是重排",
+    List.of("文档一", "文档二", "文档三"));
 ```
 
 ## 模型
@@ -37,6 +39,7 @@ EmbeddingResponse emb = CohereUtil.embed(CohereModels.EMBED_V4, "文本");
 | `COMMAND_R_PLUS` | `command-r-plus` |
 | `COMMAND_R` | `command-r` |
 | `EMBED_V4` | `embed-v4.0` |
+| `RERANK_V3_5` | `rerank-v3.5` |
 
 ## 协议要点（与 OpenAI 的关键差异）
 
@@ -65,6 +68,14 @@ EmbeddingResponse emb = CohereUtil.embed(CohereModels.EMBED_V4, "文本");
 
 - v2 无统一列表端点，`listModels()` 抛 `AiException`
 
+### Rerank
+
+- 端点：`POST /v2/rerank`
+- 请求体：`{model, query, documents:["..."], top_n?}`；documents 当前支持字符串列表（v2 同时支持对象列表，按需扩展）
+- `top_n` 可选，仅在请求显式设置时携带，缺省返回全部结果
+- 响应：`{model, results:[{index, relevance_score, document:{text}}]}`，`document.text` 还原为命中文档原文
+- 便捷入口：`CohereUtil.rerank(query, documents)`（默认模型 `rerank-v3.5`），或 `CohereUtil.rerankClient().rerank(request)`
+
 ## 能力矩阵
 
 | 能力 | 支持 | 说明 |
@@ -72,6 +83,7 @@ EmbeddingResponse emb = CohereUtil.embed(CohereModels.EMBED_V4, "文本");
 | Chat | ✅ | `/v2/chat`，独立协议 |
 | Stream | ✅ | SSE 命名事件，无 [DONE] |
 | Embedding | ✅ | `/v2/embed`，input_type 必填 |
+| Rerank | ✅ | `/v2/rerank`，`rerank-v3.5` |
 | Models | ❌ | 无列表 API，抛异常 |
 | Function Calling | ✅ | tools 协议 |
 | 结构化输出 | ✅ | `response_format` |
@@ -87,3 +99,4 @@ EmbeddingResponse emb = CohereUtil.embed(CohereModels.EMBED_V4, "文本");
 - Chat：https://docs.cohere.com/reference/chat
 - 流式：https://docs.cohere.com/docs/streaming
 - Embed：https://docs.cohere.com/reference/embed
+- Rerank：https://docs.cohere.com/reference/rerank

@@ -68,7 +68,7 @@
 | Ollama | `sure-ai-ollama` | `http://localhost:11434` | 无（本地服务） | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Grok (xAI) | `sure-ai-grok` | `https://api.x.ai/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ |
 | Mistral | `sure-ai-mistral` | `https://api.mistral.ai/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Cohere | `sure-ai-cohere` | `https://api.cohere.com/v2` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Cohere | `sure-ai-cohere` | `https://api.cohere.com/v2` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ rerank-v3.5 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | llama.cpp | `sure-ai-llamacpp` | `http://localhost:8080/v1` | 可选 Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | AWS Bedrock | `sure-ai-bedrock` | `https://bedrock-runtime.{region}.amazonaws.com` | SigV4 (AK/SK) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
