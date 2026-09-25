@@ -18,7 +18,6 @@ package com.sure.ai.zhipu;
 
 import java.net.http.HttpRequest;
 import java.util.List;
-import java.util.Map;
 
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.compat.OpenAiCompatClient;
@@ -118,26 +117,11 @@ public class ZhipuClient extends OpenAiCompatClient {
 		}
 	}
 
-	/** baseUrl 为空时补默认地址，其余配置原样保留。 */
+	/** baseUrl 为空时补默认地址，其余配置通过 {@link AiConfig#withBaseUrl} 原样保留。 */
 	private static AiConfig withDefaultBaseUrl(AiConfig config) {
 		if (config.baseUrl() != null && !config.baseUrl().isBlank()) {
 			return config;
 		}
-		AiConfig.Builder b = AiConfig.builder()
-			.apiKey(config.apiKey())
-			.baseUrl(DEFAULT_BASE_URL)
-			.timeout(config.timeout())
-			.connectTimeout(config.connectTimeout())
-			.maxRetries(config.maxRetries());
-		if (config.proxy() != null && !config.proxy().isBlank()) {
-			b.proxy(config.proxy());
-		}
-		if (config.organization() != null && !config.organization().isBlank()) {
-			b.organization(config.organization());
-		}
-		for (Map.Entry<String, String> e : config.extraHeaders().entrySet()) {
-			b.extraHeader(e.getKey(), e.getValue());
-		}
-		return b.build();
+		return config.withBaseUrl(DEFAULT_BASE_URL);
 	}
 }

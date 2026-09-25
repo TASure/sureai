@@ -19,8 +19,6 @@ package com.sure.ai.azure;
 import java.net.http.HttpRequest;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.VideoClient;
@@ -228,19 +226,8 @@ public class AzureVideoClient extends AbstractAiClient implements VideoClient {
 		return rebuild(config, "https://" + resource + ".openai.azure.com");
 	}
 
-	/** 用新 baseUrl 重建配置（保留其余全部字段与额外头）。 */
+	/** 用新 baseUrl 替换配置（其余全部字段通过 {@link AiConfig#withBaseUrl} 原样保留）。 */
 	private static AiConfig rebuild(AiConfig config, String baseUrl) {
-		AiConfig.Builder b = AiConfig.builder()
-			.apiKey(config.apiKey())
-			.baseUrl(baseUrl)
-			.timeout(config.timeout())
-			.connectTimeout(config.connectTimeout())
-			.proxy(config.proxy())
-			.organization(config.organization())
-			.maxRetries(config.maxRetries());
-		for (Map.Entry<String, String> e : config.extraHeaders().entrySet()) {
-			b.extraHeader(e.getKey(), e.getValue());
-		}
-		return b.build();
+		return config.withBaseUrl(baseUrl);
 	}
 }

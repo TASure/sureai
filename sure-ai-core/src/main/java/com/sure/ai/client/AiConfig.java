@@ -71,6 +71,50 @@ public final class AiConfig {
 	}
 
 	/**
+	 * 全字段拷贝构造器（供 {@link #withBaseUrl} 使用，绕过 Builder 以保留全部字段）。
+	 *
+	 * <p>extraHeaders / retryListeners 已在 {@link #AiConfig(Builder)} 中做过不可变拷贝，
+	 * 此处直接引用同一不可变实例即可。</p>
+	 */
+	private AiConfig(String apiKey, String baseUrl, Duration timeout, Duration connectTimeout,
+			String proxy, String organization, Map<String, String> extraHeaders,
+			int maxRetries, List<RetryListener> retryListeners,
+			MetricsCollector metricsCollector, double rateLimitQps,
+			CacheStore cacheStore, Duration cacheTtl, CircuitBreaker circuitBreaker) {
+		this.apiKey = apiKey;
+		this.baseUrl = baseUrl;
+		this.timeout = timeout;
+		this.connectTimeout = connectTimeout;
+		this.proxy = proxy;
+		this.organization = organization;
+		this.extraHeaders = extraHeaders;
+		this.maxRetries = maxRetries;
+		this.retryListeners = retryListeners;
+		this.metricsCollector = metricsCollector;
+		this.rateLimitQps = rateLimitQps;
+		this.cacheStore = cacheStore;
+		this.cacheTtl = cacheTtl;
+		this.circuitBreaker = circuitBreaker;
+	}
+
+	/**
+	 * 返回 baseUrl 替换为指定值的新配置，其余所有字段原样保留。
+	 *
+	 * <p>用于平台子类在 baseUrl 为空时补默认地址，避免 Builder 重建丢失跨切面字段
+	 * （metricsCollector/retryListeners/rateLimitQps/cacheStore/cacheTtl/circuitBreaker）。</p>
+	 *
+	 * @param baseUrl 新的 baseUrl
+	 * @return 新配置实例
+	 */
+	public AiConfig withBaseUrl(String baseUrl) {
+		return new AiConfig(this.apiKey, baseUrl, this.timeout, this.connectTimeout,
+			this.proxy, this.organization, this.extraHeaders,
+			this.maxRetries, this.retryListeners,
+			this.metricsCollector, this.rateLimitQps,
+			this.cacheStore, this.cacheTtl, this.circuitBreaker);
+	}
+
+	/**
 	 * 仅指定 API Key 的快捷构造。
 	 *
 	 * @param apiKey API Key

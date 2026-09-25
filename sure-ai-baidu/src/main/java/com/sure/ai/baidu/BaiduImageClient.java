@@ -23,7 +23,6 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Map;
 
 import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiConfig;
@@ -250,23 +249,11 @@ public class BaiduImageClient extends AbstractAiClient implements ImageClient {
 		this.tokenExpireAt = System.currentTimeMillis() + expiresInSec * 1000L;
 	}
 
-	/** baseUrl 为空时补默认地址，其余配置原样保留。 */
+	/** baseUrl 为空时补默认地址，其余配置通过 {@link AiConfig#withBaseUrl} 原样保留。 */
 	private static AiConfig withDefaults(AiConfig config) {
 		if (config.baseUrl() != null && !config.baseUrl().isBlank()) {
 			return config;
 		}
-		AiConfig.Builder b = AiConfig.builder()
-			.apiKey(config.apiKey())
-			.baseUrl(DEFAULT_BASE_URL)
-			.timeout(config.timeout())
-			.connectTimeout(config.connectTimeout())
-			.maxRetries(config.maxRetries());
-		if (config.proxy() != null && !config.proxy().isBlank()) {
-			b.proxy(config.proxy());
-		}
-		for (Map.Entry<String, String> e : config.extraHeaders().entrySet()) {
-			b.extraHeader(e.getKey(), e.getValue());
-		}
-		return b.build();
+		return config.withBaseUrl(DEFAULT_BASE_URL);
 	}
 }

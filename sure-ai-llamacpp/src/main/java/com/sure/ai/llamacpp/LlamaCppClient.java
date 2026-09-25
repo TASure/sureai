@@ -16,8 +16,6 @@
 
 package com.sure.ai.llamacpp;
 
-import java.util.Map;
-
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.compat.OpenAiCompatClient;
 
@@ -69,7 +67,7 @@ public class LlamaCppClient extends OpenAiCompatClient {
 	}
 
 	/**
-	 * baseUrl 为空时，用默认地址重建配置（保留其余全部字段与额外头）。
+	 * baseUrl 为空时，用默认地址替换（其余全部字段通过 {@link AiConfig#withBaseUrl} 原样保留）。
 	 *
 	 * @param config      原始配置
 	 * @param defaultBase 默认 baseUrl
@@ -79,17 +77,6 @@ public class LlamaCppClient extends OpenAiCompatClient {
 		if (config.baseUrl() != null && !config.baseUrl().isBlank()) {
 			return config;
 		}
-		AiConfig.Builder b = AiConfig.builder()
-			.apiKey(config.apiKey() == null ? DEFAULT_API_KEY : config.apiKey())
-			.baseUrl(defaultBase)
-			.timeout(config.timeout())
-			.connectTimeout(config.connectTimeout())
-			.proxy(config.proxy())
-			.organization(config.organization())
-			.maxRetries(config.maxRetries());
-		for (Map.Entry<String, String> e : config.extraHeaders().entrySet()) {
-			b.extraHeader(e.getKey(), e.getValue());
-		}
-		return b.build();
+		return config.withBaseUrl(defaultBase);
 	}
 }
