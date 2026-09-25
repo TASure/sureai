@@ -16,73 +16,61 @@
 
 package com.sure.ai.client.compat;
 
+import java.net.http.HttpRequest;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 
+import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiClient;
 import com.sure.ai.client.AiConfig;
-import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AudioClient;
-import com.sure.ai.client.cache.CacheStore;
-import com.sure.ai.client.cache.ChatCacheKey;
 import com.sure.ai.client.EmbeddingClient;
 import com.sure.ai.client.FineTuneClient;
 import com.sure.ai.client.ImageClient;
-import com.sure.ai.client.ModerationClient;
 import com.sure.ai.client.ModelsClient;
+import com.sure.ai.client.ModerationClient;
 import com.sure.ai.client.VideoClient;
-import com.sure.ai.exception.AiException;
-import com.sure.ai.exception.AiTimeoutException;
-import com.sure.ai.internal.json.Json;
 import com.sure.ai.internal.json.JsonArray;
+import com.sure.ai.internal.json.JsonElement;
 import com.sure.ai.internal.json.JsonObject;
-import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
-import com.sure.ai.model.CacheControl;
-import com.sure.ai.model.Choice;
-import com.sure.ai.model.DocumentPart;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.FineTuneRequest;
 import com.sure.ai.model.FineTuneResponse;
-import com.sure.ai.model.GroundingSource;
-import com.sure.ai.model.ImagePart;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
-import com.sure.ai.model.ImageResult;
-import com.sure.ai.model.MessagePart;
 import com.sure.ai.model.Model;
 import com.sure.ai.model.ModerationRequest;
 import com.sure.ai.model.ModerationResponse;
-import com.sure.ai.model.ModerationResult;
-import com.sure.ai.model.Role;
-import com.sure.ai.model.Segment;
 import com.sure.ai.model.SttRequest;
 import com.sure.ai.model.SttResponse;
-import com.sure.ai.model.TextPart;
-import com.sure.ai.model.TokenUsage;
-import com.sure.ai.model.ToolCall;
-import com.sure.ai.model.ToolFunction;
-import com.sure.ai.model.ToolSpec;
 import com.sure.ai.model.TtsRequest;
 import com.sure.ai.model.TtsResponse;
 import com.sure.ai.model.VideoRequest;
 import com.sure.ai.model.VideoResponse;
-import com.sure.ai.model.VideoResult;
-import com.sure.ai.model.Word;
 
 /**
- * OpenAI 兼容协议客户端引擎。
+ * OpenAI 兼容协议客户端引擎（薄编排层）。
  *
- * <p>实现 /chat/completions 与 /embeddings 的请求序列化与响应解析；平台子类通过覆盖
- * chatPath/embeddingsPath 与 baseUrl 适配具体服务。</p>
+ * <p>1.4.0 可维护性迭代：本类由 841 行的"上帝类"按能力域拆分为一组包内可见协作策略——
+ * {@link ChatCompatStrategy}（非流式 chat + 请求体序列化 + 响应解析）、
+ * {@link StreamCompatStrategy}（SSE 流式分片解析）、{@link EmbeddingCompatStrategy}、
+ * {@link ImageCompatStrategy}、{@link VideoCompatStrategy}（异步轮询）、
+ * {@link AudioCompatStrategy}（TTS/STT）、{@link ModerationCompatStrategy}、
+ * {@link FineTuneCompatStrategy}（含训练文件上传）。</p>
+ *
+ * <p>本类收敛为：持有各策略引用、暴露平台子类覆写所需的 protected 契约（路径字段、轮询参数、
+ * {@link #buildChatBody}、{@link #parseFineTuneResponse}、{@link #applyAuth}），并把
+ * 全部 public 方法委托给对应策略。公共 API 与子类契约不变，行为与拆分前完全一致。</p>
+ *
+ * <p>策略类与本类同处 {@code com.sure.ai.client.compat} 包；由于 {@code doPostRaw} 等
+ * 传输方法声明在 {@code com.sure.ai.client} 包的 {@link AbstractAiClient} 中（protected），
+ * 跨包策略无法直接调用，故本类暴露一组包内可见的 {@code transport*} 桥接方法做转发。</p>
  *
  * @author sureai
  * @since 0.1.0
@@ -127,6 +115,30 @@ public class OpenAiCompatClient extends AbstractAiClient
 	/** 视频最大等待时间（毫秒），子类可覆盖。 */
 	protected long videoMaxWaitMs = 120000L;
 
+	/** 非流式 chat 策略。 */
+	private final ChatCompatStrategy chatStrategy;
+
+	/** 流式 chat 策略。 */
+	private final StreamCompatStrategy streamStrategy;
+
+	/** 向量策略。 */
+	private final EmbeddingCompatStrategy embeddingStrategy;
+
+	/** 图像策略。 */
+	private final ImageCompatStrategy imageStrategy;
+
+	/** 视频策略。 */
+	private final VideoCompatStrategy videoStrategy;
+
+	/** 音频（TTS/STT）策略。 */
+	private final AudioCompatStrategy audioStrategy;
+
+	/** 内容审核策略。 */
+	private final ModerationCompatStrategy moderationStrategy;
+
+	/** 微调策略。 */
+	private final FineTuneCompatStrategy fineTuneStrategy;
+
 	/**
 	 * 构造客户端。
 	 *
@@ -134,6 +146,14 @@ public class OpenAiCompatClient extends AbstractAiClient
 	 */
 	public OpenAiCompatClient(AiConfig config) {
 		super(config);
+		this.chatStrategy = new ChatCompatStrategy(this);
+		this.streamStrategy = new StreamCompatStrategy(this);
+		this.embeddingStrategy = new EmbeddingCompatStrategy(this);
+		this.imageStrategy = new ImageCompatStrategy(this);
+		this.videoStrategy = new VideoCompatStrategy(this);
+		this.audioStrategy = new AudioCompatStrategy(this);
+		this.moderationStrategy = new ModerationCompatStrategy(this);
+		this.fineTuneStrategy = new FineTuneCompatStrategy(this);
 	}
 
 	@Override
@@ -142,286 +162,27 @@ public class OpenAiCompatClient extends AbstractAiClient
 	}
 
 	@Override
-	protected void applyAuth(java.net.http.HttpRequest.Builder requestBuilder, AiConfig cfg) {
+	protected void applyAuth(HttpRequest.Builder requestBuilder, AiConfig cfg) {
 		requestBuilder.header("Authorization", "Bearer " + cfg.apiKey());
 		if (cfg.organization() != null && !cfg.organization().isBlank()) {
 			requestBuilder.header("OpenAI-Organization", cfg.organization());
 		}
 	}
 
+	// ==================== Chat（委托策略） ====================
+
 	@Override
 	public ChatResponse chat(ChatRequest request) {
-		CacheStore cache = this.config.cacheStore();
-		if (cache != null && !request.stream()) {
-			return chatWithCache(request, cache);
-		}
-		JsonObject body = buildChatBody(request, false);
-		PostResult result = doPostRaw(this.chatPath, body);
-		return parseChatResponse(result.json(), result.rawBody());
-	}
-
-	/**
-	 * 带缓存的非流式 chat：命中直接返回（不触发网络/指标/重试），未命中走网络并回写。
-	 *
-	 * <p>设计说明：缓存命中意味着没有真实 HTTP 请求，因此不触发
-	 * {@code MetricsCollector} 的 onRequestStart/Success、也不计数重试；这是刻意的取舍——
-	 * 缓存命中不属于一次真实的模型调用。错误响应在 {@code doPostRaw} 阶段即抛出，
-	 * 不会进入缓存写入路径。</p>
-	 */
-	private ChatResponse chatWithCache(ChatRequest request, CacheStore cache) {
-		String key = ChatCacheKey.of(request);
-		ChatResponse cached = cache.get(key);
-		if (cached != null) {
-			return cached;
-		}
-		JsonObject body = buildChatBody(request, false);
-		PostResult result = doPostRaw(this.chatPath, body);
-		ChatResponse response = parseChatResponse(result.json(), result.rawBody());
-		long ttlMillis = this.config.cacheTtl() == null ? -1L : this.config.cacheTtl().toMillis();
-		cache.put(key, response, ttlMillis);
-		return response;
+		return this.chatStrategy.chat(request);
 	}
 
 	@Override
 	public void chatStream(ChatRequest request, Consumer<ChatStreamChunk> consumer) {
-		JsonObject body = buildChatBody(request, true);
-		doPostStream(this.chatPath, body, el -> consumer.accept(parseChunk(el.getAsJsonObject())));
-	}
-
-	@Override
-	public EmbeddingResponse embed(EmbeddingRequest request) {
-		JsonObject body = Json.object();
-		body.put("model", request.model());
-		JsonArray input = Json.array();
-		for (String s : request.input()) {
-			input.add(s);
-		}
-		body.put("input", input);
-		JsonObject resp = doPost(this.embeddingsPath, body);
-		return parseEmbeddingResponse(resp);
-	}
-
-	@Override
-	public ImageResponse generate(ImageRequest request) {
-		JsonObject body = buildImageBody(request);
-		PostResult result = doPostRaw(this.imagesPath, body);
-		return parseImageResponse(result.json(), result.rawBody());
-	}
-
-	/** 构造图像生成请求体。 */
-	private JsonObject buildImageBody(ImageRequest req) {
-		JsonObject body = Json.object();
-		body.put("model", req.model());
-		body.put("prompt", req.prompt());
-		putIfNotNull(body, "n", req.n());
-		putIfNotNull(body, "size", req.size());
-		putIfNotNull(body, "quality", req.quality());
-		putIfNotNull(body, "style", req.style());
-		putIfNotNull(body, "response_format", req.responseFormat());
-		putIfNotNull(body, "user", req.user());
-		for (Map.Entry<String, Object> e : req.extra().entrySet()) {
-			body.put(e.getKey(), Json.toElement(e.getValue()));
-		}
-		return body;
-	}
-
-	/** 解析图像生成响应：{created, data:[{url, b64_json, revised_prompt}]}。 */
-	private ImageResponse parseImageResponse(JsonObject resp, String rawJson) {
-		long created = resp.optLong("created", 0L);
-		List<ImageResult> results = new ArrayList<>();
-		JsonArray data = resp.has("data") ? resp.getJsonArray("data") : null;
-		if (data != null) {
-			for (int i = 0; i < data.size(); i++) {
-				JsonObject d = data.getJsonObject(i);
-				results.add(ImageResult.of(
-					d.optString("url", null),
-					d.optString("b64_json", null),
-					d.optString("revised_prompt", null)));
-			}
-		}
-		return ImageResponse.of(created, results, rawJson);
-	}
-
-	// ==================== 视频生成（异步轮询） ====================
-
-	@Override
-	public VideoResponse generate(VideoRequest request) {
-		JsonObject body = buildVideoBody(request);
-		PostResult submit = doPostRaw(this.videosPath, body);
-		String taskId = submit.json().optString("id", null);
-		if (taskId == null || taskId.isBlank()) {
-			throw new AiException("video task id not found in response: " + submit.rawBody());
-		}
-		long deadline = System.currentTimeMillis() + this.videoMaxWaitMs;
-		String lastRaw = submit.rawBody();
-		while (System.currentTimeMillis() < deadline) {
-			try {
-				Thread.sleep(this.videoPollIntervalMs);
-			} catch (InterruptedException ex) {
-				Thread.currentThread().interrupt();
-				throw new AiException("video polling interrupted", ex);
-			}
-			PostResult poll = doGetRaw(this.videosPath + "/" + encodePathSegment(taskId));
-			lastRaw = poll.rawBody();
-			String status = poll.json().optString("status", "");
-			if ("completed".equals(status)) {
-				return parseVideoResponse(poll.json(), poll.rawBody());
-			}
-			if ("failed".equals(status)) {
-				String reason = poll.json().optString("failure_reason",
-					poll.json().optString("error", "video generation failed"));
-				throw new AiException("video generation failed: " + reason);
-			}
-		}
-		throw new AiTimeoutException("video generation timed out after " + this.videoMaxWaitMs + "ms, last: " + lastRaw);
-	}
-
-	/** 构造视频生成请求体。 */
-	private JsonObject buildVideoBody(VideoRequest req) {
-		JsonObject body = Json.object();
-		body.put("model", req.model());
-		body.put("prompt", req.prompt());
-		putIfNotNull(body, "size", req.size());
-		putIfNotNull(body, "seconds", req.duration());
-		putIfNotNull(body, "n", req.n());
-		putIfNotNull(body, "negative_prompt", req.negativePrompt());
-		putIfNotNull(body, "seed", req.seed());
-		putIfNotNull(body, "resolution", req.resolution());
-		putIfNotNull(body, "ratio", req.ratio());
-		if (Boolean.TRUE.equals(req.withAudio())) {
-			body.put("with_audio", true);
-		}
-		for (Map.Entry<String, Object> e : req.extra().entrySet()) {
-			body.put(e.getKey(), Json.toElement(e.getValue()));
-		}
-		return body;
-	}
-
-	/** 解析视频生成响应：{created_at, status, data:[{url}] 或 video:{url}}。 */
-	private VideoResponse parseVideoResponse(JsonObject resp, String rawJson) {
-		long created = resp.optLong("created_at", resp.optLong("created", 0L));
-		List<VideoResult> results = new ArrayList<>();
-		JsonArray data = resp.has("data") ? resp.getJsonArray("data") : null;
-		if (data != null && !data.isEmpty()) {
-			for (int i = 0; i < data.size(); i++) {
-				JsonObject d = data.getJsonObject(i);
-				results.add(VideoResult.of(
-					d.optString("url", null),
-					d.optString("cover_image_url", null),
-					d.optString("b64_json", null),
-					resp.optString("status", null),
-					d.optString("revised_prompt", null)));
-			}
-		} else if (resp.has("video")) {
-			JsonObject v = resp.getJsonObject("video");
-			results.add(VideoResult.of(
-				v.optString("url", null),
-				v.optString("cover_image_url", null),
-				null,
-				resp.optString("status", null),
-				null));
-		} else {
-			String url = resp.optString("url", null);
-			if (url != null) {
-				results.add(VideoResult.ofUrl(url));
-			}
-		}
-		return VideoResponse.of(created, results, rawJson);
-	}
-
-	// ==================== 语音合成 TTS ====================
-
-	@Override
-	public TtsResponse synthesize(TtsRequest request) {
-		JsonObject body = buildTtsBody(request);
-		byte[] audio = doPostBinary(this.ttsPath, body);
-		String format = request.responseFormat() == null ? "mp3" : request.responseFormat();
-		return TtsResponse.ofAudio(audio, format);
-	}
-
-	/** 构造 TTS 请求体。 */
-	private JsonObject buildTtsBody(TtsRequest req) {
-		JsonObject body = Json.object();
-		body.put("model", req.model());
-		body.put("input", req.input());
-		body.put("voice", req.voice());
-		putIfNotNull(body, "response_format", req.responseFormat());
-		putIfNotNull(body, "speed", req.speed());
-		putIfNotNull(body, "instructions", req.instructions());
-		for (Map.Entry<String, Object> e : req.extra().entrySet()) {
-			body.put(e.getKey(), Json.toElement(e.getValue()));
-		}
-		return body;
-	}
-
-	// ==================== 语音识别 STT ====================
-
-	@Override
-	public SttResponse transcribe(SttRequest request) {
-		Map<String, String> fields = new LinkedHashMap<>();
-		fields.put("model", request.model());
-		if (request.language() != null) {
-			fields.put("language", request.language());
-		}
-		String respFormat = request.responseFormat() == null ? "verbose_json" : request.responseFormat();
-		fields.put("response_format", respFormat);
-		if (request.temperature() != null) {
-			fields.put("temperature", String.valueOf(request.temperature()));
-		}
-		if (request.prompt() != null) {
-			fields.put("prompt", request.prompt());
-		}
-		String fileName = request.fileName() == null ? "audio.mp3" : request.fileName();
-		String contentType = request.contentType() == null ? "audio/mpeg" : request.contentType();
-		PostResult result = doPostMultipart(this.sttPath, fields, "file", fileName, contentType, request.audioData());
-		return parseSttResponse(result.json(), result.rawBody());
-	}
-
-	/** 解析 STT 响应：{text, language, duration, segments:[], words:[]}。 */
-	private SttResponse parseSttResponse(JsonObject resp, String rawJson) {
-		String text = resp.optString("text", "");
-		String language = resp.optString("language", null);
-		Double duration = resp.has("duration") ? resp.get("duration").getAsDouble() : null;
-		List<Segment> segments = new ArrayList<>();
-		JsonArray segArr = resp.has("segments") ? resp.getJsonArray("segments") : null;
-		if (segArr != null) {
-			for (int i = 0; i < segArr.size(); i++) {
-				JsonObject s = segArr.getJsonObject(i);
-				List<Word> words = new ArrayList<>();
-				JsonArray wordArr = s.has("words") ? s.getJsonArray("words") : null;
-				if (wordArr != null) {
-					for (int j = 0; j < wordArr.size(); j++) {
-						JsonObject w = wordArr.getJsonObject(j);
-						words.add(Word.of(
-							w.optString("word", ""),
-							w.optDouble("start", 0.0),
-							w.optDouble("end", 0.0)));
-					}
-				}
-				segments.add(Segment.of(
-					s.optInt("id", i),
-					s.optDouble("start", 0.0),
-					s.optDouble("end", 0.0),
-					s.optString("text", ""),
-					words));
-			}
-		}
-		List<Word> words = new ArrayList<>();
-		JsonArray wordArr = resp.has("words") ? resp.getJsonArray("words") : null;
-		if (wordArr != null) {
-			for (int i = 0; i < wordArr.size(); i++) {
-				JsonObject w = wordArr.getJsonObject(i);
-				words.add(Word.of(
-					w.optString("word", ""),
-					w.optDouble("start", 0.0),
-					w.optDouble("end", 0.0)));
-			}
-		}
-		return SttResponse.of(text, language, duration, segments, words, rawJson);
+		this.streamStrategy.chatStream(request, consumer);
 	}
 
 	/**
-	 * 构造对话请求体。
+	 * 构造对话请求体（默认实现委托给 {@link ChatCompatStrategy}）。
 	 *
 	 * <p>子类可覆盖此方法对序列化结果做平台差异化后处理（例如通义将
 	 * {@code reasoning_effort} 改写为 {@code enable_thinking}、将 grounding 改写为
@@ -433,293 +194,43 @@ public class OpenAiCompatClient extends AbstractAiClient
 	 * @return 请求体 JSON
 	 */
 	protected JsonObject buildChatBody(ChatRequest req, boolean stream) {
-		JsonObject body = Json.object();
-		body.put("model", req.model());
-		JsonArray messages = Json.array();
-		for (ChatMessage m : req.messages()) {
-			messages.add(serializeMessage(m));
-		}
-		body.put("messages", messages);
-		putIfNotNull(body, "temperature", req.temperature());
-		putIfNotNull(body, "max_tokens", req.maxTokens());
-		putIfNotNull(body, "top_p", req.topP());
-		if (req.stop() != null) {
-			body.put("stop", Json.toElement(req.stop()));
-		}
-		body.put("stream", stream);
-		putIfNotNull(body, "user", req.user());
-		JsonArray tools = Json.array();
-		if (req.tools() != null && !req.tools().isEmpty()) {
-			for (ToolSpec spec : req.tools()) {
-				JsonObject t = Json.object();
-				t.put("type", "function");
-				t.set("function", serializeFunction(spec.function()));
-				tools.add(t);
-			}
-		}
-		injectGroundingTool(tools, req.grounding());
-		if (!tools.isEmpty()) {
-			body.put("tools", tools);
-		}
-		if (req.toolChoice() != null) {
-			body.put("tool_choice", Json.toElement(req.toolChoice()));
-		}
-		putIfNotNull(body, "presence_penalty", req.presencePenalty());
-		putIfNotNull(body, "frequency_penalty", req.frequencyPenalty());
-		putIfNotNull(body, "seed", req.seed());
-		if (req.responseFormat() != null) {
-			body.put("response_format", Json.toElement(req.responseFormat()));
-		}
-		putIfNotNull(body, "reasoning_effort", req.reasoningEffort());
-		for (Map.Entry<String, Object> e : req.extra().entrySet()) {
-			body.put(e.getKey(), Json.toElement(e.getValue()));
-		}
-		return body;
+		return this.chatStrategy.buildBody(req, stream);
 	}
 
-	/**
-	 * 注入联网 Grounding 工具：grounding 为 "web_search" 字符串时注入
-	 * {@code {"type":"web_search"}} 工具；为 JsonObject/Map 时直接作为工具注入；
-	 * 为 null 时不注入。
-	 */
-	private static void injectGroundingTool(JsonArray tools, Object grounding) {
-		if (grounding == null) {
-			return;
-		}
-		if ("web_search".equals(grounding)) {
-			JsonObject tool = Json.object();
-			tool.put("type", "web_search");
-			tools.add(tool);
-		} else {
-			tools.add(Json.toElement(grounding));
-		}
+	// ==================== Embedding（委托策略） ====================
+
+	@Override
+	public EmbeddingResponse embed(EmbeddingRequest request) {
+		return this.embeddingStrategy.embed(request);
 	}
 
-	/** 序列化为 Map 形式的函数定义。 */
-	private Map<String, Object> serializeFunction(ToolFunction fn) {
-		Map<String, Object> map = new java.util.LinkedHashMap<>();
-		map.put("name", fn.name());
-		if (fn.description() != null) {
-			map.put("description", fn.description());
-		}
-		if (fn.parameters() != null) {
-			map.put("parameters", Json.parse(fn.parameters()));
-		}
-		return map;
+	// ==================== Image（委托策略） ====================
+
+	@Override
+	public ImageResponse generate(ImageRequest request) {
+		return this.imageStrategy.generate(request);
 	}
 
-	/** 序列化单条消息。 */
-	private JsonObject serializeMessage(ChatMessage m) {
-		JsonObject o = Json.object();
-		o.put("role", m.role().value());
-		if (m.parts() != null && !m.parts().isEmpty()) {
-			JsonArray parts = Json.array();
-			for (MessagePart p : m.parts()) {
-				parts.add(serializePart(p));
-			}
-			o.put("content", parts);
-		} else if (m.content() != null) {
-			o.put("content", m.content());
-		}
-		if (m.name() != null) {
-			o.put("name", m.name());
-		}
-		if (m.toolCallId() != null) {
-			o.put("tool_call_id", m.toolCallId());
-		}
-		if (m.toolCalls() != null && !m.toolCalls().isEmpty()) {
-			JsonArray calls = Json.array();
-			for (ToolCall c : m.toolCalls()) {
-				JsonObject co = Json.object();
-				co.put("id", c.id());
-				co.put("type", "function");
-				JsonObject fn = Json.object();
-				fn.put("name", c.name());
-				fn.put("arguments", c.argumentsJson() == null ? "{}" : c.argumentsJson());
-				co.put("function", fn);
-				calls.add(co);
-			}
-			o.put("tool_calls", calls);
-		}
-		return o;
+	// ==================== Video（委托策略） ====================
+
+	@Override
+	public VideoResponse generate(VideoRequest request) {
+		return this.videoStrategy.generate(request);
 	}
 
-	/** 序列化多模态片段。 */
-	private JsonObject serializePart(MessagePart p) {
-		JsonObject o = Json.object();
-		if (p instanceof TextPart tp) {
-			o.put("type", "text");
-			o.put("text", tp.text());
-			CacheControl cc = tp.cacheControl();
-			if (cc != null && cc.type() != null) {
-				JsonObject ccObj = Json.object();
-				ccObj.put("type", cc.type());
-				o.put("cache_control", ccObj);
-			}
-		} else if (p instanceof ImagePart ip) {
-			o.put("type", "image_url");
-			JsonObject inner = Json.object();
-			inner.put("url", ip.resolvedUrl());
-			o.put("image_url", inner);
-		} else if (p instanceof DocumentPart dp) {
-			if (dp.fileId() != null) {
-				o.put("type", "input_file");
-				JsonObject inner = Json.object();
-				inner.put("file_id", dp.fileId());
-				o.put("input_file", inner);
-			} else {
-				o.put("type", "input_file");
-				JsonObject inner = Json.object();
-				if (dp.name() != null) {
-					inner.put("filename", dp.name());
-				}
-				if (dp.mimeType() != null) {
-					inner.put("mime_type", dp.mimeType());
-				}
-				if (dp.data() != null) {
-					String mime = dp.mimeType() == null ? "application/pdf" : dp.mimeType();
-					inner.put("file_data", "data:" + mime + ";base64," + dp.data());
-				}
-				o.put("input_file", inner);
-			}
-		}
-		return o;
+	// ==================== Audio（委托策略） ====================
+
+	@Override
+	public TtsResponse synthesize(TtsRequest request) {
+		return this.audioStrategy.synthesize(request);
 	}
 
-	/** 非空字段写入。 */
-	private static void putIfNotNull(JsonObject body, String key, Object value) {
-		if (value != null) {
-			body.put(key, Json.toElement(value));
-		}
+	@Override
+	public SttResponse transcribe(SttRequest request) {
+		return this.audioStrategy.transcribe(request);
 	}
 
-	/** 解析对话响应。 */
-	private ChatResponse parseChatResponse(JsonObject resp, String rawJson) {
-		String id = resp.optString("id", null);
-		String model = resp.optString("model", null);
-		List<Choice> choices = new ArrayList<>();
-		List<GroundingSource> groundingSources = new ArrayList<>();
-		JsonArray arr = resp.getJsonArray("choices");
-		for (int i = 0; i < arr.size(); i++) {
-			JsonObject c = arr.getJsonObject(i);
-			JsonObject msg = c.getJsonObject("message");
-			choices.add(Choice.of(c.optInt("index", 0), parseMessage(msg),
-				c.optString("finish_reason", null)));
-			collectGroundingSources(msg, groundingSources);
-		}
-		TokenUsage usage = null;
-		if (resp.has("usage")) {
-			JsonObject u = resp.getJsonObject("usage");
-			usage = TokenUsage.of(u.optInt("prompt_tokens", 0),
-				u.optInt("completion_tokens", 0), u.optInt("total_tokens", 0));
-			notifyTokenUsage(model, usage.promptTokens(), usage.completionTokens(),
-				usage.totalTokens());
-		}
-		return ChatResponse.of(id, model, choices, usage, groundingSources, rawJson);
-	}
-
-	/** 从 message.annotations 中提取联网来源（url_citation / url）。 */
-	private static void collectGroundingSources(JsonObject msg, List<GroundingSource> out) {
-		if (msg == null || !msg.has("annotations")) {
-			return;
-		}
-		JsonArray annotations = msg.getJsonArray("annotations");
-		for (int i = 0; i < annotations.size(); i++) {
-			JsonObject ann = annotations.getJsonObject(i);
-			String type = ann.optString("type", null);
-			if ("url_citation".equals(type) && ann.has("url_citation")) {
-				JsonObject uc = ann.getJsonObject("url_citation");
-				out.add(GroundingSource.of(uc.optString("title", null),
-					uc.optString("url", null), ann.optString("quoted_text", null)));
-			} else if (ann.has("url")) {
-				out.add(GroundingSource.of(ann.optString("title", null),
-					ann.optString("url", null), ann.optString("quoted_text", null)));
-			}
-		}
-	}
-
-	/** 解析响应中的 message 对象。 */
-	private ChatMessage parseMessage(JsonObject msg) {
-		Role role = msg.has("role") ? Role.fromValue(msg.getString("role")) : null;
-		String content = msg.has("content") && !msg.get("content").isNull()
-			? msg.getString("content") : null;
-		String reasoning = msg.has("reasoning_content") && !msg.get("reasoning_content").isNull()
-			? msg.getString("reasoning_content") : null;
-		List<ToolCall> calls = null;
-		if (msg.has("tool_calls")) {
-			calls = new ArrayList<>();
-			JsonArray tc = msg.getJsonArray("tool_calls");
-			for (int i = 0; i < tc.size(); i++) {
-				JsonObject c = tc.getJsonObject(i);
-				JsonObject fn = c.getJsonObject("function");
-				calls.add(ToolCall.of(c.optString("id", null),
-					fn.optString("name", null), fn.optString("arguments", null)));
-			}
-		}
-		return ChatMessage.of(role, content, null, null, null, calls, reasoning);
-	}
-
-	/** 解析流式分片。 */
-	private ChatStreamChunk parseChunk(JsonObject chunk) {
-		String id = chunk.optString("id", null);
-		JsonArray choices = chunk.getJsonArray("choices");
-		if (choices == null || choices.isEmpty()) {
-			return ChatStreamChunk.of(id, null, null, null, null);
-		}
-		JsonObject c = choices.getJsonObject(0);
-		JsonObject delta = c.has("delta") ? c.getJsonObject("delta") : null;
-		Role role = null;
-		String text = null;
-		List<ToolCall> calls = null;
-		if (delta != null) {
-			if (delta.has("role") && !delta.get("role").isNull()) {
-				role = Role.fromValue(delta.getString("role"));
-			}
-			if (delta.has("content") && !delta.get("content").isNull()) {
-				text = delta.getString("content");
-			}
-			if (delta.has("tool_calls")) {
-				calls = new ArrayList<>();
-				JsonArray tc = delta.getJsonArray("tool_calls");
-				for (int i = 0; i < tc.size(); i++) {
-					JsonObject cc = tc.getJsonObject(i);
-					JsonObject fn = cc.has("function") ? cc.getJsonObject("function") : null;
-					calls.add(ToolCall.of(cc.optString("id", null),
-						fn == null ? null : fn.optString("name", null),
-						fn == null ? null : fn.optString("arguments", null)));
-				}
-			}
-		}
-		String finish = c.optString("finish_reason", null);
-		return ChatStreamChunk.of(id, role, text, calls, finish);
-	}
-
-	/** 解析向量响应。 */
-	private EmbeddingResponse parseEmbeddingResponse(JsonObject resp) {
-		String model = resp.optString("model", null);
-		JsonArray data = resp.getJsonArray("data");
-		List<float[]> embeddings = new ArrayList<>();
-		for (int i = 0; i < data.size(); i++) {
-			JsonObject d = data.getJsonObject(i);
-			JsonArray emb = d.getJsonArray("embedding");
-			float[] vec = new float[emb.size()];
-			for (int j = 0; j < emb.size(); j++) {
-				vec[j] = (float) emb.getDouble(j);
-			}
-			embeddings.add(vec);
-		}
-		TokenUsage usage = null;
-		if (resp.has("usage")) {
-			JsonObject u = resp.getJsonObject("usage");
-			usage = TokenUsage.of(u.optInt("prompt_tokens", 0),
-				u.optInt("completion_tokens", 0), u.optInt("total_tokens", 0));
-			notifyTokenUsage(model, usage.promptTokens(), usage.completionTokens(),
-				usage.totalTokens());
-		}
-		return EmbeddingResponse.of(model, embeddings, usage);
-	}
-
-	// ==================== 模型列表 ====================
+	// ==================== 模型列表（量小，保留在编排层） ====================
 
 	@Override
 	public List<Model> listModels() {
@@ -737,105 +248,93 @@ public class OpenAiCompatClient extends AbstractAiClient
 		return models;
 	}
 
-	// ==================== 内容审核 ====================
+	// ==================== Moderation（委托策略） ====================
 
 	@Override
 	public ModerationResponse moderate(ModerationRequest request) {
-		JsonObject body = Json.object();
-		body.put("model", request.model());
-		body.put("input", request.input());
-		for (Map.Entry<String, Object> e : request.extra().entrySet()) {
-			body.put(e.getKey(), Json.toElement(e.getValue()));
-		}
-		PostResult result = doPostRaw(this.moderationsPath, body);
-		JsonObject resp = result.json();
-		List<ModerationResult> results = new ArrayList<>();
-		JsonArray arr = resp.has("results") ? resp.getJsonArray("results") : null;
-		if (arr != null) {
-			for (int i = 0; i < arr.size(); i++) {
-				JsonObject r = arr.getJsonObject(i);
-				Map<String, Double> scores = new LinkedHashMap<>();
-				Set<String> categories = new LinkedHashSet<>();
-				if (r.has("category_scores")) {
-					JsonObject cs = r.getJsonObject("category_scores");
-					for (String key : cs.keySet()) {
-						scores.put(key, cs.get(key).getAsDouble());
-					}
-				}
-				if (r.has("categories")) {
-					JsonObject c = r.getJsonObject("categories");
-					for (String key : c.keySet()) {
-						if (c.get(key).getAsBoolean()) {
-							categories.add(key);
-						}
-					}
-				}
-				results.add(ModerationResult.of(r.has("flagged") && r.get("flagged").getAsBoolean(),
-					scores, categories));
-			}
-		}
-		return ModerationResponse.of(resp.optString("id", null), resp.optString("model", null),
-			results, result.rawBody());
+		return this.moderationStrategy.moderate(request);
 	}
 
-	// ==================== 微调 ====================
+	// ==================== 微调（委托策略） ====================
 
 	@Override
 	public FineTuneResponse createFineTune(FineTuneRequest request) {
-		JsonObject body = Json.object();
-		body.put("model", request.model());
-		body.put("training_file", request.trainingFileId());
-		if (request.hyperparameters() != null) {
-			body.put("hyperparameters", Json.toElement(request.hyperparameters()));
-		}
-		if (request.suffix() != null) {
-			body.put("suffix", request.suffix());
-		}
-		for (Map.Entry<String, Object> e : request.extra().entrySet()) {
-			body.put(e.getKey(), Json.toElement(e.getValue()));
-		}
-		PostResult result = doPostRaw(this.fineTunePath, body);
-		return parseFineTuneResponse(result.json(), result.rawBody());
+		return this.fineTuneStrategy.createFineTune(request);
 	}
 
 	@Override
 	public FineTuneResponse getFineTune(String jobId) {
-		PostResult result = doGetRaw(this.fineTunePath + "/" + encodePathSegment(jobId));
-		return parseFineTuneResponse(result.json(), result.rawBody());
+		return this.fineTuneStrategy.getFineTune(jobId);
 	}
 
 	@Override
 	public String uploadTrainingFile(String fileName, byte[] content) {
-		Map<String, String> fields = new LinkedHashMap<>();
-		fields.put("purpose", "fine-tune");
-		PostResult result = doPostMultipart(this.filesPath, fields,
-			"file", fileName, "application/octet-stream", content);
-		String id = result.json().optString("id", null);
-		if (id == null || id.isBlank()) {
-			throw new AiException("file id not found in upload response: " + result.rawBody());
-		}
-		return id;
+		return this.fineTuneStrategy.uploadTrainingFile(fileName, content);
 	}
 
-	/** 解析微调任务响应。 */
+	/**
+	 * 解析微调任务响应（默认实现委托给 {@link FineTuneCompatStrategy}）。
+	 *
+	 * <p>保留为 protected 钩子：平台子类（如 Azure）覆写 {@code getFineTune} 后仍可复用
+	 * 此解析逻辑。</p>
+	 *
+	 * @param resp    响应 JSON
+	 * @param rawJson 原始报文
+	 * @return 微调任务响应
+	 */
 	protected FineTuneResponse parseFineTuneResponse(JsonObject resp, String rawJson) {
-		Long createdAt = resp.has("created_at") ? resp.get("created_at").getAsLong() : null;
-		Long completedAt = null;
-		if (resp.has("finished_at")) {
-			completedAt = resp.get("finished_at").getAsLong();
-		} else if (resp.has("completed_at")) {
-			completedAt = resp.get("completed_at").getAsLong();
-		}
-		String error = null;
-		if (resp.has("error") && !resp.get("error").isNull()) {
-			JsonObject err = resp.getJsonObject("error");
-			error = err.optString("message", null);
-			if (error == null) {
-				error = resp.optString("error", null);
-			}
-		}
-		return FineTuneResponse.of(resp.optString("id", null), resp.optString("status", null),
-			resp.optString("model", null), resp.optString("fine_tuned_model", null),
-			createdAt, completedAt, error, rawJson);
+		return this.fineTuneStrategy.parseResponse(resp, rawJson);
+	}
+
+	// ==================== 包内桥接：供同包策略访问 AbstractAiClient 的 protected 传输方法 ====================
+
+	/** 暴露配置（策略读取 cacheStore/cacheTtl 等）。 */
+	AiConfig config() {
+		return this.config;
+	}
+
+	/** JSON POST，返回解析结果与原始报文。 */
+	CompatPost transportPostRaw(String path, JsonObject body) {
+		PostResult r = doPostRaw(path, body);
+		return new CompatPost(r.json(), r.rawBody());
+	}
+
+	/** JSON POST，仅返回响应对象。 */
+	JsonObject transportPost(String path, JsonObject body) {
+		return doPost(path, body);
+	}
+
+	/** SSE 流式 POST。 */
+	void transportPostStream(String path, JsonObject body, Consumer<JsonElement> chunkConsumer) {
+		doPostStream(path, body, chunkConsumer);
+	}
+
+	/** JSON GET，返回解析结果与原始报文。 */
+	CompatPost transportGetRaw(String path) {
+		PostResult r = doGetRaw(path);
+		return new CompatPost(r.json(), r.rawBody());
+	}
+
+	/** JSON POST，返回二进制响应体。 */
+	byte[] transportPostBinary(String path, JsonObject body) {
+		return doPostBinary(path, body);
+	}
+
+	/** multipart/form-data POST，返回解析结果与原始报文。 */
+	CompatPost transportMultipart(String path, Map<String, String> textFields,
+			String fileField, String fileName, String fileContentType, byte[] fileData) {
+		PostResult r = doPostMultipart(path, textFields, fileField, fileName,
+			fileContentType, fileData);
+		return new CompatPost(r.json(), r.rawBody());
+	}
+
+	/** 转发 token 用量指标。 */
+	void notifyUsage(String model, long promptTokens, long completionTokens, long totalTokens) {
+		notifyTokenUsage(model, promptTokens, completionTokens, totalTokens);
+	}
+
+	/** 路径段百分号编码桥接。 */
+	String encodeSegment(String segment) {
+		return encodePathSegment(segment);
 	}
 }
