@@ -143,7 +143,7 @@ public class MilvusVectorStore implements VectorStore {
 		Assert.notBlank(id, "id 不能为 blank");
 		JsonObject body = Json.object();
 		body.set("collectionName", collectionName);
-		body.set("filter", "id in [\"" + id + "\"]");
+		body.set("filter", "id in [\"" + escapeFilterString(id) + "\"]");
 		JsonObject resp = post(PATH_DELETE, body);
 		return resp.optInt("code", 0) == 0;
 	}
@@ -312,6 +312,22 @@ public class MilvusVectorStore implements VectorStore {
 			url = url.substring(0, url.length() - 1);
 		}
 		return url;
+	}
+
+	/**
+	 * 转义 Milvus 过滤表达式字符串字面量中的特殊字符，防止 filter 注入。
+	 *
+	 * <p>Milvus 过滤表达式中字符串以双引号包裹，内部反斜杠与双引号需转义。
+	 * 必须先转义反斜杠再转义双引号，否则双引号转义引入的反斜杠会被二次转义。</p>
+	 *
+	 * @param s 原始 id
+	 * @return 转义后的安全字符串
+	 */
+	private static String escapeFilterString(String s) {
+		if (s == null) {
+			return "";
+		}
+		return s.replace("\\", "\\\\").replace("\"", "\\\"");
 	}
 
 	/**

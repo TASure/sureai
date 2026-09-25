@@ -167,6 +167,60 @@ public class MilvusVectorStoreTest {
 		assertTrue(store.delete("v1"));
 	}
 
+	/** P0-3: 恶意 id 中的双引号必须被转义，不能逃逸字符串字面量。 */
+	@Test
+	public void testDeleteFilterEscapesInjection() {
+		this.server.createContext("/v2/vectordb/collections/create",
+				ex -> respond(ex, 200, "{\"code\":0}"));
+		AtomicReference<String> bodyRef = new AtomicReference<>();
+		this.server.createContext("/v2/vectordb/entities/delete", ex -> {
+			bodyRef.set(readBody(ex));
+			respond(ex, 200, "{\"code\":0,\"data\":{\"deleteCount\":1}}");
+		});
+		MilvusVectorStore store = baseBuilder().build();
+		// 恶意 id：试图闭合字符串并注入 " or "1"="1
+		store.delete("x\" or \"1\"=\"1\"");
+		JsonObject body = (JsonObject) Json.parse(bodyRef.get());
+		// 转义后 filter 应为 id in ["x\" or \"1\"=\"1\""]（双引号被反斜杠转义）
+		assertEquals("id in [\"x\\\" or \\\"1\\\"=\\\"1\\\"\"]", body.getString("filter"));
+		// 绝不能出现未转义的注入形式
+		assertTrue("filter 不应包含未转义的注入片段",
+				!body.getString("filter").contains("\"x\" or \"1\"=\"1\""));
+	}
+
+	/** P0-3: id 中的反斜杠必须被转义为双反斜杠。 */
+	@Test
+	public void testDeleteFilterEscapesBackslash() {
+		this.server.createContext("/v2/vectordb/collections/create",
+				ex -> respond(ex, 200, "{\"code\":0}"));
+		AtomicReference<String> bodyRef = new AtomicReference<>();
+		this.server.createContext("/v2/vectordb/entities/delete", ex -> {
+			bodyRef.set(readBody(ex));
+			respond(ex, 200, "{\"code\":0,\"data\":{\"deleteCount\":1}}");
+		});
+		MilvusVectorStore store = baseBuilder().build();
+		store.delete("test\\id");
+		JsonObject body = (JsonObject) Json.parse(bodyRef.get());
+		// 反斜杠应转义为双反斜杠
+		assertEquals("id in [\"test\\\\id\"]", body.getString("filter"));
+	}
+
+	/** P0-3: 普通 id 不包含特殊字符时行为不变。 */
+	@Test
+	public void testDeleteFilterNormalIdUnchanged() {
+		this.server.createContext("/v2/vectordb/collections/create",
+				ex -> respond(ex, 200, "{\"code\":0}"));
+		AtomicReference<String> bodyRef = new AtomicReference<>();
+		this.server.createContext("/v2/vectordb/entities/delete", ex -> {
+			bodyRef.set(readBody(ex));
+			respond(ex, 200, "{\"code\":0,\"data\":{\"deleteCount\":1}}");
+		});
+		MilvusVectorStore store = baseBuilder().build();
+		store.delete("normal-id_123");
+		JsonObject body = (JsonObject) Json.parse(bodyRef.get());
+		assertEquals("id in [\"normal-id_123\"]", body.getString("filter"));
+	}
+
 	/** HTTP 500 包装为 AiException。 */
 	@Test
 	public void testErrorResponse() {
