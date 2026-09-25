@@ -115,6 +115,23 @@ public final class AiConfig {
 	}
 
 	/**
+	 * baseUrl 为空（null 或全空白）时补默认地址，否则原样返回。
+	 *
+	 * <p>平台子类构造器的统一入口：等价于
+	 * {@code (this.baseUrl 为空 ? withBaseUrl(defaultBase) : this)}，其余字段全部保留。
+	 * 用于消除各平台子类中重复的 {@code applyDefaultBaseUrl} 样板。</p>
+	 *
+	 * @param defaultBase baseUrl 为空时使用的默认地址
+	 * @return 补齐 baseUrl 后的配置
+	 */
+	public AiConfig withBaseUrlIfAbsent(String defaultBase) {
+		if (this.baseUrl != null && !this.baseUrl.isBlank()) {
+			return this;
+		}
+		return withBaseUrl(defaultBase);
+	}
+
+	/**
 	 * 仅指定 API Key 的快捷构造。
 	 *
 	 * @param apiKey API Key
