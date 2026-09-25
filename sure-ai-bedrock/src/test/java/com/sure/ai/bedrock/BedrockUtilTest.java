@@ -117,4 +117,45 @@ public class BedrockUtilTest {
 		assertNotNull(client);
 		client.close();
 	}
+
+	/** init(ak,sk,region) 设置单例，client() DCL 返回同一实例。 */
+	@Test
+	public void testInitSingleton() {
+		BedrockUtil.resetClient();
+		BedrockUtil.init("ak", "sk", "us-east-1");
+		BedrockClient c1 = BedrockUtil.client();
+		BedrockClient c2 = BedrockUtil.client();
+		assertNotNull(c1);
+		assertTrue("client() 应返回同一单例", c1 == c2);
+		assertEquals("bedrock", c1.name());
+		c1.close();
+		BedrockUtil.resetClient();
+	}
+
+	/** init(BedrockClient) 注入预构建客户端（用于挂载跨切面能力）。 */
+	@Test
+	public void testInjectClientSingleton() {
+		BedrockUtil.resetClient();
+		BedrockClient injected = new BedrockClient("ak", "sk", null, "us-east-1", "m");
+		BedrockUtil.init(injected);
+		assertTrue(BedrockUtil.client() == injected);
+		injected.close();
+		BedrockUtil.resetClient();
+	}
+
+	/** resetClient 后单例清空：再次 client() 返回的不是旧实例。 */
+	@Test
+	public void testResetClientClearsSingleton() {
+		BedrockUtil.resetClient();
+		BedrockUtil.init("ak", "sk", "us-east-1");
+		BedrockClient before = BedrockUtil.client();
+		BedrockUtil.resetClient();
+		// 重新 init 后必须是全新实例（而非复用 reset 前的旧引用）
+		BedrockUtil.init("ak2", "sk2", "us-east-1");
+		BedrockClient after = BedrockUtil.client();
+		assertTrue("resetClient 后应丢弃旧单例", before != after);
+		after.close();
+		before.close();
+		BedrockUtil.resetClient();
+	}
 }

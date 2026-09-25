@@ -16,23 +16,17 @@
 
 package com.sure.ai.bedrock;
 
-import java.io.InputStream;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiClient;
-import com.sure.ai.exception.AiAuthException;
+import com.sure.ai.client.AiConfig;
 import com.sure.ai.exception.AiException;
-import com.sure.ai.internal.http.SseEvent;
-import com.sure.ai.internal.http.SseLineReader;
 import com.sure.ai.internal.json.JsonArray;
 import com.sure.ai.internal.json.JsonElement;
 import com.sure.ai.internal.json.JsonObject;
@@ -48,9 +42,10 @@ import com.sure.ai.model.TokenUsage;
 /**
  * AWS Bedrock 平台客户端（统一 Converse API）。
  *
- * <p>运行期零第三方依赖：HTTP 基于 JDK {@link HttpClient}，鉴权基于自研
- * {@link AwsSigV4Signer}（AWS Signature V4），JSON 复用 sure-ai-core 自研实现，
- * SSE 复用 core 的 {@link SseLineReader}。</p>
+ * <p>运行期零第三方依赖：HTTP 委托给 {@link AbstractAiClient} 基类（JDK {@link java.net.http.HttpClient}），
+ * 自动继承重试/限流/熔断/指标/缓存/代理/超时能力；鉴权基于自研 {@link AwsSigV4Signer}
+ * （AWS Signature V4），通过基类通用 {@link #signRequest} 钩子挂载——SigV4 需要请求体原文
+ * 计算 payload 摘要，故走签名钩子而非 {@link #applyAuth}。</p>
  *
  * <p>非流式对话调用 {@code POST /model/{modelId}/converse}，流式调用
  * {@code POST /model/{modelId}/converse-stream}。请求体映射：</p>
@@ -71,16 +66,10 @@ import com.sure.ai.model.TokenUsage;
  * @author sureai
  * @since 1.2.0
  */
-public final class BedrockClient implements AiClient {
+public final class BedrockClient extends AbstractAiClient implements AiClient {
 
 	/** Bedrock runtime 服务名（SigV4 service）。 */
 	public static final String SERVICE = "bedrock";
-
-	/** 默认连接超时（秒）。 */
-	private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
-
-	/** 默认请求超时（秒）。 */
-	private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(120);
 
 	/** 区域。 */
 	private final String region;
@@ -96,9 +85,6 @@ public final class BedrockClient implements AiClient {
 
 	/** SigV4 签名器。 */
 	private final AwsSigV4Signer signer;
-
-	/** JDK HTTP 客户端。 */
-	private final HttpClient httpClient;
 
 	/**
 	 * 构造客户端，使用默认 Bedrock runtime 端点。
@@ -117,6 +103,9 @@ public final class BedrockClient implements AiClient {
 	/**
 	 * 构造客户端（可覆盖端点，主要用于本地 mock 测试）。
 	 *
+	 * <p>内部构建 {@link AiConfig}：{@code apiKey=accessKey}、{@code baseUrl=endpoint}，
+	 * 其余跨切面能力（重试/熔断/指标/限流/代理/超时）取 {@link AiConfig} 默认值。</p>
+	 *
 	 * @param accessKey      AWS Access Key ID（必填）
 	 * @param secretKey      AWS Secret Access Key（必填）
 	 * @param sessionToken   临时会话令牌（可选，可为 null）
@@ -126,20 +115,40 @@ public final class BedrockClient implements AiClient {
 	 */
 	BedrockClient(String accessKey, String secretKey, String sessionToken,
 			String region, String modelId, String endpointOverride) {
+		this(buildConfig(accessKey, endpointOverride, region), secretKey, sessionToken, region, modelId);
+	}
+
+	/**
+	 * 全参构造（供测试注入 {@link AiConfig} 的 circuitBreaker/metricsCollector/maxRetries/rateLimitQps）。
+	 *
+	 * <p>{@code config.apiKey()} 即 AWS Access Key，{@code config.baseUrl()} 即 Bedrock runtime 端点；
+	 * secretKey/sessionToken/region 作为 Bedrock 特有凭证用于 SigV4 签名，不走 AiConfig。</p>
+	 *
+	 * @param config        完整配置（含跨切面能力）
+	 * @param secretKey     AWS Secret Access Key
+	 * @param sessionToken  临时会话令牌（可空）
+	 * @param region        AWS 区域
+	 * @param modelId       默认模型 ID（可空）
+	 */
+	BedrockClient(AiConfig config, String secretKey, String sessionToken, String region, String modelId) {
+		super(config);
 		if (region == null || region.isBlank()) {
 			throw new AiException("AWS region must not be blank");
 		}
 		this.region = region;
 		this.defaultModelId = modelId;
-		this.endpoint = (endpointOverride != null && !endpointOverride.isBlank())
-			? stripTrailingSlash(endpointOverride)
-			: "https://bedrock-runtime." + region + ".amazonaws.com";
+		this.endpoint = stripTrailingSlash(config.baseUrl());
 		URI uri = URI.create(this.endpoint);
 		this.host = uri.getPort() == -1 ? uri.getHost() : uri.getHost() + ':' + uri.getPort();
-		this.signer = new AwsSigV4Signer(accessKey, secretKey, sessionToken, region, SERVICE);
-		this.httpClient = HttpClient.newBuilder()
-			.connectTimeout(CONNECT_TIMEOUT)
-			.build();
+		this.signer = new AwsSigV4Signer(config.apiKey(), secretKey, sessionToken, region, SERVICE);
+	}
+
+	/** 由凭证与端点构建基类 AiConfig（apiKey=accessKey，baseUrl=endpoint）。 */
+	private static AiConfig buildConfig(String accessKey, String endpointOverride, String region) {
+		String endpoint = (endpointOverride != null && !endpointOverride.isBlank())
+			? stripTrailingSlash(endpointOverride)
+			: "https://bedrock-runtime." + region + ".amazonaws.com";
+		return AiConfig.builder().apiKey(accessKey).baseUrl(endpoint).build();
 	}
 
 	@Override
@@ -147,51 +156,50 @@ public final class BedrockClient implements AiClient {
 		return "bedrock";
 	}
 
+	/**
+	 * SigV4 不通过简单 Authorization 头完成，而是经 {@link #signRequest} 钩子（需请求体原文），
+	 * 故此空实现。
+	 */
+	@Override
+	protected void applyAuth(HttpRequest.Builder requestBuilder, AiConfig cfg) {
+		// 签名见 signRequest
+	}
+
+	/**
+	 * 覆写基类签名钩子：从完整 URL 提取 host/path/query，调用 {@link AwsSigV4Signer} 计算全部
+	 * 签名头（Authorization/X-Amz-Date/X-Amz-Content-Sha256/可选 X-Amz-Security-Token）。
+	 *
+	 * <p>每次重试都会重新签名（时间戳刷新），这是 SigV4 的期望行为。</p>
+	 */
+	@Override
+	protected Map<String, String> signRequest(String method, String url, String body) {
+		URI uri = URI.create(url);
+		String path = uri.getRawPath();
+		String hostHeader = uri.getPort() == -1 ? uri.getHost() : uri.getHost() + ':' + uri.getPort();
+		String query = uri.getRawQuery() == null ? "" : uri.getRawQuery();
+		return this.signer.sign(method, hostHeader, path, query, body, ZonedDateTime.now());
+	}
+
 	@Override
 	public ChatResponse chat(ChatRequest request) {
 		String model = resolveModel(request.model());
-		String body = buildConverseBody(request);
+		JsonObject body = buildConverseBody(request);
 		String path = "/model/" + model + "/converse";
-		String url = this.endpoint + path;
-		Map<String, String> headers = signer.sign("POST", this.host, path, "", body, ZonedDateTime.now());
-		HttpRequest httpRequest = newRequestBuilder(url, body, headers)
-			.build();
-		try {
-			HttpResponse<String> resp = this.httpClient.send(httpRequest,
-				HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-			ensureSuccess(resp.statusCode(), resp.body());
-			return parseConverseResponse(resp.body(), model);
-		} catch (java.io.IOException ex) {
-			throw new AiException("Bedrock converse failed: " + ex.getMessage(), ex);
-		} catch (InterruptedException ex) {
-			Thread.currentThread().interrupt();
-			throw new AiException("Bedrock converse interrupted: " + ex.getMessage(), ex);
+		PostResult result = doPostRaw(path, body);
+		ChatResponse resp = parseConverseResponse(result.rawBody(), model);
+		TokenUsage usage = resp.usage();
+		if (usage != null) {
+			notifyTokenUsage(model, usage.promptTokens(), usage.completionTokens(), usage.totalTokens());
 		}
+		return resp;
 	}
 
 	@Override
 	public void chatStream(ChatRequest request, Consumer<ChatStreamChunk> consumer) {
 		String model = resolveModel(request.model());
-		String body = buildConverseBody(request);
+		JsonObject body = buildConverseBody(request);
 		String path = "/model/" + model + "/converse-stream";
-		String url = this.endpoint + path;
-		Map<String, String> headers = signer.sign("POST", this.host, path, "", body, ZonedDateTime.now());
-		HttpRequest httpRequest = newRequestBuilder(url, body, headers)
-			.build();
-		try {
-			HttpResponse<InputStream> resp = this.httpClient.send(httpRequest,
-				HttpResponse.BodyHandlers.ofInputStream());
-			if (resp.statusCode() >= 300) {
-				ensureSuccess(resp.statusCode(), readBodySafe(resp.body()));
-			}
-			SseLineReader.read(resp.body(), StandardCharsets.UTF_8,
-				event -> handleStreamEvent(event, consumer));
-		} catch (java.io.IOException ex) {
-			throw new AiException("Bedrock converse-stream failed: " + ex.getMessage(), ex);
-		} catch (InterruptedException ex) {
-			Thread.currentThread().interrupt();
-			throw new AiException("Bedrock converse-stream interrupted: " + ex.getMessage(), ex);
-		}
+		doPostStream(path, body, el -> handleStreamChunk(el, consumer));
 	}
 
 	/**
@@ -202,31 +210,8 @@ public final class BedrockClient implements AiClient {
 		throw new AiException("Bedrock embeddings (Titan) is not supported yet");
 	}
 
-	@Override
-	public void close() {
-		// JDK HttpClient 无显式 close；shutdown 可由其内部 executor 完成，
-		// 此处为空实现以满足 AiClient 生命周期契约。
-	}
-
-	/** 构造签名后的 POST 请求 Builder。 */
-	private HttpRequest.Builder newRequestBuilder(String url, String body, Map<String, String> headers) {
-		HttpRequest.Builder b = HttpRequest.newBuilder()
-			.uri(URI.create(url))
-			.timeout(REQUEST_TIMEOUT)
-			.header("Content-Type", "application/json")
-			.POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
-		for (Map.Entry<String, String> e : headers.entrySet()) {
-			// JDK HttpClient 禁止显式设置 Host 头（由 URI 自动生成），签名已将其纳入 CanonicalHeaders。
-			if ("Host".equalsIgnoreCase(e.getKey())) {
-				continue;
-			}
-			b.header(e.getKey(), e.getValue());
-		}
-		return b;
-	}
-
 	/** 构造 Converse 请求体（system/messages/inferenceConfig）。 */
-	private String buildConverseBody(ChatRequest request) {
+	private JsonObject buildConverseBody(ChatRequest request) {
 		JsonObject root = new JsonObject();
 		JsonArray messages = new JsonArray();
 		JsonArray system = new JsonArray();
@@ -264,7 +249,7 @@ public final class BedrockClient implements AiClient {
 		if (inference.size() > 0) {
 			root.set("inferenceConfig", inference);
 		}
-		return root.toString();
+		return root;
 	}
 
 	/** 解析非流式 Converse 响应。 */
@@ -306,9 +291,18 @@ public final class BedrockClient implements AiClient {
 		return new TokenUsage(input, output, total);
 	}
 
-	/** 处理单个 SSE 事件并投递分片。 */
-	private void handleStreamEvent(SseEvent event, Consumer<ChatStreamChunk> consumer) {
-		JsonObject evt = (JsonObject) JsonParser.parse(event.data());
+	/**
+	 * 处理单个 SSE 分片（基类 doPostStream 已把每个 data 行解析为 JsonElement）。
+	 *
+	 * <p>Bedrock 在 data JSON 内嵌 {@code eventType} 字段，据此分发：messageStart 投角色、
+	 * contentBlockDelta 投文本增量、messageStop 投结束原因；metadata 含用量但分片模型无用量
+	 * 字段，此处仅消费不投递。</p>
+	 */
+	private void handleStreamChunk(JsonElement el, Consumer<ChatStreamChunk> consumer) {
+		if (el == null || !el.isObject()) {
+			return;
+		}
+		JsonObject evt = el.getAsJsonObject();
 		String type = evt.optString("eventType", "");
 		switch (type) {
 			case "messageStart": {
@@ -340,25 +334,6 @@ public final class BedrockClient implements AiClient {
 		}
 	}
 
-	/** 校验 HTTP 状态，错误映射为对应异常。 */
-	private void ensureSuccess(int statusCode, String body) {
-		if (statusCode >= 300) {
-			if (statusCode == 401 || statusCode == 403) {
-				throw new AiAuthException(statusCode, "Bedrock auth failed", body);
-			}
-			throw new AiException("Bedrock API error " + statusCode + ": " + truncate(body));
-		}
-	}
-
-	/** 读取流为字符串（尽力而为，失败返回空串）。 */
-	private static String readBodySafe(InputStream in) {
-		try {
-			return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-		} catch (java.io.IOException ex) {
-			return "";
-		}
-	}
-
 	/** 解析最终使用的模型 ID。 */
 	private String resolveModel(String requestModel) {
 		if (requestModel != null && !requestModel.isBlank()) {
@@ -376,13 +351,6 @@ public final class BedrockClient implements AiClient {
 
 	private static String stripTrailingSlash(String s) {
 		return s.endsWith("/") ? s.substring(0, s.length() - 1) : s;
-	}
-
-	private static String truncate(String s) {
-		if (s == null) {
-			return "";
-		}
-		return s.length() > 500 ? s.substring(0, 500) : s;
 	}
 
 	/** 暴露给测试的签名器（验证签名头）。 */

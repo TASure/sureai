@@ -21,6 +21,7 @@ import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.ProxySelector;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -115,6 +116,41 @@ public abstract class AbstractAiClient {
 	 * @param config        配置
 	 */
 	protected abstract void applyAuth(HttpRequest.Builder requestBuilder, AiConfig config);
+
+	/**
+	 * 对请求进行签名，返回需要附加的请求头。
+	 *
+	 * <p>默认返回空 map（无额外签名）。需要复杂签名（如 AWS SigV4、OAuth1）的子类可覆写
+	 * 此方法——此类签名需要拿到请求体原文计算 payload 摘要，而 {@link #applyAuth} 只能拿到
+	 * 请求 builder（body 已编码为 BodyPublisher，无法取回原文）。</p>
+	 *
+	 * <p>本方法在 {@link #newRequest}/{@link #buildGetRequest}/{@link #buildMultipartRequest}
+	 * 构建请求时调用，位于 {@link #applyAuth} 与 {@code extraHeaders} 之后；返回的头会逐对
+	 * {@code header} 到 builder 上（自动跳过 {@code Host}，因 JDK HttpClient 禁止显式设置 Host）。</p>
+	 *
+	 * <p>每次重试都会重新调用本方法（请求 supplier 每次 attempt 重建请求），因此子类无需缓存
+	 * 签名结果——时间戳类签名（如 SigV4 的 x-amz-date）会随重试刷新，这正是期望行为。</p>
+	 *
+	 * @param method HTTP 方法（GET/POST 等）
+	 * @param url    完整 URL
+	 * @param body   请求体字符串（GET 请求为空字符串；multipart 为已编码表单文本）
+	 * @return 签名后的请求头（key→value），可为空 map 但不为 null
+	 */
+	protected Map<String, String> signRequest(String method, String url, String body) {
+		return Map.of();
+	}
+
+	/**
+	 * 把 {@link #signRequest} 返回的签名头应用到 builder，跳过 Host（JDK HttpClient 禁止显式设置）。
+	 */
+	private static void applySignedHeaders(HttpRequest.Builder rb, Map<String, String> signed) {
+		for (Map.Entry<String, String> e : signed.entrySet()) {
+			if ("Host".equalsIgnoreCase(e.getKey())) {
+				continue;
+			}
+			rb.header(e.getKey(), e.getValue());
+		}
+	}
 
 	/**
 	 * JSON POST 并返回解析结果与原始报文。
@@ -466,6 +502,7 @@ public abstract class AbstractAiClient {
 		for (Map.Entry<String, String> e : this.config.extraHeaders().entrySet()) {
 			rb.header(e.getKey(), e.getValue());
 		}
+		applySignedHeaders(rb, signRequest("POST", url, new String(body, StandardCharsets.UTF_8)));
 		return rb;
 	}
 
@@ -480,6 +517,7 @@ public abstract class AbstractAiClient {
 		for (Map.Entry<String, String> e : this.config.extraHeaders().entrySet()) {
 			rb.header(e.getKey(), e.getValue());
 		}
+		applySignedHeaders(rb, signRequest("GET", url, ""));
 		return rb;
 	}
 
@@ -504,6 +542,7 @@ public abstract class AbstractAiClient {
 		for (Map.Entry<String, String> e : this.config.extraHeaders().entrySet()) {
 			b.header(e.getKey(), e.getValue());
 		}
+		applySignedHeaders(b, signRequest("POST", url, payload));
 		return b;
 	}
 
@@ -520,6 +559,25 @@ public abstract class AbstractAiClient {
 			return base + "/" + path;
 		}
 		return base + path;
+	}
+
+	/**
+	 * 对 URL 路径段（path segment）做百分号编码。
+	 *
+	 * <p>与查询串编码不同：路径段中的空格应编码为 {@code %20} 而非 {@code +}，
+	 * 故在 {@link URLEncoder} 基础上将 {@code +} 替换为 {@code %20}、
+	 * 将 {@code %2F} 保留（不允许路径段内出现 {@code /}，避免穿越）。</p>
+	 *
+	 * @param segment 原始路径段（如 taskId / jobId / batchId）
+	 * @return 编码后的路径段
+	 */
+	protected static String encodePathSegment(String segment) {
+		if (segment == null || segment.isEmpty()) {
+			return segment;
+		}
+		return URLEncoder.encode(segment, StandardCharsets.UTF_8)
+			.replace("+", "%20")
+			.replace("%7E", "~");
 	}
 
 	/** 是否可重试：429 或 5xx。 */
