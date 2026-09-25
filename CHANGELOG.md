@@ -5,12 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0] - Unreleased
+## [1.2.0] - 2026-09-25
 
 ### Added
 - **MCP 客户端（sure-ai-mcp）**：新增基础设施模块 `sure-ai-mcp`——Model Context Protocol JSON-RPC 2.0 客户端，消息层（request 递增 id / notification 无 id / 批量可选）、initialize 握手（protocolVersion "2025-06-18" + client capabilities + notifications/initialized）、正常方法调用与 close。传输抽象 `McpTransport` + 两种实现：`StdioMcpTransport`（ProcessBuilder 子进程 stdin/stdout NDJSON 行帧）、`StreamableHttpMcpTransport`（JDK HttpClient POST 单端点，application/json 直返 / text/event-stream SSE 聚合，维护 Mcp-Session-Id）。能力 API：tools/list、tools/call（解析 content[].text 与 isError）、resources/list、resources/read、prompts/list、prompts/get。**McpTool 适配器**：把 MCP tool 包装为 `ToolHandler`，`registerAllTools` 批量注册进 `ToolRegistry`，可与 ReActAgent 无缝组合。静态入口 `McpUtil`。20 个测试，行覆盖率 80.4%。文档 `docs/mcp.md`，示例 `McpDemo`。
 - **AWS Bedrock 平台（sure-ai-bedrock）**：新增平台模块 `sure-ai-bedrock`——纯 JDK 实现 AWS Signature V4 签名（`AwsSigV4Signer`，canonical request / string-to-sign / 链式 HMAC 密钥派生 / Authorization 头拼装，含完整 JavaDoc，通过 AWS 官方 iam 测试向量 kSigning=c4afb1cc…154a4b9 校验）。使用 Bedrock 统一 Converse API：非流式 POST /model/{modelId}/converse（system/messages/inferenceConfig → output.message.content/stopReason/usage 映射到 core ChatResponse/TokenUsage）；流式 POST /converse-stream（SSE 事件 messageStart/contentBlockDelta/messageStop/metadata，接入 core 流式回调 Consumer<ChatStreamChunk>）。凭证支持显式传入与环境变量（AWS 标准 AWS_ACCESS_KEY_ID 等 + SURE_AI_BEDROCK_* 覆盖），缺凭证抛清晰异常。四件套结构 BedrockClient/BedrockModels/BedrockUtil/package-info。22 个测试，行覆盖率 89.5%。文档 `docs/bedrock.md`，示例 `BedrockDemo`。Titan Embeddings 暂未接入（embed 抛 AiException，文档注明）。
-- 全量 27 模块 743 测试全绿（+42）。
+- 全量 26 模块 743 测试全绿（+42）。
 
 ## [1.1.0] - 2026-09-24
 
