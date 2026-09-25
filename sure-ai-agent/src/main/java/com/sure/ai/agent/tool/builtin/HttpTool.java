@@ -16,10 +16,14 @@
 
 package com.sure.ai.agent.tool.builtin;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -34,6 +38,19 @@ import com.sure.ai.model.ToolFunction;
  * <p>仅允许 http/https scheme；响应体超过 {@code maxResponseLength} 截断并追加
  * {@code "...[truncated]"}。任何异常都转为可读错误文本，不向上抛出。</p>
  *
+ * <p><b>SSRF 防护（默认开启）：</b>在发送请求前解析目标 host 的所有 IP 地址，
+ * 拒绝回环、私有段、链路本地、任意本地、多播及 IPv4-mapped IPv6 内网地址。
+ * 可通过 {@link Builder#ssrfProtection(boolean)} 关闭（仅限内网部署场景）。
+ * 注意：JDK HttpClient 发送请求时会再次解析 DNS，存在理论上的 TOCTOU 窗口；
+ * 详见 {@link SSRFGuard} 类 JavaDoc。</p>
+ *
+ * <p><b>重定向：</b>JDK HttpClient 默认 {@code followRedirects=NEVER}，
+ * 不自动跟随重定向，因此不存在"重定向到内网地址"的风险。</p>
+ *
+ * <p><b>OOM 防护：</b>响应体通过 {@link HttpResponse.BodyHandlers#ofInputStream()}
+ * 流式读取，最多缓冲 {@code maxResponseLength * 4 + 1} 字节后即截断，
+ * 不会将整个响应体读入内存。</p>
+ *
  * @author sureai
  * @since 1.1.0
  */
@@ -44,11 +61,14 @@ public final class HttpTool implements ToolHandler {
 
 	private static final int DEFAULT_MAX_RESPONSE_LENGTH = 8000;
 	private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(10);
+	/** UTF-8 最坏情况下每个字符占 4 字节。 */
+	private static final int UTF8_MAX_BYTES_PER_CHAR = 4;
 
 	private final HttpClient client;
 	private final Map<String, String> defaultHeaders;
 	private final int maxResponseLength;
 	private final Duration timeout;
+	private final boolean ssrfProtection;
 
 	private HttpTool(Builder b) {
 		this.client = HttpClient.newBuilder()
@@ -61,6 +81,7 @@ public final class HttpTool implements ToolHandler {
 		this.defaultHeaders = Map.copyOf(copy);
 		this.maxResponseLength = b.maxResponseLength;
 		this.timeout = b.timeout;
+		this.ssrfProtection = b.ssrfProtection;
 	}
 
 	/**
@@ -113,6 +134,14 @@ public final class HttpTool implements ToolHandler {
 				return "Error: only http/https schemes are allowed: " + url;
 			}
 
+			// SSRF 防护：解析 host 并校验所有 IP
+			if (this.ssrfProtection) {
+				String ssrfError = SSRFGuard.check(uri);
+				if (ssrfError != null) {
+					return "Error: " + ssrfError + ": " + url;
+				}
+			}
+
 			String method = args.optString("method", "GET").toUpperCase();
 			HttpRequest.Builder reqBuilder = HttpRequest.newBuilder(uri)
 				.timeout(this.timeout);
@@ -138,19 +167,56 @@ public final class HttpTool implements ToolHandler {
 			}
 			reqBuilder.method(method, publisher);
 
-			HttpResponse<String> resp =
-				this.client.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
-			String body = resp.body() == null ? "" : resp.body();
-			if (body.length() > this.maxResponseLength) {
-				body = body.substring(0, this.maxResponseLength) + "...[truncated]";
-			}
-			return body;
+			// 流式读取响应体，限长防 OOM
+			HttpResponse<InputStream> resp =
+				this.client.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofInputStream());
+			return readLimited(resp.body(), this.maxResponseLength);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			return "Error: request interrupted";
 		} catch (Exception e) {
 			return "Error: http request failed: " + e.getMessage();
 		}
+	}
+
+	/**
+	 * 从输入流流式读取响应体，最多保留 {@code maxChars} 个字符。
+	 *
+	 * <p>为防止 UTF-8 多字节字符导致实际字节数远超字符数，按字节限制为
+	 * {@code maxChars * 4}（UTF-8 最坏 4 字节/字符）。超过后立即关闭流，
+	 * 不将全量响应读入内存。</p>
+	 *
+	 * @param in       响应体输入流
+	 * @param maxChars 最大保留字符数
+	 * @return 截断后的字符串（超长时追加 "...[truncated]"）
+	 * @throws IOException 读取失败
+	 */
+	private static String readLimited(InputStream in, int maxChars) throws IOException {
+		int maxBytes = maxChars * UTF8_MAX_BYTES_PER_CHAR;
+		byte[] buf = new byte[8192];
+		ByteArrayOutputStream baos = new ByteArrayOutputStream(Math.min(maxBytes, 8192) + 16);
+		int total = 0;
+		boolean truncated = false;
+		try (in) {
+			int n;
+			while ((n = in.read(buf)) != -1) {
+				if (total + n > maxBytes) {
+					int canWrite = maxBytes - total;
+					if (canWrite > 0) {
+						baos.write(buf, 0, canWrite);
+					}
+					truncated = true;
+					break;
+				}
+				baos.write(buf, 0, n);
+				total += n;
+			}
+		}
+		String s = baos.toString(StandardCharsets.UTF_8);
+		if (truncated && s.length() > maxChars) {
+			s = s.substring(0, maxChars) + "...[truncated]";
+		}
+		return s;
 	}
 
 	/**
@@ -161,6 +227,7 @@ public final class HttpTool implements ToolHandler {
 		private Duration timeout = DEFAULT_TIMEOUT;
 		private Map<String, String> defaultHeaders;
 		private int maxResponseLength = DEFAULT_MAX_RESPONSE_LENGTH;
+		private boolean ssrfProtection = true;
 
 		private Builder() {
 		}
@@ -203,6 +270,21 @@ public final class HttpTool implements ToolHandler {
 			if (maxResponseLength > 0) {
 				this.maxResponseLength = maxResponseLength;
 			}
+			return this;
+		}
+
+		/**
+		 * 开关 SSRF 防护（默认开启）。
+		 *
+		 * <p>开启后，请求前会解析目标 host 的所有 IP 地址，拒绝回环、私有段、
+		 * 链路本地、任意本地、多播等内网/保留地址。仅在确认需要访问内网服务的
+		 * 部署场景下关闭。</p>
+		 *
+		 * @param enabled true 开启 SSRF 防护；false 关闭
+		 * @return this
+		 */
+		public Builder ssrfProtection(boolean enabled) {
+			this.ssrfProtection = enabled;
 			return this;
 		}
 

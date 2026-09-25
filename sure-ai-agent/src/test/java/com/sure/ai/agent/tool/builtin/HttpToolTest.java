@@ -33,6 +33,10 @@ import com.sun.net.httpserver.HttpServer;
 
 /**
  * {@link HttpTool} 测试：用本地 {@link HttpServer} mock，零真实网络。
+ *
+ * <p>本地 mock server 监听 127.0.0.1，因此所有用例均通过
+ * {@code ssrfProtection(false)} 关闭 SSRF 防护。SSRF 逻辑本身由
+ * {@link SSRFGuardTest} 独立覆盖。</p>
  */
 public class HttpToolTest {
 
@@ -71,11 +75,16 @@ public class HttpToolTest {
 		return "http://127.0.0.1:" + this.port + path;
 	}
 
+	/** 本地测试关闭 SSRF 防护（mock server 在 127.0.0.1）。 */
+	private HttpTool.Builder localBuilder() {
+		return HttpTool.builder().ssrfProtection(false);
+	}
+
 	@Test
 	public void testGet() {
 		JsonObject args = new JsonObject();
 		args.put("url", url("/get"));
-		String result = HttpTool.builder().build().execute(args);
+		String result = localBuilder().build().execute(args);
 		assertEquals("hello-world", result);
 	}
 
@@ -85,7 +94,7 @@ public class HttpToolTest {
 		args.put("url", url("/post"));
 		args.put("method", "POST");
 		args.put("body", "post-data");
-		String result = HttpTool.builder().build().execute(args);
+		String result = localBuilder().build().execute(args);
 		assertEquals("GOT:post-data", result);
 	}
 
@@ -93,7 +102,7 @@ public class HttpToolTest {
 	public void testTruncation() {
 		JsonObject args = new JsonObject();
 		args.put("url", url("/big"));
-		String result = HttpTool.builder().maxResponseLength(100).build().execute(args);
+		String result = localBuilder().maxResponseLength(100).build().execute(args);
 		assertTrue(result, result.endsWith("...[truncated]"));
 		assertTrue(result, result.length() <= 100 + "...[truncated]".length());
 	}
@@ -111,5 +120,18 @@ public class HttpToolTest {
 		JsonObject args = new JsonObject();
 		String result = HttpTool.builder().build().execute(args);
 		assertTrue(result, result.startsWith("Error"));
+	}
+
+	/**
+	 * 验证 SSRF 防护默认开启时，访问 127.0.0.1 被拒绝。
+	 */
+	@Test
+	public void testSsrfBlocksLoopbackByDefault() {
+		JsonObject args = new JsonObject();
+		args.put("url", url("/get"));
+		// 默认开启 SSRF 防护，127.0.0.1 应被拒绝
+		String result = HttpTool.builder().build().execute(args);
+		assertTrue("expected SSRF rejection, got: " + result,
+			result.startsWith("Error: blocked private/reserved address"));
 	}
 }
