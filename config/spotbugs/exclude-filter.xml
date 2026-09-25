@@ -190,4 +190,26 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- MCP 消息记录暴露可变 JsonObject（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         McpRequest.params / McpNotification.params 持有自研可变 JsonObject，
+         与 JsonObject/JsonArray 同类设计——JSON-RPC 帧构造期即按引用读写参数树，
+         调用方直接在传入的 JsonObject 上填参数，是零依赖 JSON 模型的惯例用法。 -->
+    <Match>
+        <Class name="com.sure.ai.mcp.message.McpRequest"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.sure.ai.mcp.message.McpNotification"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 行帧传输构造期启动后台读线程（SC_START_IN_CTOR）：
+         LineFrameMcpTransport 是抽象基类，子类（StdioMcpTransport）在 super() 中
+         拿到子进程 stdout 后必须立即开始消费，否则子进程写满 stdout 管道会阻塞；
+         读线程为 daemon、异常即关闭传输，生命周期与传输对象严格绑定，设计意图明确。 -->
+    <Match>
+        <Class name="com.sure.ai.mcp.transport.LineFrameMcpTransport"/>
+        <Bug pattern="SC_START_IN_CTOR"/>
+    </Match>
+
 </FindBugsFilter>

@@ -13,7 +13,7 @@
 |-----------|--------|-------------|-----------|
 | Third-party deps | **Zero** (JDK + built-in JSON/HTTP only) | Heavy transitive chain | Tied to Spring ecosystem |
 | Zero-config usage | **Static utility, one-line call** | Requires Builder wiring | Requires @Configuration + Beans |
-| Chinese platform coverage | **All 15 platforms** (Baidu, Zhipu, Doubao, etc.) | Partial | Partial |
+| Chinese platform coverage | **All 16 platforms** (Baidu, Zhipu, Doubao, etc.) | Partial | Partial |
 | Module isolation | **Per-module zero-dep**, pull only what you need | Monolithic | Monolithic |
 | JDK requirement | 21+ (records / pattern matching) | 17+ | 17+ |
 
@@ -22,7 +22,7 @@
 - **Zero third-party runtime dependencies**: built-in lightweight JSON parser and HTTP client, no OkHttp/Jackson/Netty
 - **Static utilities out of the box**: `OpenAiUtil.chat(model, prompt)` — one line to chat
 - **Module-level isolation**: pull only the platform modules you need
-- **Full Chinese platform coverage**: OpenAI / Azure / Anthropic / Gemini / DeepSeek / Qwen / Zhipu / Moonshot / Doubao / Baidu / Ollama
+- **Full Chinese platform coverage**: OpenAI / Azure / Anthropic / Gemini / DeepSeek / Qwen / Zhipu / Moonshot / Doubao / Baidu / Ollama / AWS Bedrock
 - **Streaming**: unified SSE streaming interface with per-chunk callback
 - **Function Calling**: tool declaration and invocation closed loop
 - **Embedding**: vector generation (see table below for supported platforms)
@@ -31,6 +31,7 @@
 - **Speech TTS/STT**: unified `AudioClient` abstraction (TTS synthesis + STT transcription) supporting OpenAI / CosyVoice / GLM-TTS / Doubao / Baidu / Azure Speech; binary audio / URL / Base64 response formats
 - **RAG**: end-to-end retrieval-augmented generation pipeline (`sure-ai-rag`) — document loaders (local file / URL), recursive / Markdown / fixed-size splitters, vector stores (in-memory + Milvus/Chroma external adapters), vector + BM25 keyword hybrid retrieval, prompt templates + query rewriting. See [docs/rag.md](docs/rag.md), [docs/vector-stores.md](docs/vector-stores.md), [docs/prompt-template.md](docs/prompt-template.md)
 - **Agent orchestration (ReAct + Plan-and-Execute)**: `sure-ai-agent` — tool registry + Function Calling argument validation + ReAct orchestrator + PlanExecuteAgent (plan → step-by-step execution → synthesis, 3-level plan parsing fallback); multi-agent orchestration (TaskSplitter/AgentOrchestrator/ResultAggregator parallel execution + exception isolation); built-in tools (HttpTool/DateTimeTool/CalculatorTool whitelist arithmetic); conversation memory (ConversationMemory ring buffer, optional injection). Drivable by any `AiClient`, with exception / max-iteration / timeout guards. See [docs/agent.md](docs/agent.md)
+- **MCP Client**: `sure-ai-mcp` — Model Context Protocol JSON-RPC 2.0 client with stdio (ProcessBuilder subprocess) / Streamable HTTP (JDK HttpClient + SSE aggregation) transports, initialize handshake + tools/resources/prompts capability APIs; **McpTool adapter** bulk-registers MCP server tools into `ToolRegistry`, composable with ReActAgent. See [docs/mcp.md](docs/mcp.md)
 - **Observability (retry callbacks / metrics / rate limit)**: `RetryListener` retry event callbacks + `MetricsCollector` metrics (built-in zero-dependency `AiMetrics`) + client-side QPS rate limiting (sure-core token bucket), optional `sure-ai-micrometer` Micrometer/Prometheus bridge; zero overhead when not mounted. See [docs/observability.md](docs/observability.md)
 - **Response Cache**: `ChatCacheKey` request-normalized SHA-256 + `CacheStore` SPI + built-in `LruCacheStore` (LRU+TTL, pure JDK), disabled by default with zero overhead; cache hits bypass network/metrics/retry; Redis adapter example in docs. See [docs/cache.md](docs/cache.md)
 - **Spring Boot Starter**: `sure-ai-spring-boot-starter` auto-configuration (`sure.ai.<platform>.api-key` property binding + `@ConditionalOnProperty` conditional assembly + `@Autowired` injection), for Spring Boot projects only; core/platform modules have zero Spring dependency. See [docs/spring-boot.md](docs/spring-boot.md)
@@ -69,6 +70,7 @@
 | Mistral | `sure-ai-mistral` | `https://api.mistral.ai/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Cohere | `sure-ai-cohere` | `https://api.cohere.com/v2` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | llama.cpp | `sure-ai-llamacpp` | `http://localhost:8080/v1` | Optional Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| AWS Bedrock | `sure-ai-bedrock` | `https://bedrock-runtime.{region}.amazonaws.com` | SigV4 (AK/SK) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 Aggregation modules: `sure-ai-all` (one dependency for all platforms), `sure-ai-bom` (version management).
 

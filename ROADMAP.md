@@ -51,7 +51,8 @@ sureai 的演进路线图。欢迎通过 Issue 提交建议。
 - [x] **Agent 编排——多 Agent 并行**：`AgentOrchestrator`（TaskSplitter 拆分+ExecutorService 并行+ResultAggregator 汇总+异常隔离）。
 - [x] **Agent 编排——内置工具包**：`HttpTool`/`DateTimeTool`/`CalculatorTool`（白名单四则递归下降解析器）。
 - [x] **Agent 编排——会话记忆**：`ConversationMemory` 接口 + `InMemoryConversationMemory`（环形窗口），ReAct/PlanExecute 可选注入。
-- [x] **更多平台**：xAI (Grok)、Mistral、Cohere v2、本地 llama.cpp server 已接入；Bedrock（AWS SigV4）后续规划。
+- [x] **更多平台**：xAI (Grok)、Mistral、Cohere v2、本地 llama.cpp server、AWS Bedrock（纯 JDK SigV4 + Converse API，1.2.0）已接入。
+- [x] **MCP 客户端**：`sure-ai-mcp`（1.2.0）——Model Context Protocol JSON-RPC 2.0 客户端，stdio/HTTP 双传输，tools/resources/prompts 能力 API，McpTool 适配器批量注册进 ToolRegistry 与 ReActAgent 组合。见 [docs/mcp.md](docs/mcp.md)。
 - [x] **响应缓存**：基于 prompt hash 的本地 / Redis 缓存层。`ChatCacheKey` 归一化 + `CacheStore` SPI + `LruCacheStore`（LRU+TTL），默认关闭零开销。见 [docs/cache.md](docs/cache.md)。
 - [x] **限流**：客户端 QPS 限流已完成（`AiConfig.rateLimitQps`，基于 sure-core `RateLimiter` 令牌桶，见 [docs/observability.md](docs/observability.md)）。
 - [x] **熔断器**：`CircuitBreaker` 三态状态机（CLOSED→OPEN→HALF_OPEN），滑动窗口失败计数+OPEN超时+HALF_OPEN探测，`AiConfig.circuitBreaker` 可选注入，与重试/限流嵌套协作。见 [docs/circuit-breaker.md](docs/circuit-breaker.md)。

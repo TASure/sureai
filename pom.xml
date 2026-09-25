@@ -59,6 +59,7 @@
         <module>sure-ai-core</module>
         <module>sure-ai-rag</module>
         <module>sure-ai-agent</module>
+        <module>sure-ai-mcp</module>
         <module>sure-ai-micrometer</module>
         <module>sure-ai-spring-boot-starter</module>
         <module>sure-ai-openai</module>
@@ -76,6 +77,7 @@
         <module>sure-ai-mistral</module>
         <module>sure-ai-llamacpp</module>
         <module>sure-ai-cohere</module>
+        <module>sure-ai-bedrock</module>
         <module>sure-ai-benchmark</module>
         <module>sure-ai-bom</module>
         <module>sure-ai-all</module>
@@ -111,6 +113,11 @@
             <dependency>
                 <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-agent</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-mcp</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -191,6 +198,11 @@
             <dependency>
                 <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-cohere</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-bedrock</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
