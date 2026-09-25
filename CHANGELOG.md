@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0] - Unreleased
+## [1.3.0] - 2026-09-25
 
 ### Added
 - **P1-12 Cohere Rerank**：新增 `CohereRerankClient`（`extends AbstractAiClient implements RerankClient`），对接 Cohere v2 `/rerank` API（Bearer 鉴权、documents 字符串列表、top_n 可选、results index/relevance_score/document 映射到 core RerankResponse）；`CohereUtil` 新增 `rerankClient()` 单例与 `rerank()` 静态入口；`CohereModels` 新增 `RERANK_V3_5` 常量；5 个 mock 测试；docs/cohere.md 与 README 能力矩阵 Cohere Rerank 列 ❌→✅。

@@ -1,6 +1,6 @@
 # sureai v1.2.0 全维度团队检视报告
 
-> **检视版本**：v1.2.0（已发布，当前工作树 `1.3.0-SNAPSHOT`，HEAD `e93ff96`）
+> **检视版本**：v1.2.0（已发布，当前工作树 `1.3.0`，HEAD `e93ff96`）
 > **检视日期**：2026-09-25
 > **检视模式**：软件研发小组团队模式（a2 产品 / a3 架构 / a5 质检 独立产出，a1 统筹验收）
 > **检视方法**：全量 `mvn -B clean verify` 实跑（BUILD SUCCESS，5:33）、26 模块逐文件源码审查、jacoco/checkstyle/spotbugs/license 门禁报告核对、竞品事实网络搜索核实、测试含金量抽查
@@ -95,7 +95,7 @@
 
 | 维度 | sureai (v1.2.0) | LangChain4j | Spring AI |
 |---|---|---|---|
-| 当前版本 | 1.3.0-SNAPSHOT（v1.2.0 已发布） | ~1.16.1-beta26 | 2.0.0 GA（2026-06-12） |
+| 当前版本 | 1.3.0（v1.2.0 已发布） | ~1.16.1-beta26 | 2.0.0 GA（2026-06-12） |
 | LLM 提供商 | 16 个（国产全覆盖） | 20+ provider + 30+ 向量库 | 主流 6+，2.0 收敛为 SDK 单实现 |
 | 第三方依赖 | **零**（仅 sure-core，自带 JSON/HTTP/SSE） | 传递依赖链庞大（Jackson/OkHttp 等） | 绑定 Spring 生态 |
 | 调用范式 | **静态工具类**一行调用 | Builder 装配 / 依赖注入 | ChatClient fluent API + Bean 注入 |
