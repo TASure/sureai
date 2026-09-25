@@ -16,7 +16,10 @@
 
 package com.sure.ai.moonshot;
 
+import java.util.Set;
+
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.compat.OpenAiCompatClient;
 
 /**
@@ -45,6 +48,17 @@ public class MoonshotClient extends OpenAiCompatClient {
 	@Override
 	public String name() {
 		return "moonshot";
+	}
+
+	/**
+	 * Moonshot/Kimi 支持对话/流式与向量；不提供图像、视频、内容审核与微调端点，
+	 * 调用这些方法时由基类 {@link #guard(Capability)} 快速失败。
+	 *
+	 * @return Moonshot 能力集合
+	 */
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED);
 	}
 
 	/** baseUrl 为空时补默认地址，其余配置通过 {@link AiConfig#withBaseUrl} 原样保留。 */

@@ -26,6 +26,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
@@ -130,6 +131,51 @@ public abstract class AbstractAiClient {
 	 */
 	protected Map<String, String> signRequest(String method, String url, String body) {
 		return Map.of();
+	}
+
+	/**
+	 * 平台标识名（用于能力快速失败异常信息）。
+	 *
+	 * <p>默认返回类简单名；实现 {@link AiClient} 的子类已覆写为平台 slug（如 {@code "deepseek"}）。
+	 * 这里提供一个具体默认实现，使 {@link #guard(Capability)} 不依赖 {@code AiClient} 接口即可工作。</p>
+	 *
+	 * @return 平台标识名
+	 * @since 1.4.0
+	 */
+	protected String name() {
+		return getClass().getSimpleName();
+	}
+
+	/**
+	 * 声明本 Client 实际支持的能力集合（1.4.0 可维护性迭代 P2-6）。
+	 *
+	 * <p>默认空集合；{@link OpenAiCompatClient} 覆写为其引擎实现的全量能力，作为未逐平台审计
+	 * 子类的安全默认（不触发 guard、行为与重构前一致）。已逐平台审计的子类（DeepSeek、Mistral、
+	 * Grok、LlamaCpp、Moonshot 等）覆写为自身真实支持的子集，使不支持的能力在发请求前快速失败。</p>
+	 *
+	 * <p>实现应为不可变集合且每次调用返回等价内容；{@link #guard(Capability)} 仅做只读 contains 判断。</p>
+	 *
+	 * @return 支持的能力集合，不为 null
+	 * @since 1.4.0
+	 */
+	protected Set<Capability> capabilities() {
+		return Set.of();
+	}
+
+	/**
+	 * 能力守卫：若本 Client 未声明支持 {@code c}，在发请求前抛出清晰的
+	 * {@link com.sure.ai.exception.AiException}。
+	 *
+	 * <p>终态方法，子类不可覆写以保证语义统一。对已声明支持的能力是零开销空操作。</p>
+	 *
+	 * @param c 待检查的能力
+	 * @throws com.sure.ai.exception.AiException 未声明支持该能力时
+	 * @since 1.4.0
+	 */
+	protected final void guard(Capability c) {
+		if (!capabilities().contains(c)) {
+			throw new AiException(name() + " does not support " + c + " capability");
+		}
 	}
 
 	/**

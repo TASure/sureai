@@ -16,7 +16,10 @@
 
 package com.sure.ai.mistral;
 
+import java.util.Set;
+
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.compat.OpenAiCompatClient;
 
 /**
@@ -62,5 +65,17 @@ public class MistralClient extends OpenAiCompatClient {
 	@Override
 	public String name() {
 		return "mistral";
+	}
+
+	/**
+	 * Mistral 支持对话/流式、向量与微调；不提供图像、视频与内容审核端点，
+	 * 调用这些方法时由基类 {@link #guard(Capability)} 快速失败。
+	 *
+	 * @return Mistral 能力集合
+	 */
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
+			Capability.FINETUNE);
 	}
 }

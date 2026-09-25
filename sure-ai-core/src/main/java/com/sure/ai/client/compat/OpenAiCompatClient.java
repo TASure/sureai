@@ -20,12 +20,14 @@ import java.net.http.HttpRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiClient;
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.AudioClient;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.EmbeddingClient;
 import com.sure.ai.client.FineTuneClient;
 import com.sure.ai.client.ImageClient;
@@ -161,6 +163,22 @@ public class OpenAiCompatClient extends AbstractAiClient
 		return "openai-compat";
 	}
 
+	/**
+	 * 兼容引擎实现的全量能力（安全默认）。
+	 *
+	 * <p>本引擎实现了对话、流式、向量、图像、视频、TTS、STT、内容审核与微调，故声明全量集合。
+	 * 未逐平台审计的子类直接继承本声明——所有 guard 均为空操作，行为与重构前一致（不支持的能力
+	 * 仍由平台返回 4xx）。已逐平台审计的子类覆写为自身真实子集以启用快速失败。</p>
+	 *
+	 * @return 全量兼容能力集合
+	 */
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
+			Capability.IMAGE, Capability.VIDEO, Capability.TTS, Capability.STT,
+			Capability.MODERATION, Capability.FINETUNE);
+	}
+
 	@Override
 	protected void applyAuth(HttpRequest.Builder requestBuilder, AiConfig cfg) {
 		requestBuilder.header("Authorization", "Bearer " + cfg.apiKey());
@@ -201,6 +219,7 @@ public class OpenAiCompatClient extends AbstractAiClient
 
 	@Override
 	public EmbeddingResponse embed(EmbeddingRequest request) {
+		guard(Capability.EMBED);
 		return this.embeddingStrategy.embed(request);
 	}
 
@@ -208,6 +227,7 @@ public class OpenAiCompatClient extends AbstractAiClient
 
 	@Override
 	public ImageResponse generate(ImageRequest request) {
+		guard(Capability.IMAGE);
 		return this.imageStrategy.generate(request);
 	}
 
@@ -215,6 +235,7 @@ public class OpenAiCompatClient extends AbstractAiClient
 
 	@Override
 	public VideoResponse generate(VideoRequest request) {
+		guard(Capability.VIDEO);
 		return this.videoStrategy.generate(request);
 	}
 
@@ -252,6 +273,7 @@ public class OpenAiCompatClient extends AbstractAiClient
 
 	@Override
 	public ModerationResponse moderate(ModerationRequest request) {
+		guard(Capability.MODERATION);
 		return this.moderationStrategy.moderate(request);
 	}
 
@@ -259,16 +281,19 @@ public class OpenAiCompatClient extends AbstractAiClient
 
 	@Override
 	public FineTuneResponse createFineTune(FineTuneRequest request) {
+		guard(Capability.FINETUNE);
 		return this.fineTuneStrategy.createFineTune(request);
 	}
 
 	@Override
 	public FineTuneResponse getFineTune(String jobId) {
+		guard(Capability.FINETUNE);
 		return this.fineTuneStrategy.getFineTune(jobId);
 	}
 
 	@Override
 	public String uploadTrainingFile(String fileName, byte[] content) {
+		guard(Capability.FINETUNE);
 		return this.fineTuneStrategy.uploadTrainingFile(fileName, content);
 	}
 

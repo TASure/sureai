@@ -168,13 +168,14 @@ public class DeepSeekClientTest {
 		client.close();
 	}
 
-	/** embeddings 未实现，抛 AiException。 */
+	/** embeddings 未声明支持，由基类 guard 快速失败抛 AiException（1.4.0 P2-6 统一消息）。 */
 	@Test
 	public void testEmbedUnsupported() {
 		DeepSeekClient client = newClient();
 		AiException ex = assertThrows(AiException.class,
 			() -> client.embed(new EmbeddingRequest("m", java.util.List.of("x"))));
-		assertTrue(ex.getMessage().contains("embeddings"));
+		assertTrue(ex.getMessage().contains("deepseek"));
+		assertTrue(ex.getMessage().contains("EMBED"));
 		client.close();
 	}
 

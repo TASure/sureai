@@ -16,7 +16,10 @@
 
 package com.sure.ai.llamacpp;
 
+import java.util.Set;
+
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.compat.OpenAiCompatClient;
 
 /**
@@ -55,6 +58,17 @@ public class LlamaCppClient extends OpenAiCompatClient {
 	@Override
 	public String name() {
 		return "llamacpp";
+	}
+
+	/**
+	 * llama.cpp server 支持对话/流式与（以 {@code --embedding} 启动时的）向量；
+	 * 不提供图像、视频、内容审核与微调端点。
+	 *
+	 * @return llama.cpp 能力集合
+	 */
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED);
 	}
 
 	@Override

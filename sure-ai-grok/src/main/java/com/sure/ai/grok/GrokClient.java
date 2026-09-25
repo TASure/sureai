@@ -16,11 +16,11 @@
 
 package com.sure.ai.grok;
 
+import java.util.Set;
+
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.compat.OpenAiCompatClient;
-import com.sure.ai.exception.AiException;
-import com.sure.ai.model.EmbeddingRequest;
-import com.sure.ai.model.EmbeddingResponse;
 
 /**
  * xAI Grok 平台客户端（OpenAI 兼容协议）。
@@ -42,7 +42,9 @@ import com.sure.ai.model.EmbeddingResponse;
  * {@link com.sure.ai.model.ChatRequest.Builder#reasoningEffort(String)} 直接透传，
  * 其余未建模字段可通过 {@link com.sure.ai.model.ChatRequest.Builder#extra(String, Object)} 透传。</p>
  *
- * <p>xAI <b>不提供 Embeddings API</b>，故 {@link #embed} 直接抛出 {@link AiException}。</p>
+ * <p>能力声明（1.4.0 P2-6）：仅支持对话与流式对话。xAI <b>不提供 Embeddings API</b>，
+ * 也不提供图像/视频/内容审核/微调端点；调用不支持方法时由基类 {@link #guard(Capability)}
+ * 在发请求前快速失败。</p>
  *
  * <p>官方文档：<a href="https://docs.x.ai/">https://docs.x.ai/</a></p>
  *
@@ -68,8 +70,13 @@ public class GrokClient extends OpenAiCompatClient {
 		return "grok";
 	}
 
+	/**
+	 * xAI 仅支持对话与流式对话；embedding/image/video/moderation/finetune 均未提供。
+	 *
+	 * @return 仅对话能力集合
+	 */
 	@Override
-	public EmbeddingResponse embed(EmbeddingRequest request) {
-		throw new AiException("Grok (xAI) does not provide embeddings API");
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM);
 	}
 }
