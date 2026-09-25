@@ -37,7 +37,7 @@ https://dashscope.aliyuncs.com/compatible-mode/v1
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-qwen</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>1.2.1-SNAPSHOT</version>
 </dependency>
 ```
 
