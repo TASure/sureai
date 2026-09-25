@@ -50,24 +50,41 @@ public abstract class LineFrameMcpTransport implements McpTransport {
 	/** 等待响应的默认超时。 */
 	static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
 
+	/** 单帧（一行 NDJSON）最大字节数：64MB。超限即判定为恶意帧并关闭传输，防止 OOM。 */
+	static final int MAX_LINE_BYTES = 64 * 1024 * 1024;
+
 	private final InputStream in;
 	private final OutputStream out;
 	private final Duration timeout;
+	private final int maxLineBytes;
 	private final ConcurrentHashMap<Long, CompletableFuture<McpResponse>> pending = new ConcurrentHashMap<>();
 	private final Thread reader;
 	private volatile boolean open;
 
 	/**
-	 * 全参构造（并启动读线程）。
+	 * 全参构造（并启动读线程），使用默认 64MB 行上限。
 	 *
 	 * @param in      对端输出流（读到的 JSON-RPC 帧）
 	 * @param out     对端输入流（写入的 JSON-RPC 帧）
 	 * @param timeout 单次请求等待响应超时
 	 */
 	protected LineFrameMcpTransport(InputStream in, OutputStream out, Duration timeout) {
+		this(in, out, timeout, MAX_LINE_BYTES);
+	}
+
+	/**
+	 * 全参构造（并启动读线程），可指定行上限（测试用）。
+	 *
+	 * @param in           对端输出流（读到的 JSON-RPC 帧）
+	 * @param out          对端输入流（写入的 JSON-RPC 帧）
+	 * @param timeout      单次请求等待响应超时
+	 * @param maxLineBytes 单行最大字节数，超限抛 IOException
+	 */
+	LineFrameMcpTransport(InputStream in, OutputStream out, Duration timeout, int maxLineBytes) {
 		this.in = in;
 		this.out = out;
 		this.timeout = timeout == null ? DEFAULT_TIMEOUT : timeout;
+		this.maxLineBytes = maxLineBytes;
 		this.open = true;
 		this.reader = new Thread(this::readLoop, "sureai-mcp-stdio-reader");
 		this.reader.setDaemon(true);
@@ -115,7 +132,8 @@ public abstract class LineFrameMcpTransport implements McpTransport {
 
 	/** 读循环：逐行解析 JSON-RPC 帧并分发。 */
 	private void readLoop() {
-		BufferedReader br = new BufferedReader(new InputStreamReader(this.in, StandardCharsets.UTF_8));
+		BufferedReader br = new BufferedReader(new InputStreamReader(
+			new LineLimitedInputStream(this.in, this.maxLineBytes), StandardCharsets.UTF_8));
 		try {
 			String line;
 			while ((line = br.readLine()) != null) {
@@ -183,6 +201,63 @@ public abstract class LineFrameMcpTransport implements McpTransport {
 			doClose();
 		} finally {
 			failPending(new AiException("MCP 传输已关闭"));
+		}
+	}
+
+	/**
+	 * 限长行输入流：逐字节（或批量）统计当前行已读字节数，遇到 {@code \n} 重置计数；
+	 * 单行累计超过 {@code maxLineBytes} 时抛 {@link IOException}，防止恶意 server 不发换行符导致
+	 * BufferedReader 内部缓冲无限增长而 OOM。
+	 *
+	 * <p>批量 {@link #read(byte[], int, int)} 委托给底层流读一批后再逐字节计数，避免逐字节系统调用。</p>
+	 */
+	static final class LineLimitedInputStream extends InputStream {
+
+		private final InputStream in;
+		private final int maxLineBytes;
+		private int lineBytes;
+
+		LineLimitedInputStream(InputStream in, int maxLineBytes) {
+			this.in = in;
+			this.maxLineBytes = maxLineBytes;
+		}
+
+		@Override
+		public int read() throws IOException {
+			int b = this.in.read();
+			if (b == -1) {
+				return -1;
+			}
+			count(b);
+			return b;
+		}
+
+		@Override
+		public int read(byte[] b, int off, int len) throws IOException {
+			int n = this.in.read(b, off, len);
+			if (n == -1) {
+				return -1;
+			}
+			for (int i = 0; i < n; i++) {
+				count(b[off + i] & 0xFF);
+			}
+			return n;
+		}
+
+		private void count(int b) throws IOException {
+			if (b == '\n') {
+				this.lineBytes = 0;
+			} else {
+				this.lineBytes++;
+				if (this.lineBytes > this.maxLineBytes) {
+					throw new IOException("MCP frame exceeds max size (" + this.maxLineBytes + " bytes)");
+				}
+			}
+		}
+
+		@Override
+		public void close() throws IOException {
+			this.in.close();
 		}
 	}
 }

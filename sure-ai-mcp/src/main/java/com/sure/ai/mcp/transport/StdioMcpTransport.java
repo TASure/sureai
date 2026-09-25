@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import com.sure.ai.exception.AiException;
 import com.sure.tool.lang.Assert;
@@ -40,8 +41,8 @@ public final class StdioMcpTransport extends LineFrameMcpTransport {
 
 	private final Process process;
 
-	/** 私有构造器：只启动一次进程。 */
-	private StdioMcpTransport(Process process, Duration timeout) {
+	/** 构造器：只包装一次进程（package-private 以便测试直接注入进程）。 */
+	StdioMcpTransport(Process process, Duration timeout) {
 		super(process.getInputStream(), process.getOutputStream(), timeout);
 		this.process = process;
 		drainStderr(process);
@@ -84,9 +85,14 @@ public final class StdioMcpTransport extends LineFrameMcpTransport {
 		if (this.process != null && this.process.isAlive()) {
 			this.process.destroy();
 			try {
-				this.process.waitFor();
+				if (!this.process.waitFor(5, TimeUnit.SECONDS)) {
+					// 子进程忽略 SIGTERM：5 秒后强制 SIGKILL，避免 close() 永久阻塞
+					this.process.destroyForcibly();
+					this.process.waitFor();
+				}
 			} catch (InterruptedException ex) {
 				Thread.currentThread().interrupt();
+				this.process.destroyForcibly();
 			}
 		}
 	}
