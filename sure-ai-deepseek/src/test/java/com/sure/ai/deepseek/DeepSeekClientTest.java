@@ -167,12 +167,13 @@ public class DeepSeekClientTest {
 		client.close();
 	}
 
-	/** embeddings 未实现，抛 UnsupportedOperationException。 */
+	/** embeddings 未实现，抛 AiException。 */
 	@Test
 	public void testEmbedUnsupported() {
 		DeepSeekClient client = newClient();
-		assertThrows(UnsupportedOperationException.class,
+		AiException ex = assertThrows(AiException.class,
 			() -> client.embed(new EmbeddingRequest("m", java.util.List.of("x"))));
+		assertTrue(ex.getMessage().contains("embeddings"));
 		client.close();
 	}
 

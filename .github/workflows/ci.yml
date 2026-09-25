@@ -35,16 +35,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jacoco-report-jdk${{ matrix.java }}
-          path: |
-            sure-ai-core/target/site/jacoco
-            sure-ai-openai/target/site/jacoco
-            sure-ai-azure/target/site/jacoco
-            sure-ai-anthropic/target/site/jacoco
-            sure-ai-gemini/target/site/jacoco
-            sure-ai-deepseek/target/site/jacoco
-            sure-ai-qwen/target/site/jacoco
-            sure-ai-zhipu/target/site/jacoco
-            sure-ai-moonshot/target/site/jacoco
-            sure-ai-doubao/target/site/jacoco
-            sure-ai-baidu/target/site/jacoco
-            sure-ai-ollama/target/site/jacoco
+          path: sure-ai-*/target/site/jacoco/

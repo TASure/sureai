@@ -18,6 +18,7 @@ package com.sure.ai.qwen;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -194,8 +195,13 @@ public class QwenVideoClientTest {
 
 	/** Util 静态入口：videoClient/resetVideoClient。 */
 	@Test
-	public void testUtilEntry() {
+	public void testUtilEntry() throws Exception {
+		java.lang.reflect.Field f = QwenUtil.class.getDeclaredField("videoClient");
+		f.setAccessible(true);
+		f.set(null, newClient());
+		assertNotNull(f.get(null));
 		QwenUtil.resetVideoClient();
+		assertNull(f.get(null));
 		assertNotNull(QwenModels.WAN2_6_T2V);
 		assertNotNull(QwenModels.WAN2_5_T2V);
 		assertNotNull(QwenModels.WANX2_1_T2V);

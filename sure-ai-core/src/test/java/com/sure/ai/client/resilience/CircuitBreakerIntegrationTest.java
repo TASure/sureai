@@ -136,9 +136,14 @@ public class CircuitBreakerIntegrationTest {
 		}
 		assertEquals(3, this.requestCount.get());
 		assertEquals(CircuitBreaker.State.OPEN, cb.state());
-		// 切到 200 并等待 OPEN 超时
+		// 切到 200，轮询等待 OPEN 超时惰性转为 HALF_OPEN（替代固定 Thread.sleep，避免 CI 调度抖动）
 		this.mode.set("ok");
-		Thread.sleep(300L);
+		long deadline = System.currentTimeMillis() + 5_000L;
+		while (cb.state() != CircuitBreaker.State.HALF_OPEN
+				&& System.currentTimeMillis() < deadline) {
+			Thread.sleep(10L);
+		}
+		assertEquals(CircuitBreaker.State.HALF_OPEN, cb.state());
 		// 探测请求成功 → CLOSED
 		chat(client);
 		assertEquals(4, this.requestCount.get());

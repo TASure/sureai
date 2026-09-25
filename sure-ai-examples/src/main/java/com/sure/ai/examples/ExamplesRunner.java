@@ -83,6 +83,18 @@ public final class ExamplesRunner {
 			case "ollama":
 				OllamaDemo.main(emptyArgs);
 				break;
+			case "cohere":
+				CohereDemo.main(emptyArgs);
+				break;
+			case "grok":
+				GrokDemo.main(emptyArgs);
+				break;
+			case "llamacpp":
+				LlamaCppDemo.main(emptyArgs);
+				break;
+			case "mistral":
+				MistralDemo.main(emptyArgs);
+				break;
 			case "rag":
 				RagDemo.main(emptyArgs);
 				break;
@@ -149,6 +161,10 @@ public final class ExamplesRunner {
 		System.out.println("  doubao     - 火山引擎豆包");
 		System.out.println("  baidu      - 百度千帆文心");
 		System.out.println("  ollama     - Ollama 本地模型");
+		System.out.println("  cohere     - Cohere Command 系列");
+		System.out.println("  grok       - xAI Grok 系列");
+		System.out.println("  llamacpp   - llama.cpp 本地 server");
+		System.out.println("  mistral    - Mistral La Plateforme");
 		System.out.println("  rag        - RAG 检索增强问答（基于 OpenAI）");
 		System.out.println("  agent      - Agent ReAct 多工具编排（离线 Fake 模型演示）");
 		System.out.println("  image      - 多平台图像生成演示（OpenAI/通义万相/智谱）");

@@ -18,6 +18,7 @@ package com.sure.ai.qwen;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -189,11 +190,15 @@ public class QwenImageClientTest {
 		client.close();
 	}
 
-	/** Util 静态入口：resetImageClient 后可重新构建。 */
+	/** Util 静态入口：resetImageClient 将单例字段置 null（反射注入→reset→断言为 null）。 */
 	@Test
-	public void testUtilReset() {
+	public void testUtilReset() throws Exception {
+		java.lang.reflect.Field f = QwenUtil.class.getDeclaredField("imageClient");
+		f.setAccessible(true);
+		f.set(null, newClient());
+		assertNotNull(f.get(null));
 		QwenUtil.resetImageClient();
-		assertEquals(0, 0);
+		assertNull(f.get(null));
 	}
 
 	/** Models 常量。 */

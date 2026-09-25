@@ -202,12 +202,35 @@ public class AzureVideoClientTest {
 		assertEquals("preview", newClient().apiVersion());
 	}
 
-	/** Util 重置方法。 */
+	/** Util 重置方法：注入三个单例后 reset，反射断言字段均置 null。 */
 	@Test
-	public void testUtilReset() {
+	public void testUtilReset() throws Exception {
+		AiConfig cfg = AiConfig.builder().apiKey(API_KEY).baseUrl(this.baseUrl).build();
+		setField("videoClient", new AzureVideoClient(cfg));
+		setField("ttsClient", new AzureTtsClient(cfg));
+		setField("sttClient", new AzureSttClient(cfg));
+		assertNotNull(getField("videoClient"));
+		assertNotNull(getField("ttsClient"));
+		assertNotNull(getField("sttClient"));
 		AzureUtil.resetVideoClient();
 		AzureUtil.resetTtsClient();
 		AzureUtil.resetSttClient();
-		assertEquals(0, 0);
+		assertNull(getField("videoClient"));
+		assertNull(getField("ttsClient"));
+		assertNull(getField("sttClient"));
+	}
+
+	/** 反射写入 AzureUtil 私有静态字段。 */
+	private static void setField(String name, Object val) throws Exception {
+		java.lang.reflect.Field f = AzureUtil.class.getDeclaredField(name);
+		f.setAccessible(true);
+		f.set(null, val);
+	}
+
+	/** 反射读取 AzureUtil 私有静态字段。 */
+	private static Object getField(String name) throws Exception {
+		java.lang.reflect.Field f = AzureUtil.class.getDeclaredField(name);
+		f.setAccessible(true);
+		return f.get(null);
 	}
 }

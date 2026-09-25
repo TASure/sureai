@@ -17,8 +17,10 @@
 package com.sure.ai.internal.http;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -86,6 +88,70 @@ public class SseLineReaderTest {
 		List<SseEvent> out = read(s);
 		assertEquals(1, out.size());
 		assertEquals("tail", out.get(0).data());
+	}
+
+	/** OpenAI 协议 [DONE] 标记：作为普通 data 事件投递，由上层 consumer 过滤。 */
+	@Test
+	public void testDoneMarker() {
+		String s = "data: {\"choices\":[]}\n\ndata: [DONE]\n\n";
+		List<SseEvent> out = read(s);
+		assertEquals(2, out.size());
+		assertEquals("[DONE]", out.get(1).data());
+	}
+
+	/** malformed JSON：SseLineReader 不解析 JSON，原样把 data 文本投递给 consumer。 */
+	@Test
+	public void testMalformedJsonDeliveredVerbatim() {
+		String s = "data: {not valid json\n\n";
+		List<SseEvent> out = read(s);
+		assertEquals(1, out.size());
+		assertEquals("{not valid json", out.get(0).data());
+	}
+
+	/** 空响应体：0 个事件。 */
+	@Test
+	public void testEmptyBody() {
+		List<SseEvent> out = read("");
+		assertTrue(out.isEmpty());
+	}
+
+	/** 仅注释行（keepalive）：无 data，不投递任何事件。 */
+	@Test
+	public void testOnlyComments() {
+		String s = ": keepalive\n: ping\n";
+		List<SseEvent> out = read(s);
+		assertTrue(out.isEmpty());
+	}
+
+	/** 跨缓冲区分块：BufferedReader 自动跨行聚合（模拟 chunked 传输）。 */
+	@Test
+	public void testChunkedReassembly() {
+		// 用一个每次只返回 3 字节的 InputStream，模拟网络分块
+		byte[] all = "data: chunked-event\n\n".getBytes(StandardCharsets.UTF_8);
+		InputStream in = new InputStream() {
+			private int pos;
+			@Override
+			public int read() {
+				if (pos >= all.length) {
+					return -1;
+				}
+				return all[pos++] & 0xFF;
+			}
+			@Override
+			public int read(byte[] b, int off, int len) {
+				if (pos >= all.length) {
+					return -1;
+				}
+				int n = Math.min(3, Math.min(len, all.length - pos));
+				System.arraycopy(all, pos, b, off, n);
+				pos += n;
+				return n;
+			}
+		};
+		List<SseEvent> out = new ArrayList<>();
+		SseLineReader.read(in, StandardCharsets.UTF_8, out::add);
+		assertEquals(1, out.size());
+		assertEquals("chunked-event", out.get(0).data());
 	}
 
 	private static List<SseEvent> read(String s) {

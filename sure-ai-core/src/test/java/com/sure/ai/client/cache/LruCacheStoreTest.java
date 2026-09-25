@@ -56,7 +56,7 @@ public class LruCacheStoreTest {
 		LruCacheStore store = new LruCacheStore(16, 50);
 		store.put("k1", resp("c1"), 50);
 		assertNotNull(store.get("k1"));
-		Thread.sleep(120);
+		waitUntilExpired(store, "k1");
 		assertNull(store.get("k1"));
 	}
 
@@ -106,7 +106,7 @@ public class LruCacheStoreTest {
 	public void testExpiredEntryLazyCleanup() throws InterruptedException {
 		LruCacheStore store = new LruCacheStore(16, 50);
 		store.put("a", resp("a"), 50);
-		Thread.sleep(120);
+		waitUntilExpired(store, "a");
 		// get 触发惰性删除
 		assertNull(store.get("a"));
 		assertEquals(0, store.size());
@@ -118,7 +118,16 @@ public class LruCacheStoreTest {
 		LruCacheStore store = new LruCacheStore(16, 200);
 		store.put("a", resp("a"), 0);
 		assertNotNull(store.get("a"));
-		Thread.sleep(300);
+		waitUntilExpired(store, "a");
 		assertNull(store.get("a"));
+	}
+
+	/** 轮询等待条目过期（替代固定 Thread.sleep，避免 CI 调度抖动导致 flaky）。 */
+	private static void waitUntilExpired(LruCacheStore store, String key) throws InterruptedException {
+		long deadline = System.currentTimeMillis() + 5_000L;
+		while (store.get(key) != null && System.currentTimeMillis() < deadline) {
+			Thread.sleep(10L);
+		}
+		assertNull(store.get(key));
 	}
 }

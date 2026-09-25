@@ -17,6 +17,8 @@
 package com.sure.ai.doubao;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -168,9 +170,14 @@ public class DoubaoSttClientTest {
 		assertEquals("https://openspeech.bytedance.com", DoubaoSttClient.DEFAULT_BASE_URL);
 	}
 
-	/** Util：resetSttClient 可调用。 */
+	/** Util：resetSttClient 将单例字段置 null（反射注入→reset→断言为 null）。 */
 	@Test
-	public void testUtilReset() {
+	public void testUtilReset() throws Exception {
+		java.lang.reflect.Field f = DoubaoUtil.class.getDeclaredField("sttClient");
+		f.setAccessible(true);
+		f.set(null, newClient());
+		assertNotNull(f.get(null));
 		DoubaoUtil.resetSttClient();
+		assertNull(f.get(null));
 	}
 }
