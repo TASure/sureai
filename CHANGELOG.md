@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - Unreleased
+
+### Added
+- **P2-6 Client 能力面收口**：core 新增 `Capability` 枚举（14 值）与 `AbstractAiClient.protected capabilities()/guard(Capability)/name()` 契约；`OpenAiCompatClient` 声明全量 9 项能力并在 embed/image/video/moderation/finetune 入口加 guard；DeepSeek/Grok（chat+stream）、Mistral（chat+stream+embed+finetune）、LlamaCpp/Moonshot（chat+stream+embed）逐平台审计声明；不支持的方法在发请求前抛清晰 `AiException("<slug> does not support <CAP> capability")`；新增 `CapabilityGuardTest` 5 个测试。
+- **P2-17 测试分类**：工程为 JUnit4.13.2，采用 `@Category` 方案；core 新增 `com.sure.ai.internal.test.tag` 包下 `Unit`/`Slow`/`E2e` 标记接口；`LruCacheStoreTest`/`CircuitBreakerIntegrationTest` 标 Slow，`McpClientE2ETest` 标 E2e；父 pom 新增 `fast` profile（excludedGroups 排除 Slow/E2e）；全量 812 vs fast 801，精确排除 11 个。
+- **P2-18 CI 矩阵 + 发布 workflow**：`ci.yml` 改为 OS 矩阵（JDK21 跑 ubuntu+macos，JDK25 仅 ubuntu，windows 可选 continue-on-error）；新增 `release.yml`（tag 触发 + workflow_dispatch，需 secrets：OSSRH_USERNAME/OSSRH_PASSWORD/GPG_PRIVATE_KEY/GPG_PASSPHRASE）。
+- **P2-19 benchmark 自动化**：新增 `benchmark.yml`（workflow_dispatch + 每月 1 号 cron，JMH 执行并归档 `benchmark-result.json`）。
+
+### Changed
+- **P2-9 AbstractAiClient 拆分**：682 行上帝类按职责拆分为 3 个包内可见协作类——`RetryExecutor`（284 行，重试/熔断/限流/指标/错误映射）、`RequestBuilder`（131 行，请求构建+鉴权/签名钩子链）、`MultipartBodyBuilder`（81 行，multipart 拼装）；`AbstractAiClient` 收敛为 368 行薄委托层；18 个 protected/public 成员签名逐字不变；Bedrock `signRequest` 虚分派通过 RequestBuilder 持 client 引用保留；子类零修改。
+- **P2-10 OpenAiCompatClient 拆分**：841 行按能力域拆分为 10 个包内可见策略类——`ChatCompatStrategy`(328)/`VideoCompatStrategy`(139)/`AudioCompatStrategy`(145)/`FineTuneCompatStrategy`(109)/`StreamCompatStrategy`(93)/`ModerationCompatStrategy`(90)/`ImageCompatStrategy`(89)/`EmbeddingCompatStrategy`(84)/`CompatPost`(34)/`CompatJson`(43)；主类收敛为 340 行薄编排层；公共 API 签名逐字不变，10 个平台 Client 零修改；流式 SSE 复用基类 `doPostStream` 内置 `SseLineReader`。
+- **P2-2 Util 单例样板抽取**：core 新增 `SingletonHolder<T>` 通用 DCL 单例容器（152 行，get/set/reset/getOrCreate/isInitialized）；17 个平台 Util（Agent/Anthropic/Azure/Baidu/Bedrock/Cohere/DeepSeek/Doubao/Gemini/Grok/LlamaCpp/Mistral/Moonshot/Ollama/OpenAi/Qwen/Zhipu）从 volatile+LOCK+synchronized 样板改为委托 SingletonHolder；Util 主源码净减 493 行（多子客户端类收益最大：Azure/Doubao 各 -70、Qwen -69、Zhipu -56）；公共 API 签名零变更；`AgentUtil.resetRegistry` 特殊映射为 set(new ToolRegistry())；Realtime 客户端用 getOrCreate 带参懒加载；新增 `SingletonHolderTest` 8 个测试。
+- **P2-5 跨平台复制片段抽取**：`AiConfig` 新增 `withBaseUrlIfAbsent(String)` 统一入口；删除 openai/deepseek/grok/llamacpp/mistral/qwen 共 10 处平台 Client 中逐字复制的 `applyDefaultBaseUrl` 静态方法（约 108 行）。
+
+### Fixed
+- **P2-13 examples 冗余依赖**：移除 `sure-ai-examples/pom.xml` 中冗余的 `sure-ai-agent` 依赖（`sure-ai-all` 已传递引入）。
+- **前置重构连带破损修复**：`RateLimitTest` 反射从 `AbstractAiClient.rateLimiter` 迁移为两跳 `retryExecutor.rateLimiter`；18 个白盒测试反射目标从 `client/videoClient` 改为 `HOLDER/MAIN/VIDEO`（SingletonHolder 迁移）；`AzureVideoClientTest` 迁移到 SingletonHolder；清理多处未用 import。
+
+### 不适用项（逐项核对）
+- **P2-3 默认模型常量统一**：全库无散落 DEFAULT_MODEL，各 `*Models.java` 是模型 ID 常量目录，仅 Bedrock 有默认模型且已集中；新增默认模型会改变运行时行为，按约束不动。
+- **P2-7 JavaDoc 完整度**：SSRFGuard/SingletonHolder/CohereRerankClient 类级 JavaDoc 均完整，`McpResponse.fromJson` 已有 @return，满足。
+- **P2-8 starter 包名**：现为 `com.sure.ai.boot`，改名为 Breaking Change 且已稳定，保留。
+- **P2-14 Bedrock IOException 粒度**：v1.3.0 已接入基类，IOException 自动映射为 AiTimeoutException，已完成。
+- **P2-21 README 平台口径**：中英文 README 均为"16 平台"，一致。
+- **P2-22 benchmark 不进默认 verify**：`sure-ai-benchmark/pom.xml` 已配 skipTests/jacoco.skip/spotbugs.skip，已完成。
+
 ## [1.3.0] - 2026-09-25
 
 ### Added
