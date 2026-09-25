@@ -35,7 +35,7 @@ jobs:
         run: mvn -B -pl sure-ai-benchmark exec:java@jmh-main -Dexec.args="-wi 1 -i 1 -bm avgt -rff target/benchmark-result.json -rf json"
 
       - name: Upload benchmark result
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-result
           path: sure-ai-benchmark/target/benchmark-result.json
