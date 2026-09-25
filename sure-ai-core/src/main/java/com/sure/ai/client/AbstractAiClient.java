@@ -149,7 +149,7 @@ public abstract class AbstractAiClient {
 	/**
 	 * 声明本 Client 实际支持的能力集合（1.4.0 可维护性迭代 P2-6）。
 	 *
-	 * <p>默认空集合；{@link OpenAiCompatClient} 覆写为其引擎实现的全量能力，作为未逐平台审计
+	 * <p>默认空集合；{@link com.sure.ai.client.compat.OpenAiCompatClient} 覆写为其引擎实现的全量能力，作为未逐平台审计
 	 * 子类的安全默认（不触发 guard、行为与重构前一致）。已逐平台审计的子类（DeepSeek、Mistral、
 	 * Grok、LlamaCpp、Moonshot 等）覆写为自身真实支持的子集，使不支持的能力在发请求前快速失败。</p>
 	 *
