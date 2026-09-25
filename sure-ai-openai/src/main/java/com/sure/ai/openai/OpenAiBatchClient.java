@@ -77,7 +77,7 @@ public class OpenAiBatchClient extends AbstractAiClient implements BatchClient {
 	 * @param config 配置
 	 */
 	public OpenAiBatchClient(AiConfig config) {
-		super(OpenAiClient.applyDefaultBaseUrl(config, DEFAULT_BASE_URL));
+		super(config.withBaseUrlIfAbsent(DEFAULT_BASE_URL));
 	}
 
 	/**

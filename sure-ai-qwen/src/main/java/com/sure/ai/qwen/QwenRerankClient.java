@@ -62,7 +62,7 @@ public class QwenRerankClient extends AbstractAiClient implements RerankClient {
 	 * @param config 配置
 	 */
 	public QwenRerankClient(AiConfig config) {
-		super(QwenImageClient.applyDefaultBaseUrl(config, DEFAULT_BASE_URL));
+		super(config.withBaseUrlIfAbsent(DEFAULT_BASE_URL));
 	}
 
 	/**

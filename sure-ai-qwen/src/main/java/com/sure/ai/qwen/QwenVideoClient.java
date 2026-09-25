@@ -78,7 +78,7 @@ public class QwenVideoClient extends AbstractAiClient implements VideoClient {
 	 * @param config 配置
 	 */
 	public QwenVideoClient(AiConfig config) {
-		super(QwenImageClient.applyDefaultBaseUrl(config, DEFAULT_BASE_URL));
+		super(config.withBaseUrlIfAbsent(DEFAULT_BASE_URL));
 	}
 
 	/**

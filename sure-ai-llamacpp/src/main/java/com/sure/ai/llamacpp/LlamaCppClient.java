@@ -49,7 +49,7 @@ public class LlamaCppClient extends OpenAiCompatClient {
 	 * @param config 配置（baseUrl 为空时使用默认本地地址）
 	 */
 	public LlamaCppClient(AiConfig config) {
-		super(applyDefaultBaseUrl(config, DEFAULT_BASE_URL));
+		super(config.withBaseUrlIfAbsent(DEFAULT_BASE_URL));
 	}
 
 	@Override
@@ -64,19 +64,5 @@ public class LlamaCppClient extends OpenAiCompatClient {
 		if (key != null && !key.isBlank() && !DEFAULT_API_KEY.equals(key)) {
 			requestBuilder.header("Authorization", "Bearer " + key);
 		}
-	}
-
-	/**
-	 * baseUrl 为空时，用默认地址替换（其余全部字段通过 {@link AiConfig#withBaseUrl} 原样保留）。
-	 *
-	 * @param config      原始配置
-	 * @param defaultBase 默认 baseUrl
-	 * @return 补齐 baseUrl 后的配置
-	 */
-	static AiConfig applyDefaultBaseUrl(AiConfig config, String defaultBase) {
-		if (config.baseUrl() != null && !config.baseUrl().isBlank()) {
-			return config;
-		}
-		return config.withBaseUrl(defaultBase);
 	}
 }
