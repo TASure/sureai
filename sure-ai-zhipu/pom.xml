@@ -22,7 +22,7 @@
     <parent>
         <groupId>io.github.tasure</groupId>
         <artifactId>sureai</artifactId>
-        <version>1.5.0</version>
+        <version>1.6.0-SNAPSHOT</version>
     </parent>
     <artifactId>sure-ai-zhipu</artifactId>
     <packaging>jar</packaging>
