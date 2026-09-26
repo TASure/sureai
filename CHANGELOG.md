@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0] - Unreleased
+## [1.4.0] - 2026-09-26
 
 ### Added
 - **P2-6 Client 能力面收口**：core 新增 `Capability` 枚举（14 值）与 `AbstractAiClient.protected capabilities()/guard(Capability)/name()` 契约；`OpenAiCompatClient` 声明全量 9 项能力并在 embed/image/video/moderation/finetune 入口加 guard；DeepSeek/Grok（chat+stream）、Mistral（chat+stream+embed+finetune）、LlamaCpp/Moonshot（chat+stream+embed）逐平台审计声明；不支持的方法在发请求前抛清晰 `AiException("<slug> does not support <CAP> capability")`；新增 `CapabilityGuardTest` 5 个测试。
