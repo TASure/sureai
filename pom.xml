@@ -350,7 +350,7 @@
             <plugin>
                 <groupId>com.mycila</groupId>
                 <artifactId>license-maven-plugin</artifactId>
-                <version>4.5</version>
+                <version>5.1.2</version>
                 <configuration>
                     <header>${maven.multiModuleProjectDirectory}/config/license/header.txt</header>
                     <includes>
