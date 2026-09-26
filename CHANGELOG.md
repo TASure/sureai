@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - Unreleased
+
+### Added
+- **MCP Server 模块（sure-ai-mcp-server）**：新增模块把 sureai 多平台能力反向暴露为 MCP server，任何 MCP 客户端（Claude Desktop、Cursor、IDE）一个连接即可调用。核心只依赖 sure-ai-mcp + sure-ai-core，零新依赖、零平台模块硬依赖。
+  - 协议层：复用 sure-ai-mcp JSON-RPC 2.0 消息模型，兼容有状态规范（2025-06-18，initialize 握手 + notifications/initialized + Mcp-Session-Id）与无状态规范（2026-07-28 实验性，params._meta 读取协议版本、server/discover 能力广告、工具列表 ttlMs/cacheScope），两种形态按请求内容自适应。
+  - 双传输：`StdioMcpServerTransport`（System.in/stdout NDJSON 行帧，64MB 帧上限，独立 daemon 读线程）；`HttpMcpServerTransport`（JDK 内置 com.sun.net.httpserver.HttpServer，单端点 /mcp 支持 application/json 直返与 text/event-stream SSE，Mcp-Session-Id 维护，端口可配置）。
+  - 注册式工具模型：`McpServerTool`（name/description/inputSchema/handler）+ `McpServer` 注册表（CopyOnWriteArrayList），支持 tools/list、tools/call（content[].text、isError 正确返回）、resources/prompts 可扩展空能力。
+  - 预置工具工厂 `SureAiTools`：chatTool/embedTool/imageTool，支持单 AiClient 与 Map<String,AiClient> 多客户端注册表路由；inputSchema 由 JsonSchemaGenerator 自动生成；RAG 查询工具设计为 sure-ai-rag 适配类（不在 mcp-server 核心）。
+  - 静态入口 `McpServerUtil`（SingletonHolder 单例，init/server/resetServer/startStdio/startHttp）。
+  - 新增 25 个测试（协议引擎 12、SureAiTools 8、Stdio 管道回环 e2e 2、HTTP 本地回环 3），覆盖 initialize→tools/list→tools/call 完整流程、chat/embed/image 路由与错误→isError、超大帧拒绝、无状态直连。
+  - 新增 docs/mcp-server.md（stdio/HTTP 快速上手、Claude Desktop 配置 JSON、自定义工具注册、多客户端注册表）；examples 新增 McpServerDemo（stdio）与 McpHttpServerDemo；README 中英文特性区与文档索引加入口。
+- **JsonSchemaGenerator（sure-ai-core）**：core 新增 `com.sure.ai.util.JsonSchemaGenerator`，零依赖反射生成 JSON Schema（Draft 2020-12）。静态无状态线程安全，API：`generate(Class<?>)` → JsonObject（根带 $schema）、`generateString(Class<?>)` → 紧凑 JSON、`generateStringPretty(Class<?>)` → 2 空格美化。支持 String/char→string、byte/short/int/long→integer、float/double/BigDecimal/BigInteger→number、boolean→boolean、Enum→string+enum 数组、List/Set/Collection/数组→array+items（按泛型实参解析元素）、Map→object+additionalProperties、POJO/record→object+properties+required、Instant/LocalDateTime/Date→string+format=date-time、LocalDate→date、UUID→uuid、URI/URL→uri。required 策略：unboxed 原始类型必填，引用类型可选。字段发现：record 用 getRecordComponents()，POJO 沿父类链收集 getDeclaredFields()（跳过 static/transient/synthetic，子类同名遮蔽优先）。循环引用：递归携带祖先类链 Set，再次命中返回 {"type":"object"} 空对象。新增 13 个测试逐关键字断言。供 MCP server 自动生成 tool inputSchema。
+
+### Changed
+- **5 平台 capabilities() 精确声明（v1.4.0 遗留）**：对照官方文档 + 实际代码核实，OpenAI/Azure/Doubao/Qwen/Zhipu 从继承基类全量 9 项改为精确声明：
+  - OpenAiClient：全量 9 项（显式覆写，参考平台；Sora 消费产品 2026-04-26 停服但库实现 /videos 协议且有测试，保守保留）。
+  - AzureClient：6 项（CHAT/CHAT_STREAM/EMBED/IMAGE/MODERATION/FINETUNE），移除 VIDEO/TTS/STT（走独立 AzureVideoClient/AzureTtsClient/AzureSttClient）。
+  - DoubaoClient：5 项（CHAT/CHAT_STREAM/EMBED/IMAGE/MODERATION），移除 VIDEO/FINETUNE/TTS/STT（IMAGE 经火山方舟文档确认 OpenAI 兼容 /images/generations；MODERATION 保守保留未核实）。
+  - QwenClient：6 项（CHAT/CHAT_STREAM/EMBED/TTS/STT/MODERATION），移除 IMAGE/VIDEO/FINETUNE（TTS/STT 为本类原生覆写；IMAGE/VIDEO 走独立 QwenImageClient/QwenVideoClient；MODERATION 保守保留）。
+  - ZhipuClient：7 项（CHAT/CHAT_STREAM/EMBED/IMAGE/TTS/STT/MODERATION），移除 VIDEO/FINETUNE（IMAGE/TTS/STT 已接线且有测试；MODERATION 保守保留）。
+  - 判定规则：独立能力 Client（*VideoClient/*ImageClient/*TtsClient/*SttClient 等）均 extends AbstractAiClient 不走 OpenAiCompatClient 的 guard，因此某能力若由独立 Client 承载，主 Client 不声明该能力（主 Client 对应方法因 guard 抛 AiException，引导用户改用独立 Client）。每平台新增 testCapabilitiesDeclaration() 测试（反射读 protected capabilities() + 断言集合精确 + 对移除的受 guard 能力断言调用抛 AiException），共 +5 测试。
+
+### 模块注册
+- 新模块 sure-ai-mcp-server 注册到父 pom.xml <modules>（sure-ai-mcp 之后）、sure-ai-bom/pom.xml dependencyManagement、sure-ai-all/pom.xml dependencies。
+
 ## [1.4.0] - 2026-09-26
 
 ### Added
