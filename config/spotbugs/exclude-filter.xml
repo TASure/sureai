@@ -212,4 +212,25 @@
         <Bug pattern="SC_START_IN_CTOR"/>
     </Match>
 
+    <!-- MCP Server 工具描述暴露可变 JsonObject（EI_EXPOSE_REP）：
+         McpServerTool.inputSchema 持有自研零依赖 JsonObject，与 McpRequest.params
+         同类——inputSchema 由调用方在传入前填好，server 只读广播，按引用是零依赖 JSON 模型惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.mcp.server.McpServerTool"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+
+    <!-- MCP Server 入参记录暴露集合引用（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         ChatToolRequest / EmbedToolRequest 仅用于 JsonSchemaGenerator 反射推导 JSON Schema，
+         运行期从不被实例化或共享可变状态；记录组件按引用持有是 schema 描述对象的惯例，
+         与 ChatStreamChunk/Segment 同类只读视图设计。 -->
+    <Match>
+        <Class name="com.sure.ai.mcp.server.tool.ChatToolRequest"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.sure.ai.mcp.server.tool.EmbedToolRequest"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>

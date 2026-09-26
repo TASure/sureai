@@ -1,0 +1,43 @@
+<!--
+
+    Copyright (c) 2026 sureai contributors
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.github.tasure</groupId>
+        <artifactId>sureai</artifactId>
+        <version>1.5.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>sure-ai-mcp-server</artifactId>
+    <packaging>jar</packaging>
+
+    <name>sureai-mcp-server</name>
+    <description>MCP（Model Context Protocol）Server 模块：把 sureai 统一的多平台 AiClient/EmbeddingClient/ImageClient 能力反向暴露为标准 MCP Server。纯 JDK 实现 JSON-RPC 2.0 协议引擎，内置 stdio（NDJSON）与 Streamable HTTP（com.sun.net.httpserver）双传输；注册式工具模型保证核心零平台依赖，平台能力由调用方注入。兼容有状态规范 2025-06-18，并实验性适配无状态规范 2026-07-28（server/discover、_meta 版本协商、list 结果 ttlMs/cacheScope）。</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-mcp</artifactId>
+        </dependency>
+    </dependencies>
+</project>

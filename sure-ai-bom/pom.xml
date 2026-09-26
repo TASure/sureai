@@ -61,6 +61,11 @@
             </dependency>
             <dependency>
                 <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-mcp-server</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-openai</artifactId>
                 <version>${project.version}</version>
             </dependency>

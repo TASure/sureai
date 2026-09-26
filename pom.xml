@@ -60,6 +60,7 @@
         <module>sure-ai-rag</module>
         <module>sure-ai-agent</module>
         <module>sure-ai-mcp</module>
+        <module>sure-ai-mcp-server</module>
         <module>sure-ai-micrometer</module>
         <module>sure-ai-spring-boot-starter</module>
         <module>sure-ai-openai</module>
@@ -118,6 +119,11 @@
             <dependency>
                 <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-mcp</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-mcp-server</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
