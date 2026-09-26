@@ -18,7 +18,7 @@ assignees: []
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-XXX</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 ```
 

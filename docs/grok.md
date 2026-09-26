@@ -8,7 +8,7 @@
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-grok</artifactId>
-    <version>1.1.0-SNAPSHOT</version>
+    <version>1.4.0</version>
 </dependency>
 ```
 

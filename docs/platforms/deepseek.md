@@ -33,7 +33,7 @@ https://api.deepseek.com
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-deepseek</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 ```
 
@@ -74,7 +74,7 @@ DeepSeekUtil.chatStream(
 ## 注意事项
 
 - API 协议与 OpenAI 兼容，复用 `OpenAiCompatClient`
-- **暂不支持 Embedding**（DeepSeek 目前未提供向量 API）
+- **暂不支持 Embedding**：DeepSeek 目前未提供向量 API；调用 `embed` 时由基类 `guard(Capability.EMBED)` 在发请求前快速失败，抛出 `AiException`（消息 `"deepseek does not support EMBED capability"`）
 - `deepseek-reasoner`（R1）为推理模型，响应可能包含思考过程
 - 支持 Function Calling
 

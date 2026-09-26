@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![JDK](https://img.shields.io/badge/JDK-21+-orange.svg)](https://openjdk.org/projects/jdk/21/)
-[![Maven Central](https://img.shields.io/badge/maven--central-1.2.1-lightgrey.svg)](https://central.sonatype.com/)
+[![Maven Central](https://img.shields.io/badge/maven--central-1.4.0-lightgrey.svg)](https://central.sonatype.com/)
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen.svg)](.github/workflows/ci.yml)
 
 **零第三方依赖的 Java 大模型接入工具基础设施。** 每个主流 AI 平台一个独立模块与静态入口工具类，模块间互相隔离，按需引入。
@@ -48,6 +48,7 @@
 - **微调**：`FineTuneClient` 统一抽象（上传训练文件 + 创建/查询任务），OpenAI / Azure / 百度千帆 3 平台接入
 - **内容审核**：`ModerationClient` 统一抽象，类别与分数归一，OpenAI / Azure 接入
 - **模型列表**：`ModelsClient` 统一抽象，OpenAI / Azure / Gemini / Anthropic / 通义千问 5 平台接入
+- **平台能力面收口（v1.4.0）**：每个平台 Client 显式声明自身支持的能力集合，调用未支持的能力（如在 DeepSeek 上调 `embed()`）会在发请求前立即抛出 `AiException: deepseek does not support EMBED capability`，而非把请求发出去再吃上游 4xx。各平台能力清单见 [docs/capabilities.md](docs/capabilities.md)
 - **环境变量自动配置**：未显式 init 时自动从 `SURE_AI_*` 环境变量读取
 - **JDK 21**：record / pattern matching / switch 模式
 
@@ -71,6 +72,8 @@
 | Cohere | `sure-ai-cohere` | `https://api.cohere.com/v2` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ rerank-v3.5 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | llama.cpp | `sure-ai-llamacpp` | `http://localhost:8080/v1` | 可选 Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | AWS Bedrock | `sure-ai-bedrock` | `https://bedrock-runtime.{region}.amazonaws.com` | SigV4 (AK/SK) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+各平台专项文档：[AWS Bedrock](docs/bedrock.md) · [Cohere](docs/cohere.md) · [Grok](docs/grok.md) · [Mistral](docs/mistral.md) · [llama.cpp](docs/llamacpp.md)；各平台支持的能力清单见 [docs/capabilities.md](docs/capabilities.md)。
 
 聚合模块：`sure-ai-all`（一个依赖引入全部平台）、`sure-ai-bom`（版本统一管理）。
 
@@ -234,77 +237,77 @@ for (Model m : OpenAiUtil.client().listModels()) {
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-openai</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Azure OpenAI -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-azure</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Anthropic Claude -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-anthropic</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Google Gemini -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-gemini</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- DeepSeek -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-deepseek</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- 通义千问 DashScope -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-qwen</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- 智谱 GLM -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-zhipu</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Moonshot Kimi -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-moonshot</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- 火山引擎豆包 -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-doubao</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- 百度千帆 -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-baidu</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Ollama 本地模型 -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-ollama</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 ```
 
@@ -314,7 +317,7 @@ for (Model m : OpenAiUtil.client().listModels()) {
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-all</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
     <type>pom</type>
 </dependency>
 ```

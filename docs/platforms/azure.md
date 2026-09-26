@@ -43,7 +43,7 @@ Azure 使用**部署名（deployment）**而非模型 ID 调用。常见部署�
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-azure</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 ```
 

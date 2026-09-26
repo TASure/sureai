@@ -132,7 +132,7 @@ AiConfig.builder().apiKey(k).baseUrl(u).rateLimitQps(10).build(); // 10 QPS
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-micrometer</artifactId>
-    <version>0.3.0-SNAPSHOT</version>
+    <version>1.4.0</version>
 </dependency>
 <dependency>
     <groupId>io.micrometer</groupId>

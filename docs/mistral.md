@@ -8,7 +8,7 @@
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-mistral</artifactId>
-    <version>1.1.0-SNAPSHOT</version>
+    <version>1.4.0</version>
 </dependency>
 ```
 
@@ -47,9 +47,11 @@ EmbeddingResponse emb = MistralUtil.embed(MistralModels.MISTRAL_EMBED, "文本")
 | Chat | ✅ | `/v1/chat/completions`，OpenAI 兼容 |
 | Stream | ✅ | SSE `chat.completion.chunk` + `data: [DONE]` |
 | Embedding | ✅ | `/v1/embeddings`，model=`mistral-embed` |
+| Fine-tuning | ✅ | `/v1/fine_tuning/jobs`（v1.4.0 起声明支持） |
 | Models | ✅ | `GET /v1/models`（含 capabilities 能力位） |
 | Function Calling | ✅ | 注意 `tool_choice` 取值用 `"any"` 而非 `"required"` |
 | 结构化输出 | ✅ | `response_format` |
+| Image / Video / Moderation | ❌ | v1.4.0 起调用这些方法会立即抛 `AiException("mistral does not support IMAGE capability")`，不再发请求后 4xx |
 
 ## 与 OpenAI 的差异
 

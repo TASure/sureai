@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![JDK](https://img.shields.io/badge/JDK-21+-orange.svg)](https://openjdk.org/projects/jdk/21/)
-[![Maven Central](https://img.shields.io/badge/maven--central-1.2.1-lightgrey.svg)](https://central.sonatype.com/)
+[![Maven Central](https://img.shields.io/badge/maven--central-1.4.0-lightgrey.svg)](https://central.sonatype.com/)
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen.svg)](.github/workflows/ci.yml)
 
 **Zero third-party dependency Java LLM integration toolkit.** One independent module and static utility class per mainstream AI platform, with strict module-level isolation — pull in only what you need.
@@ -48,6 +48,7 @@
 - **Fine-tuning**: unified `FineTuneClient` abstraction (upload training file + create/query jobs), 3 platforms (OpenAI / Azure / Baidu Qianfan)
 - **Moderation**: unified `ModerationClient` abstraction with normalized categories and scores, OpenAI / Azure
 - **Model Listing**: unified `ModelsClient` abstraction across 5 platforms (OpenAI / Azure / Gemini / Anthropic / Qwen)
+- **Capability guard (v1.4.0)**: each platform Client explicitly declares the set of capabilities it supports; calling an unsupported capability (e.g. `embed()` on DeepSeek) throws `AiException: deepseek does not support EMBED capability` immediately before any request is sent, instead of firing the request and receiving a vague upstream 4xx. Per-platform capability matrix see [docs/capabilities.md](docs/capabilities.md)
 - **Environment variable auto-config**: lazy-loads from `SURE_AI_*` env vars when not explicitly initialized
 - **JDK 21**: records, pattern matching, switch patterns
 
@@ -71,6 +72,8 @@
 | Cohere | `sure-ai-cohere` | `https://api.cohere.com/v2` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ rerank-v3.5 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | llama.cpp | `sure-ai-llamacpp` | `http://localhost:8080/v1` | Optional Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | AWS Bedrock | `sure-ai-bedrock` | `https://bedrock-runtime.{region}.amazonaws.com` | SigV4 (AK/SK) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+Per-platform docs: [AWS Bedrock](docs/bedrock.md) · [Cohere](docs/cohere.md) · [Grok](docs/grok.md) · [Mistral](docs/mistral.md) · [llama.cpp](docs/llamacpp.md); per-platform capability matrix see [docs/capabilities.md](docs/capabilities.md).
 
 Aggregation modules: `sure-ai-all` (one dependency for all platforms), `sure-ai-bom` (version management).
 
@@ -234,77 +237,77 @@ Pull individual platform modules:
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-openai</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Azure OpenAI -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-azure</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Anthropic Claude -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-anthropic</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Google Gemini -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-gemini</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- DeepSeek -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-deepseek</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Qwen DashScope -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-qwen</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Zhipu GLM -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-zhipu</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Moonshot Kimi -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-moonshot</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Doubao Volcano Engine -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-doubao</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Baidu Qianfan -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-baidu</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 
 <!-- Ollama Local -->
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-ollama</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
 </dependency>
 ```
 
@@ -314,7 +317,7 @@ Pull all platforms at once:
 <dependency>
     <groupId>io.github.tasure</groupId>
     <artifactId>sure-ai-all</artifactId>
-    <version>1.2.1</version>
+    <version>1.4.0</version>
     <type>pom</type>
 </dependency>
 ```
