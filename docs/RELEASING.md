@@ -91,6 +91,48 @@ git push origin main
 - JavaDoc 必须无错误（`mvn -Prelease javadoc:javadoc` 预检查）。
 - 发布后约 10-30 分钟可在 Maven Central 搜索到。
 
+## CI / GitHub Actions 自动化
+
+除上述手动流程外，仓库根目录 `.github/workflows/` 下提供了三条 workflow，分别承担发布、性能基线与常规 CI 门禁。手动发布流程仍然有效（例如沙箱内需要用 hosts 文件规避 DNS 问题时），CI 流程只是把相同的 `mvn -B -Prelease clean deploy` 搬到 runner 上自动执行。
+
+### release.yml（自动发布到 OSSRH 暂存）
+
+- **文件**：`.github/workflows/release.yml`
+- **触发条件**：
+  - push tag：`v*`（即 `git tag v1.4.0 && git push origin v1.4.0`）；
+  - 手动触发：Actions 页面 `workflow_dispatch`。
+- **执行命令**：`mvn -B -Prelease clean deploy -Dgpg.keyname= -Dgpg.passphrase=${{ secrets.GPG_PASSPHRASE }}`
+  （`-Dgpg.keyname=` 留空表示使用 runner 上导入的默认私钥。）
+- **需要配置的 Repository Secrets**（GitHub Repository → Settings → Secrets and variables → Actions）：
+
+  | Secret | 说明 |
+  | --- | --- |
+  | `OSSRH_USERNAME` | Sonatype 账号用户名（https://central.sonatype.com/）。 |
+  | `OSSRH_PASSWORD` | Sonatype 账号密码 / token。 |
+  | `GPG_PRIVATE_KEY` | GPG 私钥，`gpg --armor --export-secret-keys <KEYID>` 输出全文，含 `-----BEGIN PGP PRIVATE KEY BLOCK-----` 头尾。 |
+  | `GPG_PASSPHRASE` | GPG 私钥口令。 |
+
+- runner 通过 `actions/setup-java@v5` 的 `server-id: ossrh` 直接把用户名/密码写入 `~/.m2/settings.xml` 的 `<server id="ossrh">`，与父 POM `distributionManagement` / nexus-staging 插件配置的 serverId 对齐；同时导入 GPG 私钥。
+- 与手动发布一样，CI 上传到 OSSRH 后 `autoReleaseAfterClose=false`，仍需登录 Sonatype 控制台手动 **Close + Release**（见上文第 5 步）。
+
+### benchmark.yml（JMH 性能基线）
+
+- **文件**：`.github/workflows/benchmark.yml`
+- **触发条件**：
+  - 手动触发：Actions 页面 `workflow_dispatch`；
+  - 定时任务：每月 1 号 UTC 00:00（cron `0 0 1 * *`）。
+- **不进默认 PR/push 门禁**（耗时长），仅按需运行。
+- **执行内容**：先 `mvn -B install -DskipTests -pl sure-ai-core`，再 `mvn -B -pl sure-ai-benchmark exec:java@jmh-main`，以最小预热/迭代参数（`-wi 1 -i 1 -bm avgt`）跑 JMH，结果输出到 `sure-ai-benchmark/target/benchmark-result.json`，通过 `actions/upload-artifact@v4` 归档为名为 `benchmark-result` 的 artifact，便于跨版本对比趋势。
+
+### ci.yml（多 OS / 多 JDK 矩阵）
+
+- **文件**：`.github/workflows/ci.yml`
+- **触发条件**：push / pull request 到 `main`。
+- **矩阵**：
+  - JDK 21：`ubuntu-latest` + `macos-latest`，并额外 include 一个 `windows-latest`（`continue-on-error: true`，Windows 路径分隔符/脚本行为尚未在 CI 全量验证，失败不阻断整体）；
+  - JDK 25：仅 `ubuntu-latest`（通过 `exclude` 把 JDK25 + macos 排除掉，节省资源）。
+- 每个 job 执行 `mvn -B verify`；JDK21 的 job 额外上传 `sure-ai-*/target/site/jacoco/` 作为 JaCoCo 覆盖率 artifact。
+
 ## 已知问题与规避（v1.1.0 实测）
 
 - **JVM 内 DNS 解析失败**：沙箱/容器内 `getent` 可解析 `ossrh-staging-api.central.sonatype.com`，但 JVM 进程偶发/持续 `UnknownHostException`（间歇性，重试不一定恢复）。规避：把当前解析出的 ELB IP 写入自定义 hosts 文件并让 Maven 使用：

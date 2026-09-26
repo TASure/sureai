@@ -25,6 +25,35 @@ mvn -B clean verify
 - **导入**：禁止星号导入、未使用导入。
 - checkstyle / spotbugs 在 `mvn verify` 阶段强制执行，请勿绕过。
 
+## 测试分类与快速回归
+
+工程使用 **JUnit4 `@Category`** 对测试做分类（不是 JUnit5 的 `@Tag`）。标记接口位于 `com.sure.ai.internal.test.tag` 包，共三个：
+
+| 标记 | 含义 | 典型场景 |
+| --- | --- | --- |
+| `Unit` | 纯单元测试 | 不打注释标记时默认即 unit，照常运行 |
+| `Slow` | 耗时测试 | TTL 过期、熔断器时序等待等需要 `Thread.sleep` 的用例 |
+| `E2e` | 端到端测试 | MCP 子进程回环等需要拉起外部进程的用例 |
+
+常用命令：
+
+```bash
+# 全量回归：跑全部 812 个测试（含 Slow / E2e），CI 与发版前使用
+mvn -B clean verify
+
+# 快速回归：通过 surefire -Pfast 排除 Slow / E2e，约 801 个测试，适合日常开发
+mvn -B clean verify -Pfast
+```
+
+`fast` profile 在父 POM 中通过 `<excludedGroups>com.sure.ai.internal.test.tag.Slow,com.sure.ai.internal.test.tag.E2e</excludedGroups>` 实现排除；未标注任何 `@Category` 的测试默认即 unit，照常运行。
+
+新增测试时请遵守：
+
+- 普通纯单测**不需要**加任何 `@Category` 注解，默认就是 unit；
+- 涉及真实时序等待（TTL、熔断、重试退避）的用例，类或方法上加 `@Category(Slow.class)`；
+- 需要拉起子进程、真实网络回环的端到端用例，加 `@Category(E2e.class)`；
+- 测试仍必须基于本地 `com.sun.net.httpserver.HttpServer` mock，**不得访问真实 AI 平台**。
+
 ## 模块开发约定
 
 - 新增平台模块时，在父 POM `<modules>` 中注册，并在 `sure-ai-bom` / `sure-ai-all` 中添加对应依赖。
