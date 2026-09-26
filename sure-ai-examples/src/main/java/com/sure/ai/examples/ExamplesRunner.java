@@ -150,6 +150,12 @@ public final class ExamplesRunner {
 					System.out.println("mcphttp 示例运行失败: " + ex.getMessage());
 				}
 				break;
+			case "gateway":
+				GatewayDemo.main(emptyArgs);
+				break;
+			case "proxy":
+				ProxyDemo.main(emptyArgs);
+				break;
 			default:
 				System.out.println("未知平台：" + args[0]);
 				printUsage();
@@ -192,5 +198,7 @@ public final class ExamplesRunner {
 		System.out.println("  models     - 模型列表演示（OpenAI listModels）");
 		System.out.println("  mcpserver - MCP Server 演示（stdio 协议引擎，离线 fake chat 工具）");
 		System.out.println("  mcphttp   - MCP Server 演示（Streamable HTTP，loopback 回环）");
+		System.out.println("  gateway   - AI Gateway 演示（多供应商注册 + 轮询路由 + 故障转移，离线 fake）");
+		System.out.println("  proxy     - OpenAI 兼容代理演示（JDK HttpServer，loopback 自测）");
 	}
 }

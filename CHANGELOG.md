@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - Unreleased
+
+### Added
+- **AI Gateway（sure-ai-gateway）**：`GatewayClient` implements `AiClient` 对调用方透明（`name()` 返回 `"gateway"`），内部按路由策略选择下游供应商实例，失败时自动故障转移。
+  - `ClientRegistry`：多供应商注册（按 `(platform, instanceId)` 二级存储，支持同平台多实例）；注册时显式声明能力集合（默认 `CHAT`/`CHAT_STREAM`）；支持权重（>0）与默认模型名；`byPlatform()`/`byCapability()`/`byName()` 查询；`markUnhealthy()`/`isHealthy()` 健康标记。
+  - 6 种路由策略可装饰器组合：`ExplicitRoutingStrategy`（`extra["platform"]` 或模型名 `platform:` 前缀）→ `CapabilityRoutingStrategy`（按 `Capability` 过滤）→ 叶子策略 `RoundRobinStrategy`（AtomicInteger 轮询）/ `WeightedRoutingStrategy`（按权重随机）/ `LowestLatencyStrategy`（滑动窗口平均延迟，`LatencyTracker` 最多 100 样本/5 分钟窗口）/ `LowestCostStrategy`（基于 `PriceCatalog` 输入单价）。
+  - 自动故障转移：`FailoverConfig`（`maxAttempts` 默认 3、`unhealthyCooldownMs` 默认 30s、`retryableExceptions` 额外可转移异常、`FailoverListener` 事件回调）；4xx 不转移/5xx 超时转移规则；失败实例摘除冷却后自动恢复。
+  - `RequestContext`：`EXTRA_PLATFORM = "platform"`、`EXTRA_TENANT_ID = "tenantId"`；`explicitPlatform()` 按 extra→模型前缀顺序解析；`bareModel()` 去掉平台前缀。
+- **密钥池轮转（core + gateway）**：core 新增 `ApiKeyProvider` 接口（`currentKey()`/`nextKey()`/`markBad(String)`/`allKeys()`/`size()`）与 `RoundRobinApiKeyProvider`（原子指针轮询 + 坏 key 冷却默认 60s，冷却到期自动恢复，可注入时钟）；gateway 新增 `KeyRotatingClientDecorator`（`Function<String, AiClient>` 工厂模式 + 按 key `ConcurrentHashMap` 缓存客户端，401/403/429 自动换 key 重试，最多尝试 `provider.size()` 次，可自定义 `Predicate<Throwable>` 触发条件）。
+- **租户配额与预算（gateway）**：`TenantManager`（虚拟密钥→租户映射 + 租户→配额配置映射）；`TenantConfig`（`maxCostPerPeriod`/`maxTokensPerPeriod`/`rateLimitQps`/`budgetPeriod` 默认 1 天，0=不限，Builder 模式）；`BudgetEnforcer`（调用前 `checkBeforeCall` 校验成本/token/QPS，调用后 `recordAfterCall` 入账，预算周期滚动窗口自动清零，QPS 复用 sure-core 令牌桶 `RateLimiter`）；`TenantAwareGatewayClient` 装饰器（从 `extra["tenantId"]` 取租户，调用前检查/调用后计量，流式只事前检查不事后计量）；`AiBudgetExceededException`（携带 `tenantId()`）。
+- **成本计量（sure-ai-core com.sure.ai.cost）**：
+  - `PriceCatalog`：不可变价格目录，内置 18 个主流模型（OpenAI 5 / Anthropic 5 / Gemini 2 / DeepSeek 2 / Qwen 3 / Mistral 1），价格单位 USD/1K tokens，每个模型注释标注来源 URL 与核实日期（2026-09-26）；`withPrice()` 不可变覆盖；`priceFor()`/`hasPrice()`/`size()` 查询。
+  - `ModelPrice` record：`(inputPer1k, outputPer1k, cacheReadPer1k, cacheWritePer1k, currency)`，简化构造默认 USD。
+  - `CostCalculator`：无状态线程安全；`calculate(model, TokenUsage)` 无缓存；`calculate(model, TokenUsage, cachedReadTokens, cachedWriteTokens)` 含缓存（从 promptTokens 中扣除避免重复计费）；`estimate(model, inputText, estimatedOutputTokens)` 请求前粗估（中文 1.5 字符/token、英文 4 字符/token）。
+  - `CostAggregator`：线程安全内存汇总（`ConcurrentHashMap` + `LongAdder`/`DoubleAdder`）；`record(tenantId, model, usage, cost)`；`tenantSummary(tenantId)`/`modelSummary(model)`/`summarySince(epochMillis)`/`reset()`。
+  - `CostSummary` record：`(totalCalls, totalPromptTokens, totalCompletionTokens, totalCost, tokensByModel, costByModel)`，`EMPTY` 空快照。
+  - `CostMetricsCollector`：实现 `MetricsCollector`，自动把 `onTokenUsage` 回调接入成本计算与汇总；`setCurrentTenantId()`/`clearCurrentTenantId()` ThreadLocal 管理，默认租户 `"default"`。
+- **OpenAI 兼容代理（sure-ai-proxy）**：基于 JDK `com.sun.net.httpserver.HttpServer` 的独立 HTTP 服务（零新依赖），把 `GatewayClient` 能力以 OpenAI 兼容 API 暴露。
+  - 端点：`POST /v1/chat/completions`（非流式 + SSE 流式 `stream:true`，SSE 格式 `data: <payload>\n\n`，结束 `data: [DONE]\n\n`）；`GET /v1/models`；`POST /v1/embeddings`（路由到声明 `EMBED` 能力且实现 `EmbeddingClient` 的客户端，未注册返回 501）。
+  - `VirtualKeyAuth`：`Authorization: Bearer <virtualKey>` 映射到租户 ID，鉴权失败返回 401 OpenAI 错误格式。
+  - `ProxyConfig`（`java.util.Properties`）：`proxy.port`（默认 8080）、`proxy.default.model`（默认 gpt-4o）、`proxy.models`（逗号分隔）、`proxy.key.<virtualKey>=tenantId`；`defaults()`/`fromProperties(Properties)`/`load(Path)`。
+  - `SureAiProxy`：`start()`/`stop()`/`boundPort()`；`main(String[] args)` 从 properties 文件启动；线程池 `max(2, availProc*2)`。
+  - 错误码映射：400（请求体解析失败）/ 401（密钥无效）/ 405（方法不允许）/ 501（无 embeddings 客户端）/ 502（上游错误）。
+- 新增 docs：`docs/gateway.md`、`docs/cost.md`、`docs/proxy.md`；examples 新增 `GatewayDemo`（离线 fake client 演示轮询路由+故障转移）与 `ProxyDemo`（JDK HttpClient loopback 自测）；README 中英文特性区与文档索引加入口。
+
+### Changed
+- 纯新增，未改公共 API。
+
+### 测试
+- 新增 82 个测试：成本计量 23（PriceCatalog/CostCalculator/CostAggregator/CostMetricsCollector）+ gateway 核心 22（ClientRegistry/GatewayClient/6 种策略/RequestContext）+ 密钥/租户 22（ApiKeyProvider/KeyRotatingClientDecorator/TenantManager/TenantConfig/BudgetEnforcer/TenantAwareGatewayClient/AiBudgetExceededException）+ 代理 15（SureAiProxy/ProxyConfig/VirtualKeyAuth/OpenAiProtocol/端点回环）。
+
 ## [1.5.0] - 2026-09-26
 
 ### Added

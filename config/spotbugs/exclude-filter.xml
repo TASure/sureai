@@ -232,5 +232,40 @@
         <Class name="com.sure.ai.mcp.server.tool.EmbedToolRequest"/>
         <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
     </Match>
+    <!-- CostSummary 不可变快照记录暴露 Map 引用（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         紧凑构造器已对 tokensByModel/costByModel 做 Map.copyOf 防御性拷贝，
+         运行时不可变；SpotBugs 无法识别 record 构造期的防御性拷贝，
+         与 ChatStreamChunk/Segment/AiMetrics.Snapshot 同类只读视图惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.cost.CostSummary"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- GatewayClient 持有外部共享 ClientRegistry 引用（EI_EXPOSE_REP2）：
+         ClientRegistry 是调用方构造网关后仍可动态 register/remove/markUnhealthy 的
+         有状态共享组件，网关每次调用实时读取其健康候选快照，语义即按引用共享，
+         与 ReActAgent/RagPipeline.Builder 暂存共享组件同类惯例；调用方负责注册表生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.gateway.GatewayClient"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- BudgetEnforcer 持有外部共享 TenantManager/CostAggregator 引用（EI_EXPOSE_REP2）：
+         TenantManager 是调用方构造后仍维护租户配额状态的有状态共享组件，BudgetEnforcer
+         每次记账实时读写其租户状态，语义即按引用共享，与 GatewayClient/ReActAgent 暂存
+         共享组件同类惯例；调用方负责这两个组件的生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.gateway.BudgetEnforcer"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- SureAiProxy 持有外部共享 ClientRegistry 引用（EI_EXPOSE_REP2）：
+         registry 为调用方传入的有状态注册表，代理在 /v1/embeddings 路由时实时按 EMBED
+         能力查找 EmbeddingClient，语义即按引用共享，与 GatewayClient 暂存 ClientRegistry
+         同类惯例；调用方负责注册表的注册与生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.proxy.SureAiProxy"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
 
 </FindBugsFilter>
