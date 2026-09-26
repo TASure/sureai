@@ -1,6 +1,6 @@
 # sureai 视频生成
 
-> 版本：0.2.0-SNAPSHOT | 模块：sure-ai-core + 各平台模块
+> 版本：1.4.0 | 模块：sure-ai-core + 各平台模块
 
 ## 架构概述
 
