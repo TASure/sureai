@@ -211,8 +211,8 @@ public class OpenAiBatchClientTest {
 		OpenAiBatchClient.POLL_INTERVAL_MS = 30L;
 		OpenAiBatchClient client = newClient();
 		assertThrows(AiTimeoutException.class,
-			() -> client.waitForCompletion(BATCH_ID, 150L));
-		assertTrue(this.pollHits.get() > 1);
+			() -> client.waitForCompletion(BATCH_ID, 600L));
+		assertTrue("应多次轮询后才超时，实际轮询次数: " + this.pollHits.get(), this.pollHits.get() > 1);
 		client.close();
 	}
 

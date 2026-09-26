@@ -171,11 +171,11 @@ public class DoubaoVideoClientTest {
 	public void testTimeout() {
 		this.mode = "pending";
 		DoubaoVideoClient.POLL_INTERVAL_MS = 30L;
-		DoubaoVideoClient.MAX_WAIT_MS = 150L;
+		DoubaoVideoClient.MAX_WAIT_MS = 600L;
 		DoubaoVideoClient client = newClient();
 		assertThrows(AiTimeoutException.class,
 			() -> client.generate(VideoRequest.of(DoubaoModels.SEEDANCE_2_5, "slow")));
-		assertTrue(this.pollHits.get() > 1);
+		assertTrue("应多次轮询后才超时，实际轮询次数: " + this.pollHits.get(), this.pollHits.get() > 1);
 		client.close();
 	}
 

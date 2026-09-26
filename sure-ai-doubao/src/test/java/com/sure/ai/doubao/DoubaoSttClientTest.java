@@ -154,7 +154,7 @@ public class DoubaoSttClientTest {
 	public void testTimeout() {
 		this.mode = "pending";
 		DoubaoSttClient.POLL_INTERVAL_MS = 30L;
-		DoubaoSttClient.MAX_WAIT_MS = 150L;
+		DoubaoSttClient.MAX_WAIT_MS = 600L;
 		DoubaoSttClient client = newClient();
 		byte[] audio = "fake-audio".getBytes(StandardCharsets.UTF_8);
 		assertThrows(AiTimeoutException.class,

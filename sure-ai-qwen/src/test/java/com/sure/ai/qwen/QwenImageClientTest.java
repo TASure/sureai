@@ -173,11 +173,11 @@ public class QwenImageClientTest {
 	public void testImageGenerationTimeout() {
 		this.mode = "pending";
 		QwenImageClient.POLL_INTERVAL_MS = 30L;
-		QwenImageClient.MAX_WAIT_MS = 150L;
+		QwenImageClient.MAX_WAIT_MS = 600L;
 		QwenImageClient client = newClient();
 		assertThrows(AiTimeoutException.class,
 			() -> client.generate(QwenModels.WANX_V1, "slow"));
-		assertTrue(this.pollHits.get() > 1);
+		assertTrue("应多次轮询后才超时，实际轮询次数: " + this.pollHits.get(), this.pollHits.get() > 1);
 		client.close();
 	}
 

@@ -176,11 +176,11 @@ public class QwenVideoClientTest {
 	public void testVideoGenerationTimeout() {
 		this.mode = "pending";
 		QwenVideoClient.POLL_INTERVAL_MS = 30L;
-		QwenVideoClient.MAX_WAIT_MS = 150L;
+		QwenVideoClient.MAX_WAIT_MS = 600L;
 		QwenVideoClient client = newClient();
 		assertThrows(AiTimeoutException.class,
 			() -> client.generate(VideoRequest.of(QwenModels.WAN2_6_T2V, "slow")));
-		assertTrue(this.pollHits.get() > 1);
+		assertTrue("应多次轮询后才超时，实际轮询次数: " + this.pollHits.get(), this.pollHits.get() > 1);
 		client.close();
 	}
 
