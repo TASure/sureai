@@ -19,6 +19,11 @@ sureai 对 RAG 二阶段重排序做了统一抽象：无论平台重排协议�
                   │  POST /reranks             │
                   │  (OpenAI 兼容, 通义千问)    │
                   └───────────────────────────┘
+                  ┌───────────────────────────┐
+                  │  CohereRerankClient       │
+                  │  POST /rerank             │
+                  │  (Cohere v2 原生协议)      │
+                  └───────────────────────────┘
 ```
 
 **设计要点**
@@ -60,6 +65,9 @@ for (RerankResult r : resp.results()) {
         r.relevanceScore(), r.index(), r.document());
 }
 ```
+
+> 使用 Cohere 时将依赖换成 `sure-ai-cohere`、环境变量换成 `SURE_AI_COHERE_API_KEY`，
+> 调用入口改为 `CohereUtil.rerank(...)`，其余 `RerankRequest` / `RerankResponse` 用法完全一致。
 
 ## 3. 核心 API
 
@@ -117,7 +125,39 @@ RerankResponse resp2 = QwenUtil.rerank(RerankRequest.builder()
 
 `QwenUtil` 另暴露 `rerankClient()`（取 `QwenRerankClient` 单例）与 `resetRerankClient()`（测试清理）。
 
-### 4.2 智谱 GLM 未开放说明
+### 4.2 Cohere v2（原生 `/rerank` 协议）
+
+- 默认 baseUrl：`https://api.cohere.com/v2`
+- 鉴权：`Authorization: Bearer <apiKey>`
+- 环境变量：`SURE_AI_COHERE_API_KEY`（可选 `SURE_AI_COHERE_BASE_URL`）
+- 模型常量：`CohereModels.RERANK_V3_5 = "rerank-v3.5"`
+- 端点：`POST /rerank`，Cohere v2 原生协议（非 OpenAI 兼容）
+
+```xml
+<dependency>
+    <groupId>io.github.tasure</groupId>
+    <artifactId>sure-ai-cohere</artifactId>
+    <version>${sureai.version}</version>
+</dependency>
+```
+
+```java
+// 便捷重载（默认 rerank-v3.5）
+RerankResponse resp = CohereUtil.rerank(query, documents);
+
+// 全量 Builder（指定 topN / extra）
+RerankResponse resp2 = CohereUtil.rerank(RerankRequest.builder()
+    .model(CohereModels.RERANK_V3_5)
+    .query(query)
+    .documents(documents)
+    .topN(3)
+    .build());
+```
+
+`CohereRerankClient` 与 `QwenRerankClient` 实现同一 `RerankClient` SPI，可互换接入 RAG 检索链路。
+`CohereUtil` 另暴露 `rerankClient()`（取 `CohereRerankClient` 单例）与 `resetRerankClient()`（测试清理）。
+
+### 4.3 智谱 GLM 未开放说明
 
 智谱 GLM-rerank 目前仅在其**知识库（RAG 平台）内部**提供，未开放独立的公开文本重排 REST API，
 因此 sureai 暂未提供 `ZhipuRerankClient`。待智谱开放独立重排接口后将以相同 `RerankClient` 抽象接入。
@@ -154,11 +194,14 @@ RagPipeline pipeline = RagUtil.pipeline(chatClient, embeddingClient,
     .build();
 ```
 
+> Cohere 接入方式完全一致：`new ClientReranker(new CohereRerankClient(config), CohereModels.RERANK_V3_5)`。
+
 ## 6. 平台对比表
 
 | 平台 | 重排端点 | 协议 | 状态 |
 |---|---|---|---|
 | 通义千问 Qwen | `/reranks` | OpenAI 兼容 | ✅ `QwenRerankClient` |
+| Cohere | `/rerank` | Cohere v2 原生 | ✅ `CohereRerankClient` |
 | 智谱 GLM | — | 仅知识库内部 | ❌ 未开放独立 API |
 | 其他平台 | — | — | ❌ 暂未接入 |
 
@@ -168,6 +211,10 @@ RagPipeline pipeline = RagUtil.pipeline(chatClient, embeddingClient,
 **零真实网络请求**：断言请求体 `model/query/documents/top_n` 序列化、Bearer 鉴权头、
 以及响应 `results[].index/relevance_score/document` 解析与降序封装。
 
+`CohereRerankClient` 同样使用本地 mock 服务测试，断言请求体 `model/query/documents/top_n`
+序列化、Bearer 鉴权头，以及响应 `results[].index/relevance_score/document.text` 解析。
+
 ```bash
 mvn -B -pl sure-ai-qwen -am test
+mvn -B -pl sure-ai-cohere -am test
 ```
