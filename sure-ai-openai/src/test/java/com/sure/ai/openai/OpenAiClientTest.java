@@ -23,9 +23,11 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.After;
 import org.junit.Before;
@@ -34,7 +36,9 @@ import org.junit.Test;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiAuthException;
@@ -425,5 +429,30 @@ public class OpenAiClientTest {
 			java.lang.reflect.InvocationTargetException.class, c::newInstance);
 		assertTrue(ex.getCause() instanceof AssertionError);
 		assertEquals("gpt-4o", OpenAiModels.GPT_4O);
+	}
+
+	/**
+	 * capabilities() 精确声明：OpenAI 为参考平台，声明基类全量 9 项能力；
+	 * 任一受 guard 保护的能力均应在集合内（embed/image/video/moderation/finetune 不会快速失败）。
+	 */
+	@Test
+	public void testCapabilitiesDeclaration() throws Exception {
+		OpenAiClient client = newClient();
+		Set<Capability> caps = capabilitiesOf(client);
+		for (Capability c : new Capability[]{Capability.CHAT, Capability.CHAT_STREAM,
+			Capability.EMBED, Capability.IMAGE, Capability.VIDEO, Capability.TTS,
+			Capability.STT, Capability.MODERATION, Capability.FINETUNE}) {
+			assertTrue("应声明能力 " + c, caps.contains(c));
+		}
+		assertEquals(9, caps.size());
+		client.close();
+	}
+
+	/** 反射调用 protected capabilities()。 */
+	@SuppressWarnings("unchecked")
+	private static Set<Capability> capabilitiesOf(Object client) throws Exception {
+		Method m = AbstractAiClient.class.getDeclaredMethod("capabilities");
+		m.setAccessible(true);
+		return (Set<Capability>) m.invoke(client);
 	}
 }

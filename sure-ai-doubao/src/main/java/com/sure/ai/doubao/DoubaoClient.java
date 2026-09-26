@@ -17,8 +17,10 @@
 package com.sure.ai.doubao;
 
 import java.util.List;
+import java.util.Set;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.compat.OpenAiCompatClient;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.Model;
@@ -60,6 +62,35 @@ public class DoubaoClient extends OpenAiCompatClient {
 	@Override
 	public String name() {
 		return "doubao";
+	}
+
+	/**
+	 * 火山方舟（豆包）主 Client 经 OpenAI 兼容协议（{@code https://ark.cn-beijing.volces.com/api/v3}）
+	 * 支持：chat/completions、embeddings（doubao-embedding-text）、images/generations
+	 * （Seedream 系列，官方文档以 OpenAI SDK {@code client.images.generate} 调用，路径即
+	 * {@code /api/v3/images/generations}）。
+	 *
+	 * <p>依据：<a href="https://www.volcengine.com/docs/82379/1824121">Seedream 教程（火山引擎方舟）</a>。</p>
+	 *
+	 * <p>未声明：</p>
+	 * <ul>
+	 *   <li>{@code VIDEO}——视频生成（Seedance）走独立 {@link DoubaoVideoClient}（原生异步任务协议），
+	 *   主 Client 未接线 videosPath，故不声明；</li>
+	 *   <li>{@code FINETUNE}——方舟微调为控制台/异步任务流程，无稳定公开 REST 端点，本类未适配
+	 *   （见类注释「微调」段），故不声明；</li>
+	 *   <li>{@code TTS}/{@code STT}——语音合成/识别走独立 {@link DoubaoTtsClient}/{@link DoubaoSttClient}，
+	 *   主 Client 未接线对应路径。</li>
+	 * </ul>
+	 *
+	 * <p>{@code MODERATION}：方舟 OpenAI 兼容面未见公开的 {@code /moderations} 端点，亦未找到官方文档
+	 * 明确说明支持或不支持，按保守原则暂予保留（未核实，保守保留），避免误伤后续可能开放的端点。</p>
+	 *
+	 * @return Doubao 主 Client 实际支持的能力集合
+	 */
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
+			Capability.IMAGE, Capability.MODERATION);
 	}
 
 	/**

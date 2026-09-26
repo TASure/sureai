@@ -25,9 +25,11 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.After;
 import org.junit.Before;
@@ -36,7 +38,9 @@ import org.junit.Test;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiAuthException;
 import com.sure.ai.exception.AiException;
@@ -52,6 +56,7 @@ import com.sure.ai.model.ImageResponse;
 import com.sure.ai.model.Model;
 import com.sure.ai.model.ModerationRequest;
 import com.sure.ai.model.ModerationResponse;
+import com.sure.ai.model.VideoRequest;
 
 /**
  * {@link AzureClient} 与 {@link AzureUtil} 集成测试：本地 HttpServer mock。
@@ -347,5 +352,33 @@ public class AzureClientTest {
 			java.lang.reflect.InvocationTargetException.class, c::newInstance);
 		assertTrue(ex.getCause() instanceof AssertionError);
 		assertEquals("gpt-4o", AzureModels.GPT_4O);
+	}
+
+	/**
+	 * capabilities() 精确声明：Azure 主 Client 支持 chat/stream/embed/image/moderation/finetune；
+	 * 不支持 VIDEO（走独立 {@link AzureVideoClient}），调用主 Client 视频方法应 guard 快速失败。
+	 */
+	@Test
+	public void testCapabilitiesDeclaration() throws Exception {
+		AzureClient client = newClient();
+		Set<Capability> caps = capabilitiesOf(client);
+		for (Capability c : new Capability[]{Capability.CHAT, Capability.CHAT_STREAM,
+			Capability.EMBED, Capability.IMAGE, Capability.MODERATION, Capability.FINETUNE}) {
+			assertTrue("应声明能力 " + c, caps.contains(c));
+		}
+		assertFalse("Azure 主 Client 不声明 VIDEO（见 AzureVideoClient）", caps.contains(Capability.VIDEO));
+		assertEquals(6, caps.size());
+		// VIDEO 未声明 → guard 在发请求前抛 AiException
+		assertThrows(AiException.class, () -> client.generate(VideoRequest.builder()
+			.model("sora-2").prompt("x").build()));
+		client.close();
+	}
+
+	/** 反射调用 protected capabilities()。 */
+	@SuppressWarnings("unchecked")
+	private static Set<Capability> capabilitiesOf(Object client) throws Exception {
+		Method m = AbstractAiClient.class.getDeclaredMethod("capabilities");
+		m.setAccessible(true);
+		return (Set<Capability>) m.invoke(client);
 	}
 }

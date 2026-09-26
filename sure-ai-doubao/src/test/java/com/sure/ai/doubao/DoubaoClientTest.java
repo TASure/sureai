@@ -25,9 +25,11 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.After;
@@ -37,12 +39,17 @@ import org.junit.Test;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiAuthException;
+import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
+import com.sure.ai.model.FineTuneRequest;
+import com.sure.ai.model.VideoRequest;
 
 /**
  * {@link DoubaoClient} 与 {@link DoubaoUtil} 测试：本地 HttpServer mock。
@@ -259,5 +266,36 @@ public class DoubaoClientTest {
 		assertTrue(e.getMessage().contains("IAMS"));
 		assertTrue(this.lastPath.get() == null);
 		client.close();
+	}
+
+	/**
+	 * capabilities() 精确声明：方舟主 Client 支持 chat/stream/embed/image(Seedream)/moderation(保守保留)；
+	 * 不支持 VIDEO（见 {@link DoubaoVideoClient}）与 FINETUNE（未适配），调用应 guard 快速失败。
+	 */
+	@Test
+	public void testCapabilitiesDeclaration() throws Exception {
+		DoubaoClient client = newClient();
+		Set<Capability> caps = capabilitiesOf(client);
+		for (Capability c : new Capability[]{Capability.CHAT, Capability.CHAT_STREAM,
+			Capability.EMBED, Capability.IMAGE, Capability.MODERATION}) {
+			assertTrue("应声明能力 " + c, caps.contains(c));
+		}
+		assertFalse("方舟主 Client 不声明 VIDEO（见 DoubaoVideoClient）", caps.contains(Capability.VIDEO));
+		assertFalse("方舟主 Client 不声明 FINETUNE（未适配）", caps.contains(Capability.FINETUNE));
+		assertEquals(5, caps.size());
+		// 未声明能力 → guard 在发请求前抛 AiException
+		assertThrows(AiException.class, () -> client.generate(VideoRequest.builder()
+			.model("doubao-seedance").prompt("x").build()));
+		assertThrows(AiException.class, () -> client.createFineTune(
+			FineTuneRequest.builder().model("doubao-pro").trainingFileId("f-1").build()));
+		client.close();
+	}
+
+	/** 反射调用 protected capabilities()。 */
+	@SuppressWarnings("unchecked")
+	private static Set<Capability> capabilitiesOf(Object client) throws Exception {
+		Method m = AbstractAiClient.class.getDeclaredMethod("capabilities");
+		m.setAccessible(true);
+		return (Set<Capability>) m.invoke(client);
 	}
 }

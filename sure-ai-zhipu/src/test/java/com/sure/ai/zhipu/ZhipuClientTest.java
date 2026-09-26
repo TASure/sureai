@@ -24,10 +24,12 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -41,7 +43,9 @@ import org.junit.Test;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.exception.AiAuthException;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.internal.json.Json;
@@ -49,12 +53,14 @@ import com.sure.ai.internal.json.JsonObject;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
+import com.sure.ai.model.FineTuneRequest;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
 import com.sure.ai.model.SttRequest;
 import com.sure.ai.model.SttResponse;
 import com.sure.ai.model.TtsRequest;
 import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.VideoRequest;
 
 /**
  * {@link ZhipuClient} 与 {@link ZhipuJwtGenerator} 测试：本地 HttpServer mock。
@@ -348,5 +354,37 @@ public class ZhipuClientTest {
 		for (String id : ids) {
 			assertFalse(id.isEmpty());
 		}
+	}
+
+	/**
+	 * capabilities() 精确声明：智谱主 Client OpenAI 兼容面支持 chat/stream/embed/image(CogView)/tts/stt；
+	 * 不支持 VIDEO（见 {@link ZhipuVideoClient}）与 FINETUNE（未适配），调用应 guard 快速失败。
+	 */
+	@Test
+	public void testCapabilitiesDeclaration() throws Exception {
+		ZhipuClient client = newClient();
+		Set<Capability> caps = capabilitiesOf(client);
+		for (Capability c : new Capability[]{Capability.CHAT, Capability.CHAT_STREAM,
+			Capability.EMBED, Capability.IMAGE, Capability.TTS, Capability.STT,
+			Capability.MODERATION}) {
+			assertTrue("应声明能力 " + c, caps.contains(c));
+		}
+		assertFalse("智谱主 Client 不声明 VIDEO（见 ZhipuVideoClient）", caps.contains(Capability.VIDEO));
+		assertFalse("智谱主 Client 不声明 FINETUNE（未适配）", caps.contains(Capability.FINETUNE));
+		assertEquals(7, caps.size());
+		// 未声明能力 → guard 在发请求前抛 AiException
+		assertThrows(AiException.class, () -> client.generate(VideoRequest.builder()
+			.model("cogvideox").prompt("x").build()));
+		assertThrows(AiException.class, () -> client.createFineTune(
+			FineTuneRequest.builder().model("glm-4").trainingFileId("f-1").build()));
+		client.close();
+	}
+
+	/** 反射调用 protected capabilities()。 */
+	@SuppressWarnings("unchecked")
+	private static Set<Capability> capabilitiesOf(Object client) throws Exception {
+		Method m = AbstractAiClient.class.getDeclaredMethod("capabilities");
+		m.setAccessible(true);
+		return (Set<Capability>) m.invoke(client);
 	}
 }

@@ -18,8 +18,10 @@ package com.sure.ai.azure;
 
 import java.net.http.HttpRequest;
 import java.util.Map;
+import java.util.Set;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.compat.OpenAiCompatClient;
 import com.sure.ai.model.FineTuneResponse;
 
@@ -108,6 +110,30 @@ public class AzureClient extends OpenAiCompatClient {
 	@Override
 	protected void applyAuth(HttpRequest.Builder requestBuilder, AiConfig cfg) {
 		requestBuilder.header("api-key", cfg.apiKey());
+	}
+
+	/**
+	 * Azure OpenAI（Azure AI Foundry）主 Client 经构造器显式接线的 OpenAI 兼容端点：
+	 * chat/completions、embeddings、images/generations（均走 {@code /openai/deployments/{deployment}/...}）、
+	 * /openai/moderations、/openai/fine_tuning/jobs 与 /openai/files（微调 + 训练文件上传）。
+	 *
+	 * <p>依据：<a href="https://learn.microsoft.com/en-us/azure/ai-foundry/openai/reference">Azure OpenAI REST API reference</a>。</p>
+	 *
+	 * <p>未声明：</p>
+	 * <ul>
+	 *   <li>{@code VIDEO}——Azure 视频生成走独立的
+	 *   {@code /openai/v1/video/generations} 异步协议（见 {@link AzureVideoClient}），
+	 *   主 Client 未覆写 videosPath，故不声明，调用主 Client 视频方法时 guard 快速失败；</li>
+	 *   <li>{@code TTS}/{@code STT}——Azure 语音走 Azure AI Speech 独立协议
+	 *   （见 {@link AzureTtsClient}/{@link AzureSttClient}），主 Client 未接线对应路径。</li>
+	 * </ul>
+	 *
+	 * @return Azure 主 Client 实际支持的能力集合
+	 */
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
+			Capability.IMAGE, Capability.MODERATION, Capability.FINETUNE);
 	}
 
 	/**

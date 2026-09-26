@@ -16,7 +16,10 @@
 
 package com.sure.ai.openai;
 
+import java.util.Set;
+
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.compat.OpenAiCompatClient;
 
 /**
@@ -49,5 +52,23 @@ public class OpenAiClient extends OpenAiCompatClient {
 	@Override
 	public String name() {
 		return "openai";
+	}
+
+	/**
+	 * OpenAI 为 OpenAI 兼容协议的参考平台，基类实现的全部端点在官方 API 上均存在：
+	 * chat/completions、embeddings（text-embedding-3 系列）、images/generations（gpt-image-1/DALL·E）、
+	 * audio/speech（tts-1）、audio/transcriptions（whisper-1）、moderations（text-moderation）、
+	 * fine_tuning/jobs 以及异步视频任务（POST /videos + GET /videos/{id} 轮询）。
+	 *
+	 * <p>逐项依据官方 API 参考：<a href="https://platform.openai.com/docs/api-reference">platform.openai.com/docs/api-reference</a>。
+	 * 视频走基类 {@code /videos} 异步任务协议（Sora），本主 Client 直接复用，故声明 VIDEO。</p>
+	 *
+	 * @return 全量兼容能力集合
+	 */
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
+			Capability.IMAGE, Capability.VIDEO, Capability.TTS, Capability.STT,
+			Capability.MODERATION, Capability.FINETUNE);
 	}
 }

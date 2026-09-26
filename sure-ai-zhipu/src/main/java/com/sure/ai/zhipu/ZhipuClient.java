@@ -18,8 +18,10 @@ package com.sure.ai.zhipu;
 
 import java.net.http.HttpRequest;
 import java.util.List;
+import java.util.Set;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.compat.OpenAiCompatClient;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.Model;
@@ -74,6 +76,31 @@ public class ZhipuClient extends OpenAiCompatClient {
 	@Override
 	public String name() {
 		return "zhipu";
+	}
+
+	/**
+	 * 智谱 AI 开放平台主 Client（{@code https://open.bigmodel.cn/api/paas/v4}）OpenAI 兼容面实际支持：
+	 * chat/completions、embeddings（embedding-3）、images/generations（CogView-3 / GLM-Image）、
+	 * audio/speech（TTS）与 audio/transcriptions（STT）——后两者由构造器显式接线 ttsPath/sttPath。
+	 *
+	 * <p>依据：智谱开放平台 OpenAI 兼容接口文档（<a href="https://open.bigmodel.cn/dev/api">open.bigmodel.cn/dev/api</a>）。</p>
+	 *
+	 * <p>未声明：</p>
+	 * <ul>
+	 *   <li>{@code VIDEO}——视频生成（CogView/清影视频）走独立 {@link ZhipuVideoClient}（原生异步任务协议），
+	 *   主 Client 未接线 videosPath，故不声明；</li>
+	 *   <li>{@code FINETUNE}——智谱微调为独立控制台/工单流程，无稳定公开 REST 端点，本类未适配（见类注释），故不声明。</li>
+	 * </ul>
+	 *
+	 * <p>{@code MODERATION}：智谱开放平台未见公开的 OpenAI 兼容 {@code /moderations} 端点，内容审核为独立服务，
+	 * 但未找到官方文档明确说明不支持，按保守原则暂予保留（未核实，保守保留）。</p>
+	 *
+	 * @return Zhipu 主 Client 实际支持的能力集合
+	 */
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
+			Capability.IMAGE, Capability.TTS, Capability.STT, Capability.MODERATION);
 	}
 
 	/**

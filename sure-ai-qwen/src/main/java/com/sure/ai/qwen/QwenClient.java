@@ -25,8 +25,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.EmbeddingClient;
 import com.sure.ai.client.compat.OpenAiCompatClient;
 import com.sure.ai.exception.AiException;
@@ -92,6 +94,34 @@ public class QwenClient extends OpenAiCompatClient implements EmbeddingClient {
 	@Override
 	public String name() {
 		return "qwen";
+	}
+
+	/**
+	 * 阿里云百炼通义千问（DashScope OpenAI 兼容模式）主 Client 实际支持：
+	 * chat/completions、embeddings（text-embedding-v3，兼容模式 {@code /compatible-mode/v1/embeddings}）。
+	 * TTS（CosyVoice）与 STT（Qwen-ASR）由本类以 DashScope 原生协议覆写 {@code synthesize}/{@code transcribe}，
+	 * 故主 Client 声明 {@code TTS}/{@code STT}。
+	 *
+	 * <p>依据：<a href="https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope">通过 OpenAI 接口调用千问模型</a>；
+	 * <a href="https://help.aliyun.com/zh/model-studio/embedding">向量化（百炼）</a>。</p>
+	 *
+	 * <p>未声明：</p>
+	 * <ul>
+	 *   <li>{@code IMAGE}——文生图（通义万相）走原生 DashScope 协议，由独立 {@link QwenImageClient} 提供，
+	 *   兼容模式无 {@code /images/generations}，故主 Client 不声明；</li>
+	 *   <li>{@code VIDEO}——视频生成走独立 {@link QwenVideoClient}（原生异步任务），主 Client 不声明；</li>
+	 *   <li>{@code FINETUNE}——DashScope 原生微调协议与 OpenAI fine_tuning 差异较大，本类未适配（见类注释），故不声明。</li>
+	 * </ul>
+	 *
+	 * <p>{@code MODERATION}：百炼兼容模式未见公开的 {@code /moderations} 端点，内容审核为独立原生服务，
+	 * 但未找到官方文档明确说明兼容模式不支持，按保守原则暂予保留（未核实，保守保留）。</p>
+	 *
+	 * @return Qwen 主 Client 实际支持的能力集合
+	 */
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
+			Capability.TTS, Capability.STT, Capability.MODERATION);
 	}
 
 	// ==================== 思考模式与 Grounding 联网（通义协议差异） ====================

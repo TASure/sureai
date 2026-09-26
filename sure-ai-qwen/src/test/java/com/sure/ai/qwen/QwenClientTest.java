@@ -25,10 +25,12 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.After;
 import org.junit.Before;
@@ -37,7 +39,9 @@ import org.junit.Test;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiAuthException;
@@ -47,10 +51,13 @@ import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.FineTuneRequest;
+import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.SttRequest;
 import com.sure.ai.model.SttResponse;
 import com.sure.ai.model.TtsRequest;
 import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.VideoRequest;
 
 /**
  * {@link QwenClient} 与 {@link QwenUtil} 集成测试：本地 HttpServer mock。
@@ -349,5 +356,40 @@ public class QwenClientTest {
 		assertTrue("应开启联网搜索", body.contains("\"enable_search\":true"));
 		assertFalse("通义不用 web_search 工具", body.contains("web_search"));
 		client.close();
+	}
+
+	/**
+	 * capabilities() 精确声明：百炼兼容模式主 Client 支持 chat/stream/embed 及原生覆写的 TTS(CosyVoice)/STT(Qwen-ASR)；
+	 * 不支持 IMAGE（见 {@link QwenImageClient}）、VIDEO（见 {@link QwenVideoClient}）、FINETUNE（未适配），
+	 * 调用应 guard 快速失败。
+	 */
+	@Test
+	public void testCapabilitiesDeclaration() throws Exception {
+		QwenClient client = newClient();
+		Set<Capability> caps = capabilitiesOf(client);
+		for (Capability c : new Capability[]{Capability.CHAT, Capability.CHAT_STREAM,
+			Capability.EMBED, Capability.TTS, Capability.STT, Capability.MODERATION}) {
+			assertTrue("应声明能力 " + c, caps.contains(c));
+		}
+		assertFalse("百炼主 Client 不声明 IMAGE（见 QwenImageClient）", caps.contains(Capability.IMAGE));
+		assertFalse("百炼主 Client 不声明 VIDEO（见 QwenVideoClient）", caps.contains(Capability.VIDEO));
+		assertFalse("百炼主 Client 不声明 FINETUNE（未适配）", caps.contains(Capability.FINETUNE));
+		assertEquals(6, caps.size());
+		// 未声明能力 → guard 在发请求前抛 AiException
+		assertThrows(AiException.class, () -> client.generate(ImageRequest.builder()
+			.model("wanx").prompt("x").build()));
+		assertThrows(AiException.class, () -> client.generate(VideoRequest.builder()
+			.model("wanx2.1").prompt("x").build()));
+		assertThrows(AiException.class, () -> client.createFineTune(
+			FineTuneRequest.builder().model("qwen-max").trainingFileId("f-1").build()));
+		client.close();
+	}
+
+	/** 反射调用 protected capabilities()。 */
+	@SuppressWarnings("unchecked")
+	private static Set<Capability> capabilitiesOf(Object client) throws Exception {
+		Method m = AbstractAiClient.class.getDeclaredMethod("capabilities");
+		m.setAccessible(true);
+		return (Set<Capability>) m.invoke(client);
 	}
 }
