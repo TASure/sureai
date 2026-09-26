@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.5.0] - Unreleased
+## [1.5.0] - 2026-09-26
 
 ### Added
 - **MCP Server 模块（sure-ai-mcp-server）**：新增模块把 sureai 多平台能力反向暴露为 MCP server，任何 MCP 客户端（Claude Desktop、Cursor、IDE）一个连接即可调用。核心只依赖 sure-ai-mcp + sure-ai-core，零新依赖、零平台模块硬依赖。
