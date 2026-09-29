@@ -69,6 +69,8 @@ jobs:
           else:
               print('server ossrh NOT found in settings.xml')
           print('settings.xml bytes:', len(s))
+          print('--- FULL settings.xml (secrets auto-masked) ---')
+          print(s)
           PYEOF
 
       - name: Validate release version (not SNAPSHOT)
