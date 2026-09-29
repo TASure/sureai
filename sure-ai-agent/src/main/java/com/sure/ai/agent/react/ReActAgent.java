@@ -21,7 +21,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.sure.ai.agent.AgentListener;
+import com.sure.ai.agent.approval.ApprovalDecision;
+import com.sure.ai.agent.approval.ApprovalGate;
+import com.sure.ai.agent.approval.ApprovalRequest;
+import com.sure.ai.agent.approval.ApprovalStatus;
+import com.sure.ai.agent.checkpoint.AgentCheckpoint;
+import com.sure.ai.agent.checkpoint.CheckpointStore;
 import com.sure.ai.agent.memory.ConversationMemory;
+import com.sure.ai.agent.memory.longterm.LongTermMemory;
+import com.sure.ai.agent.memory.longterm.MemoryEntry;
 import com.sure.ai.agent.tool.ToolArgumentValidator;
 import com.sure.ai.agent.tool.ToolRegistry;
 import com.sure.ai.client.AiClient;
@@ -58,6 +66,20 @@ import com.sure.tool.lang.Assert;
  * （不覆盖 system prompt）；一轮结束后把当轮用户消息与助手最终答案追加进记忆。
  * 不注入（null）时行为与历史版本完全一致。</p>
  *
+ * <p><b>检查点持久化（可选）：</b>通过新增构造器注入 {@link CheckpointStore} 与
+ * {@code sessionId} 后，run 会在开始、每轮迭代后与结束时自动落盘检查点
+ * （见 {@link com.sure.ai.agent.checkpoint.AgentCheckpoint}）；不注入时行为不变。
+ * 异常中断时不强制落盘最终检查点。</p>
+ *
+ * <p><b>HITL 审批（可选）：</b>注入 {@link ApprovalGate} 后，每次工具执行前先经策略判断；
+ * 需要审批时阻塞等待决定——批准则继续执行，拒绝/超时则不执行工具、把提示文本
+ * 回灌模型自我修正。不注入（null）时行为与历史版本完全一致。</p>
+ *
+ * <p><b>长期记忆（可选）：</b>注入 {@link LongTermMemory} 后，run 前按当前用户问题
+ * 召回 Top-K 相关记忆并以 system 消息注入 baseRequest 模板之后；run 结束后把本轮
+ * 用户消息与最终答案提取沉淀。与会话内 {@link ConversationMemory} 互不干扰。
+ * 不注入（null）时行为不变。</p>
+ *
  * @author sureai
  * @since 0.3.0
  */
@@ -69,6 +91,9 @@ public final class ReActAgent {
 	/** 默认总超时。 */
 	public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(120);
 
+	/** 长期记忆默认召回条数。 */
+	public static final int DEFAULT_RECALL_K = 3;
+
 	private final AiClient client;
 	private final ChatRequest baseRequest;
 	private final ToolRegistry registry;
@@ -77,6 +102,10 @@ public final class ReActAgent {
 	private final Duration timeout;
 	private final ConversationMemory memory;
 	private final ToolArgumentValidator validator = new ToolArgumentValidator();
+	private final CheckpointStore checkpointStore;
+	private final String checkpointSessionId;
+	private final ApprovalGate approvalGate;
+	private final LongTermMemory longTermMemory;
 
 	/**
 	 * 用默认参数构造。
@@ -119,6 +148,54 @@ public final class ReActAgent {
 	public ReActAgent(AiClient client, ChatRequest baseRequest, ToolRegistry registry,
 			AgentListener listener, int maxIterations, Duration timeout,
 			ConversationMemory memory) {
+		this(client, baseRequest, registry, listener, maxIterations, timeout, memory, null, null);
+	}
+
+	/**
+	 * 全参构造（带可选会话记忆与可选检查点持久化）。
+	 *
+	 * <p>当 {@code checkpointStore} 与 {@code sessionId} 均非 null 时，run 会在开始、
+	 * 每轮迭代后与结束时自动落盘检查点；任一为 null 则不启用，行为与历史版本一致。</p>
+	 *
+	 * @param client            对话客户端
+	 * @param baseRequest       基础请求模板
+	 * @param registry          工具注册中心
+	 * @param listener          事件回调（null 表示空监听）
+	 * @param maxIterations     最大迭代轮数（≥1）
+	 * @param timeout           总超时（正时长）
+	 * @param memory            会话记忆（null 表示不启用多轮记忆）
+	 * @param checkpointStore   检查点存储（null 表示不持久化）
+	 * @param sessionId         检查点会话标识（null 表示不持久化）
+	 */
+	public ReActAgent(AiClient client, ChatRequest baseRequest, ToolRegistry registry,
+			AgentListener listener, int maxIterations, Duration timeout,
+			ConversationMemory memory, CheckpointStore checkpointStore, String sessionId) {
+		this(client, baseRequest, registry, listener, maxIterations, timeout, memory,
+			checkpointStore, sessionId, null, null);
+	}
+
+	/**
+	 * 全参构造（带可选会话记忆、检查点持久化、HITL 审批与长期记忆）。
+	 *
+	 * <p>本构造器为 1.7.0 新增；其余既有构造器均委托至此。所有“可选”能力传 null
+	 * 即关闭，关闭后行为与历史版本逐字节一致。</p>
+	 *
+	 * @param client            对话客户端
+	 * @param baseRequest       基础请求模板
+	 * @param registry          工具注册中心
+	 * @param listener          事件回调（null 表示空监听）
+	 * @param maxIterations     最大迭代轮数（≥1）
+	 * @param timeout           总超时（正时长）
+	 * @param memory            会话记忆（null 表示不启用多轮记忆）
+	 * @param checkpointStore   检查点存储（null 表示不持久化）
+	 * @param sessionId         会话标识（检查点落盘 + 长期记忆提取的 sessionId）
+	 * @param approvalGate      HITL 审批门（null 表示不审批）
+	 * @param longTermMemory    长期记忆（null 表示不跨会话记忆）
+	 */
+	public ReActAgent(AiClient client, ChatRequest baseRequest, ToolRegistry registry,
+			AgentListener listener, int maxIterations, Duration timeout,
+			ConversationMemory memory, CheckpointStore checkpointStore, String sessionId,
+			ApprovalGate approvalGate, LongTermMemory longTermMemory) {
 		Assert.notNull(client, "client must not be null");
 		Assert.notNull(baseRequest, "baseRequest must not be null");
 		Assert.notNull(registry, "registry must not be null");
@@ -133,6 +210,58 @@ public final class ReActAgent {
 		this.maxIterations = maxIterations;
 		this.timeout = timeout;
 		this.memory = memory;
+		this.checkpointStore = checkpointStore;
+		this.checkpointSessionId = sessionId;
+		this.approvalGate = approvalGate;
+		this.longTermMemory = longTermMemory;
+	}
+
+	/**
+	 * baseRequest 模板消息快照（供检查点创建/恢复使用）。
+	 *
+	 * @return 不可修改的模板消息列表
+	 */
+	public List<ChatMessage> baseRequestMessages() {
+		return List.copyOf(this.baseRequest.messages());
+	}
+
+	/**
+	 * 当前注入的会话记忆（可能为 null）。
+	 *
+	 * @return 记忆，或 null
+	 */
+	public ConversationMemory conversationMemory() {
+		return this.memory;
+	}
+
+	/**
+	 * 以新的会话记忆派生一个配置相同的新编排器（供检查点恢复使用）。
+	 *
+	 * @param newMemory 新记忆
+	 * @return 新的 ReActAgent（其余配置与本实例一致）
+	 */
+	public ReActAgent withMemory(ConversationMemory newMemory) {
+		return new ReActAgent(this.client, this.baseRequest, this.registry, this.listener,
+			this.maxIterations, this.timeout, newMemory, this.checkpointStore,
+			this.checkpointSessionId, this.approvalGate, this.longTermMemory);
+	}
+
+	/**
+	 * 当前注入的 HITL 审批门（可能为 null）。
+	 *
+	 * @return 审批门，或 null
+	 */
+	public ApprovalGate approvalGate() {
+		return this.approvalGate;
+	}
+
+	/**
+	 * 当前注入的长期记忆（可能为 null）。
+	 *
+	 * @return 长期记忆，或 null
+	 */
+	public LongTermMemory longTermMemory() {
+		return this.longTermMemory;
 	}
 
 	/**
@@ -152,6 +281,11 @@ public final class ReActAgent {
 	 */
 	public String run(String userMessage) {
 		List<ChatMessage> history = new ArrayList<>(this.baseRequest.messages());
+		// 长期记忆召回：把相关历史事实作为 system 消息注入模板之后
+		List<MemoryEntry> recalled = recallLongTerm(userMessage);
+		if (!recalled.isEmpty()) {
+			history.add(buildRecallMessage(recalled));
+		}
 		if (this.memory != null) {
 			history.addAll(this.memory.history());
 		}
@@ -160,6 +294,8 @@ public final class ReActAgent {
 			history.add(ChatMessage.user(userMessage));
 		}
 		long deadline = System.nanoTime() + this.timeout.toNanos();
+		long checkpointCreated = System.currentTimeMillis();
+		saveCheckpoint(history, 0, null, checkpointCreated);
 
 		String finalAnswer;
 		// 无工具：退化为普通单次 chat
@@ -167,8 +303,9 @@ public final class ReActAgent {
 			ChatRequest req = buildRequest(history);
 			ChatResponse resp = this.client.chat(req);
 			finalAnswer = firstText(resp);
+			saveCheckpoint(history, 0, finalAnswer, checkpointCreated);
 		} else {
-			finalAnswer = runLoop(history, deadline);
+			finalAnswer = runLoop(history, deadline, checkpointCreated);
 		}
 
 		this.listener.onFinish(finalAnswer);
@@ -179,13 +316,46 @@ public final class ReActAgent {
 			}
 			this.memory.add(ChatMessage.assistant(finalAnswer));
 		}
+		// 长期记忆沉淀：把本轮用户问题与最终答案交给提取器
+		if (this.longTermMemory != null) {
+			List<ChatMessage> turn = new ArrayList<>();
+			if (hasUserMessage) {
+				turn.add(ChatMessage.user(userMessage));
+			}
+			turn.add(ChatMessage.assistant(finalAnswer));
+			this.longTermMemory.remember(turn, this.checkpointSessionId);
+		}
 		return finalAnswer;
 	}
 
 	/**
-	 * ReAct 工具调用主循环：Thought → Action → Observation 直到模型给出文本答案。
+	 * 长期记忆召回（未启用时返回空列表）。
 	 */
-	private String runLoop(List<ChatMessage> history, long deadline) {
+	private List<MemoryEntry> recallLongTerm(String userMessage) {
+		if (this.longTermMemory == null || userMessage == null || userMessage.isBlank()) {
+			return List.of();
+		}
+		return this.longTermMemory.recall(userMessage, DEFAULT_RECALL_K);
+	}
+
+	/**
+	 * 把召回的记忆条目拼成一条 system 提示消息。
+	 */
+	private static ChatMessage buildRecallMessage(List<MemoryEntry> recalled) {
+		StringBuilder sb = new StringBuilder("相关长期记忆：");
+		for (MemoryEntry e : recalled) {
+			sb.append("\n- ").append(e.content());
+		}
+		return ChatMessage.system(sb.toString());
+	}
+
+	/**
+	 * ReAct 工具调用主循环：Thought → Action → Observation 直到模型给出文本答案。
+	 *
+	 * <p>启用检查点时，每轮工具执行后保存中间快照；模型给出文本答案时保存最终快照。
+	 * 达到最大迭代抛异常前不保存最终快照（文档约定）。</p>
+	 */
+	private String runLoop(List<ChatMessage> history, long deadline, long checkpointCreated) {
 		for (int iter = 1; iter <= this.maxIterations; iter++) {
 			checkTimeout(deadline);
 			ChatResponse response = this.client.chat(buildRequest(history));
@@ -193,7 +363,9 @@ public final class ReActAgent {
 			List<ToolCall> toolCalls = message == null ? null : message.toolCalls();
 
 			if (toolCalls == null || toolCalls.isEmpty()) {
-				return message == null ? "" : message.content();
+				String answer = message == null ? "" : message.content();
+				saveCheckpoint(history, iter - 1, answer, checkpointCreated);
+				return answer;
 			}
 
 			// 助手工具调用消息 + 每个 tool 结果消息追加进历史
@@ -202,9 +374,23 @@ public final class ReActAgent {
 				String result = executeTool(call);
 				history.add(ChatMessage.tool(call.id(), result));
 			}
+			saveCheckpoint(history, iter, null, checkpointCreated);
 		}
 
 		throw new AiException("ReAct agent exceeded max iterations: " + this.maxIterations);
+	}
+
+	/**
+	 * 启用检查点时把当前状态落盘；未启用时静默跳过。
+	 */
+	private void saveCheckpoint(List<ChatMessage> history, int iteration,
+			String finalAnswer, long createdAt) {
+		if (this.checkpointStore == null || this.checkpointSessionId == null) {
+			return;
+		}
+		AgentCheckpoint checkpoint = new AgentCheckpoint(this.checkpointSessionId, history,
+			iteration, finalAnswer, createdAt, Json.object());
+		this.checkpointStore.save(checkpoint);
 	}
 
 	/**
@@ -237,6 +423,27 @@ public final class ReActAgent {
 			String err = "tool not found: " + call.name();
 			this.listener.onToolResult(call, err);
 			return err;
+		}
+
+		// HITL 审批（可选）：策略命中时阻塞等待人工决定；拒绝/超时不执行工具
+		if (this.approvalGate != null
+				&& this.approvalGate.requiresApproval(call.name(), args)) {
+			ApprovalRequest request = ApprovalRequest.of(this.checkpointSessionId,
+				call.name(), args, "调用工具 " + call.name(), false);
+			ApprovalDecision decision = this.approvalGate.request(request);
+			if (decision.status() == ApprovalStatus.REJECTED) {
+				String text = "用户拒绝执行工具 " + call.name()
+					+ (decision.reason() != null && !decision.reason().isBlank()
+						? "：" + decision.reason() : "");
+				this.listener.onToolResult(call, text);
+				return text;
+			}
+			if (decision.status() == ApprovalStatus.TIMEOUT) {
+				String text = "审批超时，跳过工具 " + call.name();
+				this.listener.onToolResult(call, text);
+				return text;
+			}
+			// APPROVED：继续执行
 		}
 
 		// 执行

@@ -149,10 +149,11 @@
     <!-- 编排器持有外部共享 ToolRegistry 引用（EI_EXPOSE_REP2）：
          ReActAgent / PlanExecuteAgent 的 registry 本就是调用方传入的有状态共享组件，
          语义即按引用共享（调用方在编排期仍可动态注册/注销工具，编排器每轮实时读取
-         getToolSpecs/getHandler），与 RagPipeline.Builder 暂存共享组件同类惯例。 -->
+         getToolSpecs/getHandler），与 RagPipeline.Builder 暂存共享组件同类惯例。
+         conversationMemory() 同样返回调用方注入的共享记忆组件，按引用暴露是 API 本意。 -->
     <Match>
         <Class name="com.sure.ai.agent.react.ReActAgent"/>
-        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
     </Match>
     <Match>
         <Class name="com.sure.ai.agent.plan.PlanExecuteAgent"/>
@@ -266,6 +267,41 @@
     <Match>
         <Class name="com.sure.ai.proxy.SureAiProxy"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 检查点/事件记录暴露自研可变 JsonObject（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         AgentCheckpoint.metadata 与 ToolCalledEvent.arguments 持有自研零依赖 JsonObject，
+         与 McpRequest.params/McpServerTool.inputSchema 同类——JsonObject 设计上即允许调用方
+         读写扩展字段，按引用暴露是零依赖 JSON 模型惯例；Builder 暂存引用为一次性装配器惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.checkpoint.AgentCheckpoint"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="~com.sure.ai.agent.checkpoint.AgentCheckpoint\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.sure.ai.agent.event.ToolCalledEvent"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 审批请求记录暴露自研可变 JsonObject（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         ApprovalRequest.arguments 持有模型解析后的工具参数 JsonObject，
+         与 AgentCheckpoint.metadata / ToolCalledEvent.arguments 同类——JsonObject 设计上即
+         按引用读写，策略与处理器只读读取参数树，是零依赖 JSON 模型惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.approval.ApprovalRequest"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 长期记忆门面暴露底层存储 SPI 引用（EI_EXPOSE_REP）：
+         LongTermMemory.store() 返回调用方注入的共享 MemoryStore（内置内存实现或外部
+         向量库适配），store/extractor/embedder/summarizer 本就是按引用共享的可插拔组件，
+         与 AiConfig.CacheStore / ReActAgent.registry 同类语义；调用方负责存储生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.memory.longterm.LongTermMemory"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
     </Match>
 
 </FindBugsFilter>
