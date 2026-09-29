@@ -304,4 +304,15 @@
         <Bug pattern="EI_EXPOSE_REP"/>
     </Match>
 
+    <!-- RAG 高级检索策略 Builder 暂存共享有状态组件（EI_EXPOSE_REP2）：
+         HydeRetriever/MultiQueryRetriever/CorrectiveRetriever/ParentChildRetriever/
+         MultimodalIngestor/MultimodalRetriever 的 Builder 均为一次性装配器，其 store/
+         embeddingProvider/ingestor/parentIndex 本就是调用方提供的共享有状态组件
+         （VectorStore/EmbeddingProvider 等为服务式 SPI），语义即按引用共享，
+         与 VectorRetriever.Builder / RagPipeline.Builder 同类惯例。 -->
+    <Match>
+        <Class name="~com\.sure\.ai\.rag\.strategy\.(HydeRetriever|MultiQueryRetriever|CorrectiveRetriever|ParentChildRetriever|MultimodalIngestor|MultimodalRetriever)\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>
