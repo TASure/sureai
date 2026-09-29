@@ -67,6 +67,21 @@ jobs:
           esac
           echo "Releasing version: $VERSION"
 
+      - name: Diagnose settings.xml (read-only)
+        # 排查 nexus-staging "Cannot decipher credentials"：检查 setup-java 写入的 server 密码形态
+        run: |
+          python3 - <<'PYEOF'
+          import re
+          s = open('/home/runner/.m2/settings.xml', encoding='utf-8').read()
+          m = re.search(r'<server>\s*<id>ossrh</id>.*?<username>(.*?)</username>\s*<password>(.*?)</password>', s, re.S)
+          if m:
+              u, p = m.group(1), m.group(2)
+              print('server ossrh: username_len=%d password_len=%d password_starts_with_brace=%s' % (len(u), len(p), p.startswith('{')))
+          else:
+              print('server ossrh NOT found in settings.xml')
+          print('settings.xml bytes:', len(s))
+          PYEOF
+
       - name: Build and deploy to OSSRH
         env:
           MAVEN_OPTS: -Xmx1024m
