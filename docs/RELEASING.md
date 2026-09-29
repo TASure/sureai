@@ -101,9 +101,9 @@ git push origin main
 - **触发条件**：
   - push tag：`v*`（即 `git tag v1.4.0 && git push origin v1.4.0`）；
   - 手动触发：Actions 页面 `workflow_dispatch`。
-- **执行命令**：`mvn -B -Prelease clean deploy -Dgpg.keyname= -Dgpg.passphrase=${{ secrets.GPG_PASSPHRASE }}`
-  （`-Dgpg.keyname=` 留空表示使用 runner 上导入的默认私钥。）
-- **需要配置的 Repository Secrets**（GitHub Repository → Settings → Secrets and variables → Actions）：
+- **执行命令**：`mvn -B -Prelease clean deploy -Dgpg.keyname="$KEYNAME" -Dgpg.passphrase="${{ secrets.GPG_PASSPHRASE }}"`
+  （`KEYNAME` 默认取项目 GPG 密钥 `D4CB857FBF6D720F38F26062350F235EAF989176`，可用 `GPG_KEY_ID` secret 覆盖。注意：`-Dgpg.keyname=` 传空会导致 gpg 报 `Invalid user ID` 签名失败，勿留空。）
+- **需要配置的 Repository Secrets**（GitHub Repository → Settings → Secrets and variables → Actions；未配置时 workflow 会在 `Validate release secrets` 步骤显式报错）：
 
   | Secret | 说明 |
   | --- | --- |
@@ -111,6 +111,7 @@ git push origin main
   | `OSSRH_PASSWORD` | Sonatype 账号密码 / token。 |
   | `GPG_PRIVATE_KEY` | GPG 私钥，`gpg --armor --export-secret-keys <KEYID>` 输出全文，含 `-----BEGIN PGP PRIVATE KEY BLOCK-----` 头尾。 |
   | `GPG_PASSPHRASE` | GPG 私钥口令。 |
+  | `GPG_KEY_ID`（可选） | 用于签名的密钥长 ID（默认项目密钥，无需配置；更换密钥时才需要）。 |
 
 - runner 通过 `actions/setup-java@v5` 的 `server-id: ossrh` 直接把用户名/密码写入 `~/.m2/settings.xml` 的 `<server id="ossrh">`，与父 POM `distributionManagement` / nexus-staging 插件配置的 serverId 对齐；同时导入 GPG 私钥。
 - 与手动发布一样，CI 上传到 OSSRH 后 `autoReleaseAfterClose=false`，仍需登录 Sonatype 控制台手动 **Close + Release**（见上文第 5 步）。
@@ -121,6 +122,7 @@ git push origin main
 - **触发条件**：
   - 手动触发：Actions 页面 `workflow_dispatch`；
   - 定时任务：每月 1 号 UTC 00:00（cron `0 0 1 * *`）。
+- **注意**：JMH 运行前先 `mvn install -pl sure-ai-benchmark -am` 把父 POM 与全部上游安装到本地仓库（不能只 `-pl sure-ai-core`，否则解析 `sure-ai-benchmark` 时会在 Central 找不到尚未发布的父 POM / 新版本模块而失败）。
 - **不进默认 PR/push 门禁**（耗时长），仅按需运行。
 - **执行内容**：先 `mvn -B install -DskipTests -pl sure-ai-core`，再 `mvn -B -pl sure-ai-benchmark exec:java@jmh-main`，以最小预热/迭代参数（`-wi 1 -i 1 -bm avgt`）跑 JMH，结果输出到 `sure-ai-benchmark/target/benchmark-result.json`，通过 `actions/upload-artifact@v4` 归档为名为 `benchmark-result` 的 artifact，便于跨版本对比趋势。
 

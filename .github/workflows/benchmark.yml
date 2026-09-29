@@ -27,8 +27,9 @@ jobs:
           java-version: 21
           cache: maven
 
-      - name: Install core (skip tests)
-        run: mvn -B install -DskipTests -pl sure-ai-core
+      - name: Install project (parent pom + upstream modules)
+        # -am 一并安装父 POM 与全部上游依赖，避免 sure-ai-benchmark 解析依赖时从 Central 找未发布的 SNAPSHOT/新版本
+        run: mvn -B install -DskipTests -pl sure-ai-benchmark -am
 
       - name: Run JMH benchmark
         # -wi 1 -i 1：CI 内取最小预热/迭代，仅作趋势基线；结果写 JSON 便于后续对比

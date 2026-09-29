@@ -44,8 +44,24 @@ jobs:
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
+      - name: Validate release secrets
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$OSSRH_USERNAME" ] || [ -z "$OSSRH_PASSWORD" ] || [ -z "$GPG_PRIVATE_KEY" ] || [ -z "$GPG_PASSPHRASE" ]; then
+            echo "::error::Release secrets not configured. Set OSSRH_USERNAME / OSSRH_PASSWORD / GPG_PRIVATE_KEY / GPG_PASSPHRASE in repo Settings → Secrets and variables → Actions (see docs/RELEASING.md)."
+            exit 1
+          fi
+
       - name: Build and deploy to OSSRH
         env:
           MAVEN_OPTS: -Xmx1024m
-        # -Dgpg.keyname= 留空：使用导入的默认私钥；-Dgpg.passphrase 透传口令
-        run: mvn -B -Prelease clean deploy -Dgpg.keyname= -Dgpg.passphrase=${{ secrets.GPG_PASSPHRASE }}
+          # keyname 默认用项目 GPG 密钥；如需其他密钥可用 GPG_KEY_ID secret 覆盖
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        # -Dgpg.passphrase 经 env 透传；keyname 为空会导致 gpg "Invalid user ID" 签名失败，故显式给默认值
+        run: |
+          KEYNAME="${GPG_KEY_ID:-D4CB857FBF6D720F38F26062350F235EAF989176}"
+          mvn -B -Prelease clean deploy -Dgpg.keyname="$KEYNAME" -Dgpg.passphrase="${{ secrets.GPG_PASSPHRASE }}"
