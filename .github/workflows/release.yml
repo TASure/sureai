@@ -56,6 +56,17 @@ jobs:
             exit 1
           fi
 
+      - name: Validate release version (not SNAPSHOT)
+        # 发布流只跑在 release 版本上；SNAPSHOT 版本走 nexus-staging 会被 snapshots 仓库 400 拒收
+        run: |
+          VERSION=$(grep -m1 '<version>' pom.xml | sed 's/.*<version>\(.*\)<\/version>.*/\1/')
+          case "$VERSION" in
+            *-SNAPSHOT)
+              echo "::error::Current version is $VERSION (SNAPSHOT). Release workflow must run on a release tag, e.g. git tag v1.7.0 && git push origin v1.7.0"
+              exit 1 ;;
+          esac
+          echo "Releasing version: $VERSION"
+
       - name: Build and deploy to OSSRH
         env:
           MAVEN_OPTS: -Xmx1024m
