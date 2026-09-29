@@ -315,4 +315,18 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- GraphRAG 管线暴露/暂存共享可变知识图谱（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         GraphRagIndexer.graph() 返回内部构建的 KnowledgeGraph，供调用方与
+         GraphRagRetriever 共享同一份图；Builder.graph(KnowledgeGraph) 为一次性装配器，
+         复用调用方既有图谱是有意设计（图谱本就是有状态服务式组件），与
+         RagPipeline.Builder / strategy 各 Retriever.Builder 同类按引用共享惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.rag.graph.GraphRagIndexer"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="~com.sure.ai.rag.graph.GraphRagIndexer\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>
