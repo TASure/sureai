@@ -29,7 +29,7 @@
 - **Image Generation**: unified `ImageClient` abstraction supporting DALL·E / Wanx / CogView / ERNIE-ViLG / Gemini Imagen; async platforms handle polling internally, exposing a synchronous API
 - **Video Generation**: unified `VideoClient` abstraction supporting Sora / Wan / CogVideoX / Seedance / Azure Sora 2; all platforms use async task polling internally, exposing a synchronous API
 - **Speech TTS/STT**: unified `AudioClient` abstraction (TTS synthesis + STT transcription) supporting OpenAI / CosyVoice / GLM-TTS / Doubao / Baidu / Azure Speech; binary audio / URL / Base64 response formats
-- **RAG**: end-to-end retrieval-augmented generation pipeline (`sure-ai-rag`) — document loaders (local file / URL), recursive / Markdown / fixed-size splitters, vector stores (in-memory + Milvus/Chroma external adapters), vector + BM25 keyword hybrid retrieval, prompt templates + query rewriting. See [docs/rag.md](docs/rag.md), [docs/vector-stores.md](docs/vector-stores.md), [docs/prompt-template.md](docs/prompt-template.md)
+- **RAG**: end-to-end retrieval-augmented generation pipeline (`sure-ai-rag`) — document loaders (local file / URL), recursive / Markdown / fixed-size / semantic / parent-child splitters, vector stores (in-memory + 8 external adapters: Milvus/Chroma/Qdrant/Pinecone/Weaviate/Elasticsearch/OpenSearch/Redis), vector + BM25 keyword hybrid retrieval, prompt templates + query rewriting. **Advanced retrieval (v1.8.0)**: HyDE / Multi-Query (RRF) / CRAG corrective / parent-child small-to-big / semantic chunking / multimodal RAG; **GraphRAG** (entity-relation extraction → community detection → per-community summaries); **RAG evaluation** (faithfulness / context_precision / context_recall / answer_relevancy + threshold assertions + trace replay regression); **portable metadata filter** (FilterExpression abstraction + 6 dialect translators). See [docs/rag.md](docs/rag.md), [docs/vector-stores.md](docs/vector-stores.md), [docs/prompt-template.md](docs/prompt-template.md)
 - **Agent orchestration (ReAct + Plan-and-Execute)**: `sure-ai-agent` — tool registry + Function Calling argument validation + ReAct orchestrator + PlanExecuteAgent (plan → step-by-step execution → synthesis, 3-level plan parsing fallback); multi-agent orchestration (TaskSplitter/AgentOrchestrator/ResultAggregator parallel execution + exception isolation); built-in tools (HttpTool/DateTimeTool/CalculatorTool whitelist arithmetic); conversation memory (ConversationMemory ring buffer, optional injection). Drivable by any `AiClient`, with exception / max-iteration / timeout guards. See [docs/agent.md](docs/agent.md)
 - **Production-grade agents (v1.7.0)**: four optional production capabilities layered on ReActAgent — checkpoint persistence (`CheckpointStore`/`AgentCheckpointer` replay-based recovery, auto-save at run start / each iteration / end); streaming events (8 `AgentEvent` types + `StreamingAgentListener` bridge + SSE writer); HITL approval (`ApprovalPolicy` with 4 built-in strategies + `ApprovalHandler` with 4 built-in handlers, rejection/timeout fed back to the model); long-term memory (`LongTermMemory` recalls Top-K into system before run and auto-extracts after, vector/text dual-path fallback). Pass `null` to disable any of them; behavior matches historical versions when off. See [docs/agent-advanced.md](docs/agent-advanced.md)
 - **MCP Client**: `sure-ai-mcp` — Model Context Protocol JSON-RPC 2.0 client with stdio (ProcessBuilder subprocess) / Streamable HTTP (JDK HttpClient + SSE aggregation) transports, initialize handshake + tools/resources/prompts capability APIs; **McpTool adapter** bulk-registers MCP server tools into `ToolRegistry`, composable with ReActAgent. See [docs/mcp.md](docs/mcp.md)
@@ -395,10 +395,14 @@ pipeline.ingest("sureai-intro", "sureai is a zero-dependency Java LLM toolkit ..
 ChatResponse answer = pipeline.ask("What capabilities does sureai support?");
 ```
 
-An in-memory vector store (cosine similarity) is included; implement the `VectorStore`
-interface to plug in Milvus / FAISS / pgvector. Built-in document loaders (local file /
-URL), BM25 keyword retrieval and weighted vector+keyword hybrid retrieval, plus Markdown
-and fixed-size splitters. See [docs/rag.md](docs/rag.md).
+An in-memory vector store (cosine similarity) is included out of the box, along with 8 external
+adapters: Milvus / Chroma / Qdrant / Pinecone / Weaviate / Elasticsearch / OpenSearch / Redis
+(9 implementations total); implement the `VectorStore` interface to plug in FAISS / pgvector.
+Built-in document loaders (local file / URL), BM25 keyword retrieval and weighted
+vector+keyword hybrid retrieval, Markdown / fixed-size / semantic / parent-child splitters,
+plus advanced capabilities: HyDE / Multi-Query / CRAG / GraphRAG / RAG evaluation and a
+portable metadata filter abstraction. See [docs/rag.md](docs/rag.md),
+[docs/vector-stores.md](docs/vector-stores.md).
 
 ## Environment Variables
 

@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - Unreleased
+
+### Added
+- **高级检索策略（sure-ai-rag `com.sure.ai.rag.strategy`）**：在基础向量/BM25 检索之上提供一组可组合的 `Retriever` 增强器，全部实现 `Retriever` 接口、可互相包装，依赖 LLM 的策略在异常时降级而非抛错。
+  - `HydeRetriever`（HyDE，假设文档嵌入）：LLM 先对查询生成陈述式「假设答案」，再用假设文档 embedding 检索；默认提示词 `请直接回答以下问题，无需解释…{query}`、maxTokens 256；LLM 异常/空文本时回退原 query 直接向量化。
+  - `MultiQueryRetriever`：`QueryRewriter`（内置 `ModelQueryRewriter`）把 query 拆为 N 个子查询（默认 3），分别检索后用 RRF 融合去重（`score=Σ1/(k+rank)`，k 默认 60）；改写器异常退化为单路原 query。
+  - `CorrectiveRetriever`（CRAG / Self-RAG 风格）：LLM 逐篇相关性自检（容错解析「相关/不相关」），有相关则过滤保留，全部不相关时——注入 `WebSearchProvider` 走网络搜索兜底，未注入则放宽召回（候选量 ×3，常量 `DEGRADED_RECALL_MULTIPLIER=3`）重检并在 metadata 打 `crag_degraded=true`；评估异常保守保留候选、不误删。
+  - `ParentChildRetriever` + `splitter/ParentChildSplitter`：子块向量召回、按 `parentId` 聚合返回父块全文；父块 id 形如 `sourceId#p0`、子块 `sourceId#p0#c0`，子块 metadata 带 `parentId`；父块间按最高子块相似度排序。
+  - `splitter/SemanticTextSplitter`：按相邻句 embedding 余弦相似度断点切分，默认自适应阈值=均值−标准差（可显式 `threshold(double)` 固定）；embedding 异常降级为 `FixedSizeTextSplitter(1000,100)`。
+  - 多模态：`MultimodalDocument`（`id/parts/metadata`，聚合 `TextPart` 文本、`images()`）、`MultimodalIngestor`（文本向量化入库；注入 `ImageEmbedder` 时图片逐张向量化，否则仅登记 `mm_image_count`）、`MultimodalRetriever`（`retrieve()` 返回纯文本 Document，`retrieveMultimodal()` 返回完整 parts；按 parentDocId 去重）、`ImageEmbedder`（`@FunctionalInterface`，图片向量化可插拔，未注入仅元数据登记）。
+- **GraphRAG（sure-ai-rag `com.sure.ai.rag.graph`）**：基于知识图谱的全局主题摘要检索，与向量检索互补。
+  - `KnowledgeGraph`（实体 `GraphEntity` / 关系 `GraphRelation`）+ `normalizeName`（去空白、转小写）实体名归一去重，ConcurrentHashMap/CopyOnWriteArrayList 线程安全。
+  - `LlmEntityRelationExtractor`：三元组行格式 `主体 | 关系 | 客体`，按行容错解析、脏行跳过；LLM 异常不写入不抛出。
+  - `LabelPropagationCommunityDetector`（标签传播社区发现；Louvain 未实现）。
+  - `LlmCommunitySummarizer`（聚合社区实体/关系渲染提示词生成主题摘要，异常回退机械拼接）、`GraphRagIndexer`（抽取→社区发现→逐社区摘要管线）、`GraphRagRetriever`（按 query 字面命中实体定位社区，按命中数降序返回社区摘要文档，确定性零额外 LLM 调用）。
+- **RAG 评估（sure-ai-rag `com.sure.ai.rag.evaluation`）**：离线评估与跨版本回归。
+  - `RagTrace` record（`traceId/question/answer/contexts/referenceAnswer/metadata`，Builder 自动生成 traceId）+ `TraceStore`/`InMemoryTraceStore`（`save/all/findById/size`，`create()/of(List)`）+ `TraceSerializer`（`toJson/toJsonList/fromJson/fromJsonList`）。
+  - `LlmJudge`（容错解析 yes/no/分数）为基类的四指标：`FaithfulnessMetric`（faithfulness）、`ContextPrecisionMetric`（context_precision）、`ContextRecallMetric`（context_recall，**无 referenceAnswer 返回 NaN**）、`AnswerRelevancyMetric`（answer_relevancy）。
+  - `RagEvaluator`（`llmDefault(client,model)` 一键装配四指标；`evaluate(trace)` 单条 / `evaluateAll(traces)` 按指标跨轨迹取均值；NaN 指标归入 notApplicable 不计入 overall 均值）、`EvaluationResult`（`scores/notApplicable/overall` + `summary()`）、`EvaluationThreshold`（指标名→最低分，Builder `put`）、`EvaluationAssertions.assertMeets`（不达标抛 AssertionError）、`TraceReplay`（`replay/replayAggregate` 从 TraceStore 或 JSON 回放基线）。
+- **6 个新向量库适配（sure-ai-rag `com.sure.ai.rag.store`）**：在既有 InMemory/Chroma/Milvus 之上新增 Qdrant、Pinecone、Weaviate（REST+GraphQL）、Elasticsearch、OpenSearch（REST）、Redis（RESP over JDK Socket，非 HTTP）；全部仅依赖 JDK HttpClient/Socket，零官方客户端库。
+- **可移植 metadata filter 抽象（sure-ai-rag `com.sure.ai.rag.store.filter`）**：
+  - `FilterExpression` 密封接口（permits And/Or/Not/Eq/Ne/In/Gt/Gte/Lt/Lte），静态工厂 `eq(..)/ne(..)/in(..)/gt(..)/gte(..)/lt(..)/lte(..)` + fluent `and(..)/or(..)/not()`。
+  - 6 个方言 `FilterTranslator`：Qdrant / Pinecone / Weaviate / Elasticsearch / OpenSearch（均返回 JsonObject）+ Redis（返回 RediSearch filter 字符串，构造时传 numericFields）。
+- 新增 docs：`docs/rag.md` 增补高级检索策略 / GraphRAG / RAG 评估章节；`docs/vector-stores.md` 扩为 9 库总览 + 6 新库示例 + metadata filter 专节；README 中英文特性区与文档索引加入口。
+
+### Changed
+- `VectorStore` SPI 新增两个带 `FilterExpression` 的 default 重载方法（`similaritySearch(float[],int,FilterExpression)` 与 `similaritySearch(float[],int,double,FilterExpression)`），默认实现忽略 filter 委托旧方法，既有 InMemory/Chroma/Milvus 实现二进制兼容、行为不变；支持过滤的新实现类覆写本方法。
+
+### 测试
+- 新增 129 个测试（批次 A 20 + B 17 + C 20 + D1 31 + D2 41），sure-ai-rag 模块累计 242 测试；全工程合计 1114 测试，`mvn -B clean verify` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 零违规）。
+
 ## [1.7.0] - Unreleased
 
 ### Added
