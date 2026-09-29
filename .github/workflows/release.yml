@@ -36,13 +36,10 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-          # 写入 ~/.m2/settings.xml 的 <server id="ossrh">，与父 pom distributionManagement/nexus 插件 serverId 对齐
-          server-id: ossrh
-          server-username: ${{ secrets.OSSRH_USERNAME }}
-          server-password: ${{ secrets.OSSRH_PASSWORD }}
-          # 导入 GPG 私钥并配置口令
+          # 仅导入 GPG 私钥；server 凭证不交给 setup-java（其写入的 ${env.X} 占位符
+          # 在 Maven 3.9 不再插值，会导致 nexus-staging "Cannot decipher credentials"），
+          # 由下方 Write settings.xml 步骤显式写入明文
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
-          gpg-passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Validate release secrets
         env:
@@ -56,21 +53,35 @@ jobs:
             exit 1
           fi
 
-      - name: Diagnose settings.xml (read-only)
-        # 排查 nexus-staging "Cannot decipher credentials"：检查 setup-java 写入的 server 密码形态
+      - name: Write plaintext settings.xml
+        # 明文写入 ossrh server（heredoc 由 shell 展开 env），与本地发布环境等价；
+        # Maven 3.9 不插值 settings.xml 的 ${env.X}，占位符会导致 nexus-staging 解密报错
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
+          cat > /home/runner/.m2/settings.xml <<'SETTINGS_EOF'
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <servers>
+              <server>
+                <id>ossrh</id>
+                <username>${OSSRH_USERNAME}</username>
+                <password>${OSSRH_PASSWORD}</password>
+              </server>
+            </servers>
+          </settings>
+          SETTINGS_EOF
           python3 - <<'PYEOF'
-          import re
-          s = open('/home/runner/.m2/settings.xml', encoding='utf-8').read()
-          m = re.search(r'<server>\s*<id>ossrh</id>.*?<username>(.*?)</username>\s*<password>(.*?)</password>', s, re.S)
-          if m:
-              u, p = m.group(1), m.group(2)
-              print('server ossrh: username_len=%d password_len=%d password_starts_with_brace=%s' % (len(u), len(p), p.startswith('{')))
-          else:
-              print('server ossrh NOT found in settings.xml')
-          print('settings.xml bytes:', len(s))
-          print('--- FULL settings.xml (secrets auto-masked) ---')
-          print(s)
+          import os
+          p = '/home/runner/.m2/settings.xml'
+          s = open(p, encoding='utf-8').read()
+          s = s.replace('${OSSRH_USERNAME}', os.environ['OSSRH_USERNAME'])
+          s = s.replace('${OSSRH_PASSWORD}', os.environ['OSSRH_PASSWORD'])
+          open(p, 'w', encoding='utf-8').write(s)
+          print('settings.xml written (server ossrh:', s.count('<id>ossrh</id>'), 'found)')
           PYEOF
 
       - name: Validate release version (not SNAPSHOT)
