@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - Unreleased
+
+### Added
+- **检查点持久化（sure-ai-agent `com.sure.ai.agent.checkpoint`）**：ReActAgent 会话状态可序列化快照，崩溃 / 重启后重放式恢复。
+  - `AgentCheckpoint` record（`sessionId / history / iteration / finalAnswer / createdAtEpochMs / metadata`）+ 紧凑 Builder；`history` 防御性拷贝。
+  - `CheckpointStore` SPI（`save / load / delete / listSessions`）+ `InMemoryCheckpointStore`（`ConcurrentHashMap`，线程安全，进程内有效）+ `FileCheckpointStore`（本地目录每会话一个 JSON `{dir}/{sessionId}.json`，目录自动创建；`sessionId` 清洗为 `[A-Za-z0-9_-]` 防路径穿越，越界抛 `AiException`）。
+  - `CheckpointSerializer` 手写 `ChatMessage ↔ JSON` 映射（仅持久化 `role / content / toolCallId / toolCalls(id/name/argumentsJson)`，多模态 parts 与 reasoningContent 不参与恢复）。
+  - `AgentCheckpointer` 门面：`create(sessionId, agent, userMessage)` / `save(store, cp)` / `load(store, sessionId)` / `resume(store, sessionId, agent)`；恢复=把检查点 history 去掉 baseRequest 前缀后的尾部灌入新 `InMemoryConversationMemory`，再 `agent.withMemory(memory).run()`，模型见完整历史不重复动作。
+  - `ReActAgent` 新增 9 参构造器（追加 `CheckpointStore + sessionId`）：run 开头（iter=0）/ 每轮工具迭代后（中间快照）/ 结束（带 finalAnswer）自动落盘；两者任一为 null 不启用。
+- **流式事件（sure-ai-agent `com.sure.ai.agent.event`）**：把同步 `AgentListener` 回调桥接为结构化事件流，不改 ReActAgent。
+  - `AgentEvent` 标记接口（`type() / timestampEpochMs()`）+ 8 个 record：`StepStartedEvent(step.started)` / `StepCompletedEvent(step.completed)` / `ToolCalledEvent(tool.called)` / `ToolCompletedEvent(tool.completed)` / `ThoughtEvent(thought)` / `FinalAnswerEvent(final.answer)` / `TokenDeltaEvent(token.delta，预留)` / `AgentErrorEvent(agent.error)`。
+  - `AgentEventSink`（`@FunctionalInterface onEvent`）、`AgentEventPublisher`（`CopyOnWriteArrayList` 多订阅者广播，单订阅者异常隔离）、`StreamingAgentListener implements AgentListener`（桥接 onThought/onToolCall/onToolResult/onFinish/onError/onStepStart/onStepComplete）、`AgentEventSseWriter`（`toSse(event)` 输出 `event:<type>\ndata:<json>\n\n`，`doneMarker()` 输出 `data: [DONE]\n\n`）。
+  - `TokenDeltaEvent` 当前不产生（ReActAgent 走非流式 `client.chat`），为将来流式接入预留。
+- **HITL 审批（sure-ai-agent `com.sure.ai.agent.approval`）**：工具执行前人工 / 自动审批闸门。
+  - `ApprovalRequest`（`requestId/agentId/toolName/arguments/description/highRisk/requestedAtEpochMs`，静态 `of(...)` 自动生成 UUID）、`ApprovalDecision`（`approved()/approved(reason)/rejected(reason)/timeout()`）、`ApprovalStatus` 枚举（`APPROVED/REJECTED/TIMEOUT`）。
+  - `ApprovalPolicy`（`@FunctionalInterface requiresApproval(toolName, args)`）4 预置策略：`AllToolsApprovalPolicy.instance()` / `NeverApprovalPolicy.instance()` / `ToolNameApprovalPolicy.of(String...)`（精确匹配大小写敏感）/ `HighRiskApprovalPolicy`（工具名前缀 payment/transfer/withdraw/delete/remove/write/update/exec/shell 或参数 amount/money/balance/price/total 正值，前缀与金额键可自定义）。
+  - `ApprovalHandler`（`request(ApprovalRequest) -> ApprovalDecision` + `name()`）4 预置：`AutoApprovalHandler.instance()`（auto）/ `AutoRejectHandler.instance()`+`withReason()`（auto-reject）/ `ConsoleApprovalHandler()`（console，stdout 打印 + stdin 读 y/n，阻塞）/ `TimeoutApprovalHandler(delegate, Duration)`（ForkJoinPool 异步包装，超时 best-effort 取消并返回 TIMEOUT）。
+  - `ApprovalGate(policy, handler)` 组合门面：`requiresApproval` 委托策略，`request` 在策略判否时短路直接返回 APPROVED 不触发 handler。
+  - `ReActAgent` 11 参构造器追加 `ApprovalGate`：`executeTool` 内审批，REJECTED/TIMEOUT 不执行工具、分别回灌 `用户拒绝执行工具 …：…` / `审批超时，跳过工具 …` 给模型自我修正。
+- **长期记忆（sure-ai-agent `com.sure.ai.agent.memory.longterm`）**：跨会话事实沉淀与召回。
+  - `MemoryEntry` record（`id/content/metadata/createdAtEpochMs/embedding`，`of(content, metadata)` 自动 UUID，`withEmbedding` 副本）。
+  - `MemoryStore` 键值 SPI（`put/get/delete/all/clear`）+ `VectorMemoryStore` 子接口（`search(float[], k)` 余弦 Top-K / `searchByText(query, k)` 子串匹配）+ `InMemoryMemoryStore`（`ConcurrentHashMap`，searchByText 按命中次数降序再按创建时间升序）。
+  - `MemoryEmbedder`（`@FunctionalInterface embed`）+ `NoopMemoryEmbedder.instance()`（返回 null 降级文本匹配）；`MemorySummarizer` + `LengthBasedSummarizer`（`DEFAULT_MAX_CHARS=500`，保留首尾截断）；`MemoryExtractor` + `DefaultMemoryExtractor`（跳过 system/tool，长度 ≥ `DEFAULT_MIN_CONTENT_LENGTH=3` 的 USER→「用户说：…」，最后一条 ASSISTANT→「助手答：…」，元数据写 role/sessionId）。
+  - `LongTermMemory` 门面（4 组件全传 null 走默认实现）：`remember(messages, sessionId)` / `recall(query, k)` / `forget(id)` / `all()` / `clear()`；recall 路径=向量可用走 `search(vec,k)`、否则 `searchByText`、纯键值退化为最近 k 条。
+  - `ReActAgent` 11 参构造器同时注入 `LongTermMemory`：run 前按 `DEFAULT_RECALL_K=3` recall 拼成 system 消息 `相关长期记忆：…` 注入模板之后（不覆盖原 system），run 后 remember 沉淀本轮用户消息与最终答案；与既有会话 `ConversationMemory` 互不干扰。
+- 新增 docs：`docs/agent-advanced.md`（四策略快速上手 / 接口表 / 事件类型表 / SSE 格式 / 组合示例）；README 中英文特性区与文档索引加入口。
+
+### Changed
+- 纯新增能力：`ReActAgent` 新增 9 参与 11 参构造器，既有 3/6/7 参构造器委托至 11 参版本；所有可选能力（检查点 / 审批 / 长期记忆 / 会话记忆）传 `null` 即关闭，关闭后行为与历史版本逐字节一致。
+
+### 测试
+- 新增 48 个测试（批次 1：检查点 16 + 流式事件 16；批次 2：HITL 审批 16 + 长期记忆 16），agent 模块累计 133 测试；全工程合计 985 测试，`mvn -B clean verify` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 零违规）。
+
 ## [1.6.0] - 2026-09-29
 
 ### Added
