@@ -20,6 +20,7 @@ import java.util.List;
 
 import com.sure.ai.rag.model.SimilaritySearchResult;
 import com.sure.ai.rag.model.Vector;
+import com.sure.ai.rag.store.filter.FilterExpression;
 
 /**
  * 向量存储抽象：负责向量条目的写入、删除与相似度检索。
@@ -85,4 +86,37 @@ public interface VectorStore {
 	 * @return 相似度降序结果
 	 */
 	List<SimilaritySearchResult> similaritySearch(float[] queryEmbedding, int topK, double minScore);
+
+	/**
+	 * 按查询向量做带元数据过滤的相似度检索。
+	 *
+	 * <p>默认实现忽略 {@code filter}，直接委托给 {@link #similaritySearch(float[], int)}，
+	 * 以保证既有实现（InMemory/Chroma/Milvus 等）二进制兼容；支持过滤的实现类应覆写本方法。</p>
+	 *
+	 * @param queryEmbedding 查询向量
+	 * @param topK           返回条数，必须大于 0
+	 * @param filter         元数据过滤表达式，可为 null 表示不过滤
+	 * @return 相似度降序结果
+	 */
+	default List<SimilaritySearchResult> similaritySearch(float[] queryEmbedding, int topK,
+			FilterExpression filter) {
+		return similaritySearch(queryEmbedding, topK);
+	}
+
+	/**
+	 * 按查询向量做带元数据过滤与最低相似度阈值的检索。
+	 *
+	 * <p>默认实现忽略 {@code filter}，直接委托给
+	 * {@link #similaritySearch(float[], int, double)}；支持过滤的实现类应覆写本方法。</p>
+	 *
+	 * @param queryEmbedding 查询向量
+	 * @param topK           返回条数，必须大于 0
+	 * @param minScore       最低相似度阈值（含）
+	 * @param filter         元数据过滤表达式，可为 null 表示不过滤
+	 * @return 相似度降序结果
+	 */
+	default List<SimilaritySearchResult> similaritySearch(float[] queryEmbedding, int topK,
+			double minScore, FilterExpression filter) {
+		return similaritySearch(queryEmbedding, topK, minScore);
+	}
 }
