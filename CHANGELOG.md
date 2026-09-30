@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - Unreleased
+
+### Added
+- **命令行工具（sure-ai-cli `com.sure.ai.cli`）**：应用层零依赖终端，不写一行 Java 即可问答。
+  - 五子命令：`chat`（一次性同步问答）/ `stream`（SSE 逐片打印）/ `rag`（本地 UTF-8 纯文本文档 RAG：递归字符分块 + `InMemoryVectorStore` topK=4，全程不下载文档）/ `list`（列全部平台与默认模型）/ `repl`（交互多轮，`exit`/`quit` 退出）。
+  - 全局选项 `--provider` / `--api-key` / `--model` / `--base-url`，一键切换全部 23 个平台；凭证优先级 `--api-key` 命令行 > 平台对应 `SURE_AI_*` 环境变量；退出码 0 成功 / 1 用户输入错误 / 2 调用平台异常。
+  - 零第三方 CLI 依赖：手写 `ArgsParser`（不引 picocli/jline），`CliRunner` 纯逻辑（输出写注入 `PrintStream`），`ClientFactory` 装配接缝便于测试注入 `FakeAiClient`（同时实现 `AiClient`+`EmbeddingClient`，零真实网络）。
+  - 构建：shade 打 fat jar（`ManifestResourceTransformer` 主类 `com.sure.ai.cli.Main` + `ServicesResourceTransformer` 合并 SPI，仅剔除签名文件 `*.SF/*.DSA/*.RSA`、保留各平台 jar 的 `META-INF/native-image/**`）；支持 GraalVM native-image 编译为单文件可执行。注册在父工程 `<modules>`，但不进入 `sure-ai-all`/`sure-ai-bom` 聚合链。见 `docs/cli.md`。
+- **Maven 工程脚手架（sure-ai-archetype）**：`mvn archetype:generate` 一键生成 Hello World 工程。
+  - 产物：pom（`dependencyManagement` import `sure-ai-bom`）+ 一个可运行的单平台 Client 主类（默认 OpenAI）+ README + `.gitignore`；platform 属性可切换 23 个平台。
+  - 应用层脚手架，不进入 `sure-ai-all`/`sure-ai-bom` 聚合链；用法见 `docs/COOKBOOK.md` 场景 8。
+- **GraalVM native-image AOT 全库加固（零新依赖、不改主代码）**：补齐 native-image 构建器自动发现的元数据 + 元数据完整性守卫测试。
+  - `META-INF/native-image/io.github.tasure/<artifactId>/reflect-config.json` 共 42 条：sure-ai-core 30 条（`com.sure.ai.model` 全部 record，含嵌套 record）+ sure-ai-agent 8 条（`agent.event` 事件 record）+ sure-ai-mcp-server 4 条（`tool` 包请求 record，含嵌套 `ChatToolRequest$Message`）。
+  - core 提供 `resource-config.json`（空配置）+ `native-image.properties`（全局编译参数 `-H:+AddAllCharsets --enable-url-protocols=https,http`）；sure-ai-cli 自带 `native-image.properties` 继承同参数、`reflect-config.json` 为空 `[]`。
+  - 反射热点：`JsonMapper`（record ↔ JSON，`getRecordComponents` + 构造器/访问器反射）与 `JsonSchemaGenerator`（record → JSON Schema）；core 使用 JDK 自带 `java.net.http.HttpClient`（HTTP/1.1 + SSE），故需全字符集与 https/http 协议提供者。
+  - `com.sure.ai.util.NativeImageMetadataTest`（纯 JVM、零网络）守卫：reflect-config 存在可解析、classpath 扫描 `com.sure.ai.model` 包全部 record（含嵌套）均已注册、每条目四开关（allDeclaredConstructors/Methods/Fields/RecordComponents）齐全、native-image.properties 含两参数、resource-config 可解析。见 `docs/native-image.md`。
+- **Cookbook 场景菜谱（`docs/COOKBOOK.md`）+ 3 个完整示例应用（sure-ai-examples）**：
+  - `docs/COOKBOOK.md`：9 个「照着抄」最小可运行场景——5 分钟入门、单平台 chat（含流式）、多平台统一网关（路由策略 + 故障转移）、RAG 知识库问答、Agent 工具调用（Function Calling）、异步/虚拟线程、可观测性（OTel 桥接 + Metrics）、CLI 使用、archetype 生成工程、GraalVM native 编译；所有代码块与当前源码 API 逐字对齐。
+  - `sure-ai-examples`：`com.sure.ai.examples.ExamplesRunner` 一键运行 3 个离线示例——`knowledgebase`（知识库 RAG）/ `gateway-multi`（三平台同问对比）/ `code-assistant`（流式 + 工具调用）；未配 Key 自动走 Fake 分支，不发起真实网络。
+  - 文档收尾：README 中英文 Quick Start 改为 5 分钟入门（BOM 依赖 + 最小 chat + 跑通），特性区与文档索引补 CLI / archetype / GraalVM native / Cookbook 入口。
+
+### 测试
+- 新增 27 个测试（GraalVM 元数据守卫 5 + CLI 17 + archetype 5 + Cookbook/示例应用 0）；全工程合计 1262 测试，`mvn -B verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 零违规）。3 个示例应用以离线 smoke 验证（`ExamplesRunner` Fake 分支，沿用 examples 模块零测试先例）；CI 沙箱无 GraalVM，native 端到端建议在有 GraalVM 的环境自行冒烟。
+
 ## [1.9.0] - Unreleased
 
 ### Added

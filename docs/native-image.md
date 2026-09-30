@@ -22,10 +22,10 @@ native-image 在编译期做封闭世界分析，只保留可达类/成员；运
 > 前置：本机安装 GraalVM for JDK 21+ 并确保 `native-image` 在 PATH。
 
 ```bash
-# 1) 打 fat jar（示例模块/未来 sure-ai-cli；本批次 CLI 尚未建，先以 core 单元测试验证元数据）
+# 1) 打 fat jar（sure-ai-cli 已交付，见 docs/cli.md；亦可用 core 单元测试验证元数据）
 mvn -B -DskipTests package
 
-# 2) native 编译（以应用 fat jar 为例；sure-ai-cli 批次交付后替换为其 jar）
+# 2) native 编译（以 sure-ai-cli 或示例应用 fat jar 为例）
 native-image \
   -jar sure-ai-examples/target/sure-ai-examples-2.0.0-SNAPSHOT.jar \
   sureai-native

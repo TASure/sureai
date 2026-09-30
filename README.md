@@ -43,6 +43,10 @@
 - **Quarkus 扩展（v1.9.0）**：`sure-ai-quarkus-extension`（runtime + deployment 双模块）按 `sure.ai.<platform>.api-key` 条件把对应 `XxxClient` 注册为 Arc 合成 `@Singleton` Bean，注入即用；与 Spring Starter 配置同构，core/平台模块零 Quarkus 依赖。见 [docs/quarkus-extension.md](docs/quarkus-extension.md)
 - **全链路异步 / 虚拟线程（v1.9.0）**：`AiClient` 新增 `chatAsync`/`chatStreamAsync` default 方法族，`AsyncClients` 一行把任意同步 Client 包装为 `AsyncAiClient`/`AsyncEmbeddingClient`/`AsyncImageClient`/`AsyncVideoClient`/`AsyncAudioClient`，统一跑在 JDK 21 虚拟线程上（`AsyncExecutors.virtualThreadExecutor()`），`CompletableFuture` 可取消、异常原样透传。见 [docs/async.md](docs/async.md)
 - **OpenTelemetry GenAI 桥接（v1.9.0）**：`sure-ai-otel` 把 `MetricsCollector`/`RetryListener`/`AgentEventSink` 桥接为 OTel GenAI 语义约定指标（`gen_ai.client.operation.duration` / `input_tokens` / `output_tokens`），仅依赖 OTel API（provided），SDK/导出器由使用方自备；传 null MeterProvider 即空操作无感降级。见 [docs/observability.md](docs/observability.md#opentelemetry-genai-桥接可选模块)
+- **命令行工具（v2.0.0）**：`sure-ai-cli` 零依赖终端直接问答——`chat` / `stream` / `rag`（本地文档）/ `list` / `repl` 五子命令，一键切换全部 23 个平台；可打 fat jar，亦可 GraalVM native-image 编译为单文件可执行。不写一行 Java 即可体验全库。见 [docs/cli.md](docs/cli.md)
+- **Maven 工程脚手架（v2.0.0）**：`sure-ai-archetype` 一条 `mvn archetype:generate` 生成带 BOM import、单平台 Client 调用、README 与 .gitignore 的 Hello World 工程，platform 属性可切换 23 平台。见 [docs/COOKBOOK.md](docs/COOKBOOK.md)
+- **GraalVM native-image AOT 加固（v2.0.0）**：全库补齐 `META-INF/native-image/**` 反射 / 资源 / 编译参数元数据（reflect-config 共 42 条：core 30 + agent 8 + mcp-server 4），fat jar 自动内联，native 编译免手写配置；`NativeImageMetadataTest` 守卫 core model 包不遗漏。见 [docs/native-image.md](docs/native-image.md)
+- **Cookbook 场景菜谱（v2.0.0）**：[docs/COOKBOOK.md](docs/COOKBOOK.md) 收录 9 个「照着抄」最小可运行场景（单平台 chat / 多平台网关 / RAG / Agent 工具调用 / 异步虚拟线程 / 可观测性 / CLI / archetype / native），附 3 个离线可跑示例应用（`sure-ai-examples` 的 `ExamplesRunner`）。
 - **熔断器**：`CircuitBreaker` 三态状态机（CLOSED→OPEN→HALF_OPEN），滑动窗口失败计数+OPEN超时+HALF_OPEN探测，`AiConfig.circuitBreaker` 可选注入，默认关闭零开销，与重试/限流嵌套协作。见 [docs/circuit-breaker.md](docs/circuit-breaker.md)
 - **Rerank 重排序**：`RerankClient` 统一抽象，通义千问 qwen3-rerank 接入，二阶段精排可无缝接入 RAG 检索链路
 - **结构化输出**：`response_format` 统一抽象（json_object / JSON Schema），`JsonMapper` 零依赖强类型 record 反序列化，8 平台适配
@@ -92,20 +96,49 @@
 
 聚合模块：`sure-ai-all`（一个依赖引入全部平台）、`sure-ai-bom`（版本统一管理）。
 
-应用层：`sure-ai-cli`（命令行直接问答：chat / stream / rag / list / repl，一键切换全部 23 个平台，可打 fat jar 并支持 GraalVM native-image；不进入 `sure-ai-all` 聚合链，见 [docs/cli.md](docs/cli.md)）。
+应用层：`sure-ai-cli`（命令行直接问答：chat / stream / rag / list / repl，一键切换全部 23 个平台，可打 fat jar 并支持 [GraalVM native-image](docs/native-image.md)；不进入 `sure-ai-all` 聚合链，见 [docs/cli.md](docs/cli.md)）。
 
 工程脚手架：`sure-ai-archetype`（`mvn archetype:generate` 一键生成带 Hello World 的 Java 工程：pom import BOM + 单平台 Client 调用 + README + .gitignore；不进入 `sure-ai-all`/`sure-ai-bom` 聚合链）。
 
-## 快速开始
+## 快速开始（5 分钟入门）
+
+**1. 引入 BOM 统一版本，再选一个平台模块**（这里用 OpenAI；其余 22 个平台坐标见下方[模块与平台一览](#模块与平台一览)）：
+
+```xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>io.github.tasure</groupId>
+      <artifactId>sure-ai-bom</artifactId>
+      <version>1.4.0</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+
+<dependencies>
+  <dependency>
+    <groupId>io.github.tasure</groupId>
+    <artifactId>sure-ai-openai</artifactId>
+  </dependency>
+</dependencies>
+```
+
+> 想一次引入全部 23 个平台 + RAG + Agent，把上面的平台依赖换成聚合模块 `sure-ai-all`（`type=pom`）。
+
+**2. 一行调用**（先 `export SURE_AI_OPENAI_API_KEY=sk-xxx`）：
 
 ```java
 import com.sure.ai.openai.OpenAiUtil;
 
-// 1. 设置环境变量 SURE_AI_OPENAI_API_KEY
-// 2. 一行调用
 String reply = OpenAiUtil.chat("gpt-4o-mini", "你好！").firstText();
 System.out.println(reply);
 ```
+
+**3. 跑通**：JDK 21+，IDE 直接运行该 main 方法，控制台即打印模型回复。
+
+更多「照着抄」场景（流式 / 多平台网关 / RAG / Agent 工具调用 / 异步虚拟线程 / 可观测性 / CLI / archetype / native 编译）见 [docs/COOKBOOK.md](docs/COOKBOOK.md)。
 
 ### 图像生成
 

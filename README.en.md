@@ -43,6 +43,10 @@
 - **Quarkus extension (v1.9.0)**: `sure-ai-quarkus-extension` (runtime + deployment dual module) conditionally registers each `XxxClient` as an Arc synthetic `@Singleton` bean based on `sure.ai.<platform>.api-key`, ready for injection; configuration mirrors the Spring Starter, and core/platform modules have zero Quarkus dependency. See [docs/quarkus-extension.md](docs/quarkus-extension.md)
 - **Full async / virtual threads (v1.9.0)**: `AiClient` gains a `chatAsync`/`chatStreamAsync` default method family; `AsyncClients` wraps any synchronous client into `AsyncAiClient`/`AsyncEmbeddingClient`/`AsyncImageClient`/`AsyncVideoClient`/`AsyncAudioClient` in one line, running on JDK 21 virtual threads (`AsyncExecutors.virtualThreadExecutor()`); cancelable `CompletableFuture` with exceptions propagated as-is. See [docs/async.md](docs/async.md)
 - **OpenTelemetry GenAI bridge (v1.9.0)**: `sure-ai-otel` bridges `MetricsCollector`/`RetryListener`/`AgentEventSink` to OTel GenAI semantic-convention metrics (`gen_ai.client.operation.duration` / `input_tokens` / `output_tokens`); depends only on the OTel API (provided), SDK/exporters are user-supplied; passing a `null` MeterProvider degrades to a no-op with zero overhead. See [docs/observability.md](docs/observability.md#opentelemetry-genai-桥接可选模块)
+- **Command-line tool (v2.0.0)**: `sure-ai-cli` — zero-dependency terminal chat: `chat` / `stream` / `rag` (local docs) / `list` / `repl` subcommands, switching across all 23 platforms from one binary; builds as a fat jar and compiles to a single-file GraalVM native executable. Use the whole library without writing a line of Java. See [docs/cli.md](docs/cli.md)
+- **Maven project archetype (v2.0.0)**: `sure-ai-archetype` — one `mvn archetype:generate` produces a Hello World project with BOM import, a single-platform Client call, README and .gitignore; a platform property switches across the 23 platforms. See [docs/COOKBOOK.md](docs/COOKBOOK.md)
+- **GraalVM native-image AOT hardening (v2.0.0)**: the whole library ships `META-INF/native-image/**` reflection / resource / compile-args metadata (42 reflect-config entries: core 30 + agent 8 + mcp-server 4); fat jars inline it automatically so native builds need no hand-written config; `NativeImageMetadataTest` guards the core model package against omissions. See [docs/native-image.md](docs/native-image.md)
+- **Cookbook recipes (v2.0.0)**: [docs/COOKBOOK.md](docs/COOKBOOK.md) — 9 copy-paste-minimal runnable scenarios (single-platform chat / multi-platform gateway / RAG / Agent tool-calling / async virtual threads / observability / CLI / archetype / native) plus 3 offline-runnable sample apps (`ExamplesRunner` in `sure-ai-examples`).
 - **Circuit Breaker**: `CircuitBreaker` 3-state machine (CLOSED→OPEN→HALF_OPEN), sliding-window failure count + open timeout + half-open probe, optional via `AiConfig.circuitBreaker`, disabled by default (zero overhead), nested with retry/rate-limit. See [docs/circuit-breaker.md](docs/circuit-breaker.md)
 - **Rerank**: unified `RerankClient` abstraction, Qwen qwen3-rerank integration, pluggable two-stage re-ranking in the RAG retrieval chain
 - **Structured Output**: unified `response_format` abstraction (json_object / JSON Schema), zero-dependency `JsonMapper` strong-typed record deserialization, adapted across 8 platforms
@@ -92,16 +96,49 @@ Per-platform docs: [AWS Bedrock](docs/bedrock.md) · [Cohere](docs/cohere.md) ·
 
 Aggregation modules: `sure-ai-all` (one dependency for all platforms), `sure-ai-bom` (version management).
 
-## Quick Start
+Application layer: `sure-ai-cli` (command-line Q&A: chat / stream / rag / list / repl, one-key switch across all 23 platforms; buildable as a fat jar and a [GraalVM native-image](docs/native-image.md) executable; not part of the `sure-ai-all` aggregate chain, see [docs/cli.md](docs/cli.md)).
+
+Project scaffold: `sure-ai-archetype` (`mvn archetype:generate` one-shot Hello World Java project: pom imports BOM + single-platform Client call + README + .gitignore; not part of the `sure-ai-all` / `sure-ai-bom` aggregate chains).
+
+## Quick Start (5 minutes)
+
+**1. Import the BOM for unified versions, then pick one platform module** (OpenAI here; coordinates for the other 22 platforms see the [Modules & Platforms](#modules--platforms) table below):
+
+```xml
+<dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>io.github.tasure</groupId>
+      <artifactId>sure-ai-bom</artifactId>
+      <version>1.4.0</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
+  </dependencies>
+</dependencyManagement>
+
+<dependencies>
+  <dependency>
+    <groupId>io.github.tasure</groupId>
+    <artifactId>sure-ai-openai</artifactId>
+  </dependency>
+</dependencies>
+```
+
+> Want all 23 platforms + RAG + Agent at once? Replace the platform dependency above with the aggregator `sure-ai-all` (`type=pom`).
+
+**2. One-line call** (first `export SURE_AI_OPENAI_API_KEY=sk-xxx`):
 
 ```java
 import com.sure.ai.openai.OpenAiUtil;
 
-// 1. Set env var SURE_AI_OPENAI_API_KEY
-// 2. One-line call
 String reply = OpenAiUtil.chat("gpt-4o-mini", "Hello!").firstText();
 System.out.println(reply);
 ```
+
+**3. Run it**: with JDK 21+, run this main method in your IDE and the model's reply prints to the console.
+
+More copy-paste recipes (streaming / multi-platform gateway / RAG / Agent tool-calling / async virtual threads / observability / CLI / archetype / native build) see [docs/COOKBOOK.md](docs/COOKBOOK.md).
 
 ### Image Generation
 
@@ -481,6 +518,8 @@ sure-ai-quarkus-extension(-deployment) ← Quarkus auto-assembly extension (dual
 sure-ai-bom           ← version BOM
 sure-ai-all           ← aggregate all platforms + RAG + Agent
 sure-ai-examples      ← usage examples
+sure-ai-cli           ← command-line Q&A (application layer, depends on sure-ai-all, outside the aggregate library chain)
+sure-ai-archetype     ← mvn archetype:generate one-shot Hello World project (scaffold, outside the aggregate library chain)
 ```
 
 **Core design principles:**
