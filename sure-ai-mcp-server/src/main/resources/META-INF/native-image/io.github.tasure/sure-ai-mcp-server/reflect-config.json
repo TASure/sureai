@@ -1,0 +1,30 @@
+[
+  {
+    "name": "com.sure.ai.mcp.server.tool.ChatToolRequest",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
+  },
+  {
+    "name": "com.sure.ai.mcp.server.tool.ChatToolRequest$Message",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
+  },
+  {
+    "name": "com.sure.ai.mcp.server.tool.EmbedToolRequest",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
+  },
+  {
+    "name": "com.sure.ai.mcp.server.tool.ImageToolRequest",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
+  }
+]

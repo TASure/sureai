@@ -1,0 +1,58 @@
+[
+  {
+    "name": "com.sure.ai.agent.event.AgentErrorEvent",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
+  },
+  {
+    "name": "com.sure.ai.agent.event.FinalAnswerEvent",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
+  },
+  {
+    "name": "com.sure.ai.agent.event.StepCompletedEvent",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
+  },
+  {
+    "name": "com.sure.ai.agent.event.StepStartedEvent",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
+  },
+  {
+    "name": "com.sure.ai.agent.event.ThoughtEvent",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
+  },
+  {
+    "name": "com.sure.ai.agent.event.TokenDeltaEvent",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
+  },
+  {
+    "name": "com.sure.ai.agent.event.ToolCalledEvent",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
+  },
+  {
+    "name": "com.sure.ai.agent.event.ToolCompletedEvent",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
+  }
+]
