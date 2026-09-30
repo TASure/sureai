@@ -95,6 +95,7 @@
         <module>sure-ai-bom</module>
         <module>sure-ai-all</module>
         <module>sure-ai-examples</module>
+        <module>sure-ai-cli</module>
     </modules>
 
     <properties>

@@ -329,4 +329,13 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- CLI 持有调用方注入的输出流（EI_EXPOSE_REP2）：
+         CliRunner.out 是为测试捕获 stdout 而注入的 PrintStream，设计上即写入调用方提供的
+         输出目标（生产为 System.out，测试为 ByteArrayOutputStream），按引用是可测性设计本意，
+         与 GatewayClient 暂存共享组件同类惯例；包装一层流并不能保护底层目标，无防御意义。 -->
+    <Match>
+        <Class name="com.sure.ai.cli.CliRunner"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>
