@@ -130,5 +130,21 @@
             <groupId>io.github.tasure</groupId>
             <artifactId>sure-ai-bedrock</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-minimax</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-stepfun</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-baichuan</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-lingyi</artifactId>
+        </dependency>
     </dependencies>
 </project>

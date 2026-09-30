@@ -81,6 +81,10 @@
         <module>sure-ai-llamacpp</module>
         <module>sure-ai-cohere</module>
         <module>sure-ai-bedrock</module>
+        <module>sure-ai-minimax</module>
+        <module>sure-ai-stepfun</module>
+        <module>sure-ai-baichuan</module>
+        <module>sure-ai-lingyi</module>
         <module>sure-ai-benchmark</module>
         <module>sure-ai-bom</module>
         <module>sure-ai-all</module>
@@ -221,6 +225,26 @@
             <dependency>
                 <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-bedrock</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-minimax</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-stepfun</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-baichuan</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-lingyi</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

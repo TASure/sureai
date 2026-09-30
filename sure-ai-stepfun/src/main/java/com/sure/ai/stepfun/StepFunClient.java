@@ -1,0 +1,77 @@
+/*
+ * Copyright (c) 2026 sureai contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.sure.ai.stepfun;
+
+import java.util.Set;
+
+import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
+import com.sure.ai.client.compat.OpenAiCompatClient;
+
+/**
+ * 阶跃星辰 StepFun 开放平台客户端（OpenAI 兼容协议）。
+ *
+ * <p>默认 baseUrl 为 {@code https://api.stepfun.com/v1}（<b>带 {@code /v1}</b>，国内站），
+ * 兼容引擎拼接 {@code /chat/completions}，即实际请求
+ * {@code https://api.stepfun.com/v1/chat/completions}；鉴权为
+ * {@code Authorization: Bearer <apiKey>}。</p>
+ *
+ * <p>国际站端点为 {@code https://api.stepfun.ai/v1}，可通过
+ * {@link AiConfig.Builder#baseUrl(String)} 覆盖。</p>
+ *
+ * <p>模型：{@link StepFunModels#STEP_5_PREVIEW}（最新旗舰 MoE）、
+ * {@link StepFunModels#STEP_2_MINI}（推荐高性价比）、{@link StepFunModels#STEP_2_16K}。</p>
+ *
+ * <p>能力声明（1.4.0 P2-6）：仅支持对话与流式对话。阶跃星辰 OpenAI 兼容文档以
+ * {@code /v1/chat/completions} 为准，未在该兼容端点提供 {@code /v1/embeddings} 等其余能力；
+ * 调用 {@code embed} 等不支持方法时由基类 {@link #guard(Capability)} 在发请求前快速失败。</p>
+ *
+ * <p>官方文档：<a href="https://platform.stepfun.com/docs/zh/api-reference/chat/chat-completion-create">
+ * https://platform.stepfun.com/docs/zh/api-reference/chat/chat-completion-create</a></p>
+ *
+ * @author sureai
+ * @since 1.9.0
+ */
+public class StepFunClient extends OpenAiCompatClient {
+
+	/** StepFun 默认 baseUrl（带 /v1，国内站）。 */
+	public static final String DEFAULT_BASE_URL = "https://api.stepfun.com/v1";
+
+	/**
+	 * 构造客户端，baseUrl 为空时使用 {@link #DEFAULT_BASE_URL}。
+	 *
+	 * @param config 配置
+	 */
+	public StepFunClient(AiConfig config) {
+		super(config.withBaseUrlIfAbsent(DEFAULT_BASE_URL));
+	}
+
+	@Override
+	public String name() {
+		return "stepfun";
+	}
+
+	/**
+	 * 阶跃星辰 OpenAI 兼容端点仅支持对话与流式对话；embedding/image/video/moderation/finetune 均未提供。
+	 *
+	 * @return 仅对话能力集合
+	 */
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM);
+	}
+}
