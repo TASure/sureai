@@ -20,6 +20,7 @@ import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.SingletonHolder;
+import com.sure.ai.client.realtime.RealtimeEventListener;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.BatchRequest;
 import com.sure.ai.model.BatchResponse;
@@ -90,6 +91,12 @@ public final class AzureUtil {
 	/** 批处理客户端容器。 */
 	private static final SingletonHolder<AzureBatchClient> BATCH =
 		new SingletonHolder<>(() -> new AzureBatchClient(buildConfigFromEnv()));
+
+	/** Realtime 客户端容器（构造参数依赖调用参数，用 getOrCreate 懒加载）。 */
+	private static final SingletonHolder<AzureRealtimeClient> REALTIME =
+		new SingletonHolder<>(() -> {
+			throw new UnsupportedOperationException("请调用 realtimeClient(deployment, listener)");
+		});
 
 	private AzureUtil() {
 		throw new AssertionError("No instances");
@@ -376,6 +383,32 @@ public final class AzureUtil {
 	 */
 	public static void resetBatchClient() {
 		BATCH.reset();
+	}
+
+	// ==================== Realtime（GPT Realtime API 全双工语音对话） ====================
+
+	/**
+	 * 获取 Realtime 单例客户端，未初始化时从环境变量懒加载（复用
+	 * {@link #buildConfigFromEnv()} 读取 API Key / baseUrl / resource）。
+	 *
+	 * <p>Realtime 需要事件监听器，不提供静态便捷方法；单例首次以
+	 * {@code (deployment, listener)} 构造，之后重复调用返回同一实例。</p>
+	 *
+	 * @param deployment    实时模型部署名（如 {@code gpt-realtime}、{@code gpt-4o-realtime-preview}）
+	 * @param eventListener 事件监听器
+	 * @return Realtime 客户端
+	 */
+	public static AzureRealtimeClient realtimeClient(String deployment,
+			RealtimeEventListener eventListener) {
+		return REALTIME.getOrCreate(() -> new AzureRealtimeClient(
+			buildConfigFromEnv(), deployment, eventListener));
+	}
+
+	/**
+	 * 重置 Realtime 单例客户端（测试清理用）。
+	 */
+	public static void resetRealtimeClient() {
+		REALTIME.reset();
 	}
 
 	/** 从环境变量构造 Speech（TTS/STT）配置。 */

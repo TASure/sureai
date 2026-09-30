@@ -43,6 +43,9 @@ public final class GeminiModels {
 	/** Gemini 2.0 Flash Experimental — 支持文本生成图像（responseModalities=IMAGE）。 */
 	public static final String GEMINI_2_0_FLASH_EXP = "gemini-2.0-flash-exp";
 
+	/** Gemini 2.0 Flash Live — Gemini Live 全双工实时语音对话模型（BidiGenerateContent）。 */
+	public static final String GEMINI_2_0_FLASH_LIVE = "gemini-2.0-flash-live-preview-04-09";
+
 	/** Imagen 3 — 旗舰文生图模型（通过 Vertex AI 接入时可用）。 */
 	public static final String IMAGEN_3 = "imagen-3.0-generate-002";
 

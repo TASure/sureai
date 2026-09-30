@@ -31,15 +31,19 @@ import com.sure.ai.internal.json.JsonObject;
 /**
  * Google Gemini Live（BidiGenerateContent，WebSocket 全双工语音对话）客户端。
  *
- * <p>协议要点：</p>
+ * <p>协议要点（端点经 2026 官方文档核对：
+ * <a href="https://ai.google.dev/api/live">Live API - WebSockets API reference</a>）：</p>
  * <ul>
- *   <li>端点：{@code wss://generativelanguage.googleapis.com/ws/...BidiGenerateContent?key=<apiKey>}，
- *       鉴权走 URL 查询参数；</li>
+ *   <li>端点：{@code wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=<apiKey>}
+ *       （现行 {@code v1beta} 路径；早期预览为 {@code v1alpha}），鉴权走 URL 查询参数；</li>
  *   <li>建连后首次需发送 {@code {"setup":{"model":"models/..."}}}，之后才能收发；</li>
  *   <li>下行按顶层 oneof 字段路由：{@code serverContent.modelTurn.parts[]} 中
  *       {@code inlineData.data}（base64 音频）回调 onAudio、{@code text} 回调 onTranscript；
  *       {@code error}/{@code toolCallCancellation} 回调 onError；其余回调 onEvent。</li>
  * </ul>
+ *
+ * <p>实时模型示例：{@code gemini-2.0-flash-live-preview-04-09}、
+ * {@code gemini-2.5-flash-native-audio-latest}（见 {@link GeminiModels}）。</p>
  *
  * @author sureai
  * @since 0.2.0
@@ -49,8 +53,8 @@ public class GeminiRealtimeClient extends AbstractRealtimeClient {
 	/** 默认 WSS 主机。 */
 	public static final String DEFAULT_WS_HOST = "wss://generativelanguage.googleapis.com";
 
-	/** BidiGenerateContent WS 路径。 */
-	public static final String WS_PATH = "/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent";
+	/** BidiGenerateContent WS 路径（现行 v1beta；早期预览为 v1alpha）。 */
+	public static final String WS_PATH = "/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 
 	/** 实时模型（不含 models/ 前缀）。 */
 	private final String model;

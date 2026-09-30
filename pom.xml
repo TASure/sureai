@@ -85,6 +85,9 @@
         <module>sure-ai-stepfun</module>
         <module>sure-ai-baichuan</module>
         <module>sure-ai-lingyi</module>
+        <module>sure-ai-siliconflow</module>
+        <module>sure-ai-hunyuan</module>
+        <module>sure-ai-spark</module>
         <module>sure-ai-benchmark</module>
         <module>sure-ai-bom</module>
         <module>sure-ai-all</module>
@@ -245,6 +248,21 @@
             <dependency>
                 <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-lingyi</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-siliconflow</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-hunyuan</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-spark</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

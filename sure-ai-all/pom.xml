@@ -146,5 +146,17 @@
             <groupId>io.github.tasure</groupId>
             <artifactId>sure-ai-lingyi</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-siliconflow</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-hunyuan</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-spark</artifactId>
+        </dependency>
     </dependencies>
 </project>
