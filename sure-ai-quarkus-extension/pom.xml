@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (c) 2026 sureai contributors
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.tasure</groupId>
+        <artifactId>sureai</artifactId>
+        <version>1.9.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>sure-ai-quarkus-extension</artifactId>
+    <packaging>jar</packaging>
+    <name>sureai-quarkus-extension</name>
+    <description>Quarkus 扩展（runtime）：对标 Spring Boot Starter，在 Quarkus 工程中按 sure.ai.&lt;平台&gt;.* 配置
+        自动注册各平台 AiClient 为 Arc 合成 Bean。
+        红线：Quarkus 依赖仅限本模块与其 deployment 模块，core/平台模块运行期零 Quarkus 依赖；本模块不进 sure-ai-all 聚合。</description>
+
+    <properties>
+        <!-- 固定 Quarkus 版本（仅本扩展模块内部使用，不上提父 POM dependencyManagement） -->
+        <quarkus.version>3.27.5</quarkus.version>
+        <!-- 自动装配骨架：无业务分支，跳过 JaCoCo 行覆盖率门禁（参考 spring-boot-starter 惯例） -->
+        <jacoco.skip>true</jacoco.skip>
+        <!-- 自动配置骨架类跳过 SpotBugs 深度扫描（理由见类 JavaDoc） -->
+        <spotbugs.skip>true</spotbugs.skip>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.quarkus</groupId>
+                <artifactId>quarkus-bom</artifactId>
+                <version>${quarkus.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- 聚合全部平台客户端（sure-ai-all 为 pom 打包，type=pom 传递引入 core 与各平台模块） -->
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-all</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+        </dependency>
+        <!-- Quarkus 运行期核心与 Arc（CDI）；仅限本模块，不污染 core/平台模块 -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-arc</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- 生成 META-INF/quarkus-extension.properties，链接到本扩展的 deployment 模块 -->
+            <plugin>
+                <groupId>io.quarkus</groupId>
+                <artifactId>quarkus-extension-maven-plugin</artifactId>
+                <version>${quarkus.version}</version>
+                <executions>
+                    <execution>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>extension-descriptor</goal>
+                        </goals>
+                        <configuration>
+                            <deployment>${project.groupId}:${project.artifactId}-deployment:${project.version}</deployment>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- 注解处理器：收集 @BuildStep/配置元数据，自动生成 Quarkus 扩展注册文件（不依赖 IDE 手工文件） -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <parameters>true</parameters>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>io.quarkus</groupId>
+                            <artifactId>quarkus-extension-processor</artifactId>
+                            <version>${quarkus.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

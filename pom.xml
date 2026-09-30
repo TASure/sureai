@@ -66,6 +66,8 @@
         <module>sure-ai-micrometer</module>
         <module>sure-ai-otel</module>
         <module>sure-ai-spring-boot-starter</module>
+        <module>sure-ai-quarkus-extension</module>
+        <module>sure-ai-quarkus-extension-deployment</module>
         <module>sure-ai-openai</module>
         <module>sure-ai-azure</module>
         <module>sure-ai-anthropic</module>
