@@ -96,6 +96,7 @@
         <module>sure-ai-all</module>
         <module>sure-ai-examples</module>
         <module>sure-ai-cli</module>
+        <module>sure-ai-archetype</module>
     </modules>
 
     <properties>

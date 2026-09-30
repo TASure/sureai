@@ -1,0 +1,66 @@
+<!--
+
+    Copyright (c) 2026 sureai contributors
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.github.tasure</groupId>
+        <artifactId>sureai</artifactId>
+        <version>2.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>sure-ai-archetype</artifactId>
+    <packaging>jar</packaging>
+
+    <name>sureai-archetype</name>
+    <description>Maven Archetype：mvn archetype:generate 一键生成带 Hello World 的 Java 工程。
+        生成工程通过 import sure-ai-bom 统一版本，依赖单个平台模块（默认 openai）。
+        工具/应用层模块，不进入 sure-ai-all 聚合链与 BOM。</description>
+
+    <properties>
+        <!-- 本模块仅含资源模板与少量断言测试，无生产代码 -->
+        <jacoco.skip>true</jacoco.skip>
+        <spotbugs.skip>true</spotbugs.skip>
+    </properties>
+
+    <build>
+        <plugins>
+            <!-- 打包时关闭 plexus 默认排除，使 dotfile（.gitignore）进入 jar -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <addDefaultExcludes>false</addDefaultExcludes>
+                </configuration>
+            </plugin>
+            <!-- License 校验跳过 archetype-resources 下的模板文件：
+                 生成工程归最终用户所有，模板不携带 sureai license 头 -->
+            <plugin>
+                <groupId>com.mycila</groupId>
+                <artifactId>license-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>src/main/resources/archetype-resources/**</exclude>
+                        <exclude>src/main/resources/META-INF/maven/archetype-metadata.xml</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

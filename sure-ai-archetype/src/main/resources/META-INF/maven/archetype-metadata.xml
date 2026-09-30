@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- archetype 描述符：定义必填属性与模板文件集。生成工程归用户所有，故本文件不携带 license 头。 -->
+<archetype-descriptor xmlns="http://maven.apache.org/plugins/maven-archetype-plugin/archetype-descriptor/1.1.0"
+                      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                      xsi:schemaLocation="http://maven.apache.org/plugins/maven-archetype-plugin/archetype-descriptor/1.1.0 http://maven.apache.org/xsd/archetype-descriptor-1.1.0.xsd"
+                      name="sure-ai-archetype">
+
+    <requiredProperties>
+        <!-- 平台标识：决定依赖 sure-ai-&lt;platform&gt; 与 Main 中的客户端类，默认 openai -->
+        <requiredProperty key="platform">
+            <defaultValue>openai</defaultValue>
+        </requiredProperty>
+        <!-- 生成工程 import 的 sure-ai-bom 版本 -->
+        <requiredProperty key="sureaiVersion">
+            <defaultValue>2.0.0-SNAPSHOT</defaultValue>
+        </requiredProperty>
+    </requiredProperties>
+
+    <fileSets>
+        <!-- 工程根文件：README.md / .gitignore（pom.xml 由 archetype 插件特殊处理）。
+             directory 必须留空（不能写 "/"）：maven-archetype-plugin 3.2.1 的 ListScanner
+             在 directory="/" 时会把 basedir 拼成 "//"，模式 "//**" 匹配不到裸文件名。 -->
+        <fileSet filtered="true">
+            <directory></directory>
+            <excludes>
+                <exclude>src/**</exclude>
+            </excludes>
+        </fileSet>
+        <!-- Java 源码：按 ${package} 重定位包路径 -->
+        <fileSet filtered="true" packaged="true">
+            <directory>src/main/java</directory>
+        </fileSet>
+    </fileSets>
+</archetype-descriptor>

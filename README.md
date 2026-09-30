@@ -94,6 +94,8 @@
 
 应用层：`sure-ai-cli`（命令行直接问答：chat / stream / rag / list / repl，一键切换全部 23 个平台，可打 fat jar 并支持 GraalVM native-image；不进入 `sure-ai-all` 聚合链，见 [docs/cli.md](docs/cli.md)）。
 
+工程脚手架：`sure-ai-archetype`（`mvn archetype:generate` 一键生成带 Hello World 的 Java 工程：pom import BOM + 单平台 Client 调用 + README + .gitignore；不进入 `sure-ai-all`/`sure-ai-bom` 聚合链）。
+
 ## 快速开始
 
 ```java
@@ -481,6 +483,7 @@ sure-ai-bom           ← 版本统一管理（BOM）
 sure-ai-all           ← 聚合引入全部平台、RAG 与 Agent
 sure-ai-examples      ← 使用示例
 sure-ai-cli           ← 命令行直接问答（应用层，依赖 sure-ai-all，不进入聚合库链）
+sure-ai-archetype     ← mvn archetype:generate 一键生成 Hello World 工程（脚手架，不进入聚合库链）
 ```
 
 **核心设计原则：**
