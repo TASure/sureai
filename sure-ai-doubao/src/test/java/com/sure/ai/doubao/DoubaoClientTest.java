@@ -49,6 +49,7 @@ import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.FineTuneRequest;
+import com.sure.ai.model.ModerationRequest;
 import com.sure.ai.model.VideoRequest;
 
 /**
@@ -269,25 +270,29 @@ public class DoubaoClientTest {
 	}
 
 	/**
-	 * capabilities() 精确声明：方舟主 Client 支持 chat/stream/embed/image(Seedream)/moderation(保守保留)；
-	 * 不支持 VIDEO（见 {@link DoubaoVideoClient}）与 FINETUNE（未适配），调用应 guard 快速失败。
+	 * capabilities() 精确声明（1.9.0 批次 1b）：方舟主 Client 支持 chat/stream/embed/image(Seedream)；
+	 * 不声明 MODERATION（兼容面无 /moderations，内容安全为接入点护栏 moderation_hit_type）、
+	 * VIDEO（见 {@link DoubaoVideoClient}）与 FINETUNE（未适配），调用应 guard 快速失败。
 	 */
 	@Test
 	public void testCapabilitiesDeclaration() throws Exception {
 		DoubaoClient client = newClient();
 		Set<Capability> caps = capabilitiesOf(client);
 		for (Capability c : new Capability[]{Capability.CHAT, Capability.CHAT_STREAM,
-			Capability.EMBED, Capability.IMAGE, Capability.MODERATION}) {
+			Capability.EMBED, Capability.IMAGE}) {
 			assertTrue("应声明能力 " + c, caps.contains(c));
 		}
+		assertFalse("方舟主 Client 不声明 MODERATION（无兼容 /moderations 端点）",
+			caps.contains(Capability.MODERATION));
 		assertFalse("方舟主 Client 不声明 VIDEO（见 DoubaoVideoClient）", caps.contains(Capability.VIDEO));
 		assertFalse("方舟主 Client 不声明 FINETUNE（未适配）", caps.contains(Capability.FINETUNE));
-		assertEquals(5, caps.size());
+		assertEquals(4, caps.size());
 		// 未声明能力 → guard 在发请求前抛 AiException
 		assertThrows(AiException.class, () -> client.generate(VideoRequest.builder()
 			.model("doubao-seedance").prompt("x").build()));
 		assertThrows(AiException.class, () -> client.createFineTune(
 			FineTuneRequest.builder().model("doubao-pro").trainingFileId("f-1").build()));
+		assertThrows(AiException.class, () -> client.moderate(ModerationRequest.of("x")));
 		client.close();
 	}
 

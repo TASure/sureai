@@ -53,6 +53,7 @@ import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
 import com.sure.ai.model.FineTuneRequest;
 import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ModerationRequest;
 import com.sure.ai.model.SttRequest;
 import com.sure.ai.model.SttResponse;
 import com.sure.ai.model.TtsRequest;
@@ -359,8 +360,9 @@ public class QwenClientTest {
 	}
 
 	/**
-	 * capabilities() 精确声明：百炼兼容模式主 Client 支持 chat/stream/embed 及原生覆写的 TTS(CosyVoice)/STT(Qwen-ASR)；
-	 * 不支持 IMAGE（见 {@link QwenImageClient}）、VIDEO（见 {@link QwenVideoClient}）、FINETUNE（未适配），
+	 * capabilities() 精确声明（1.9.0 批次 1b）：百炼兼容模式主 Client 支持 chat/stream/embed 及原生覆写的
+	 * TTS(CosyVoice)/STT(Qwen-ASR)；不声明 MODERATION（兼容模式无 /moderations，内容安全为独立 AI 护栏）、
+	 * IMAGE（见 {@link QwenImageClient}）、VIDEO（见 {@link QwenVideoClient}）、FINETUNE（未适配），
 	 * 调用应 guard 快速失败。
 	 */
 	@Test
@@ -368,13 +370,15 @@ public class QwenClientTest {
 		QwenClient client = newClient();
 		Set<Capability> caps = capabilitiesOf(client);
 		for (Capability c : new Capability[]{Capability.CHAT, Capability.CHAT_STREAM,
-			Capability.EMBED, Capability.TTS, Capability.STT, Capability.MODERATION}) {
+			Capability.EMBED, Capability.TTS, Capability.STT}) {
 			assertTrue("应声明能力 " + c, caps.contains(c));
 		}
+		assertFalse("百炼主 Client 不声明 MODERATION（兼容模式无 /moderations）",
+			caps.contains(Capability.MODERATION));
 		assertFalse("百炼主 Client 不声明 IMAGE（见 QwenImageClient）", caps.contains(Capability.IMAGE));
 		assertFalse("百炼主 Client 不声明 VIDEO（见 QwenVideoClient）", caps.contains(Capability.VIDEO));
 		assertFalse("百炼主 Client 不声明 FINETUNE（未适配）", caps.contains(Capability.FINETUNE));
-		assertEquals(6, caps.size());
+		assertEquals(5, caps.size());
 		// 未声明能力 → guard 在发请求前抛 AiException
 		assertThrows(AiException.class, () -> client.generate(ImageRequest.builder()
 			.model("wanx").prompt("x").build()));
@@ -382,6 +386,7 @@ public class QwenClientTest {
 			.model("wanx2.1").prompt("x").build()));
 		assertThrows(AiException.class, () -> client.createFineTune(
 			FineTuneRequest.builder().model("qwen-max").trainingFileId("f-1").build()));
+		assertThrows(AiException.class, () -> client.moderate(ModerationRequest.of("x")));
 		client.close();
 	}
 

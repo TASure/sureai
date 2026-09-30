@@ -113,15 +113,18 @@ public class QwenClient extends OpenAiCompatClient implements EmbeddingClient {
 	 *   <li>{@code FINETUNE}——DashScope 原生微调协议与 OpenAI fine_tuning 差异较大，本类未适配（见类注释），故不声明。</li>
 	 * </ul>
 	 *
-	 * <p>{@code MODERATION}：百炼兼容模式未见公开的 {@code /moderations} 端点，内容审核为独立原生服务，
-	 * 但未找到官方文档明确说明兼容模式不支持，按保守原则暂予保留（未核实，保守保留）。</p>
+	 * <p>{@code MODERATION}（1.9.0 批次 1b 已按官方文档核实并移除）：百炼 OpenAI 兼容模式
+	 * （{@code /compatible-mode/v1}）未提供 OpenAI 风格的 {@code /moderations} 端点；内容安全为独立的
+	 * 「AI 安全护栏（AI Guardrails）」服务，不在兼容面内。
+	 * 依据：<a href="https://docs.bailian.console.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope">
+	 * OpenAI 兼容能力对照</a>。</p>
 	 *
 	 * @return Qwen 主 Client 实际支持的能力集合
 	 */
 	@Override
 	protected Set<Capability> capabilities() {
 		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
-			Capability.TTS, Capability.STT, Capability.MODERATION);
+			Capability.TTS, Capability.STT);
 	}
 
 	// ==================== 思考模式与 Grounding 联网（通义协议差异） ====================

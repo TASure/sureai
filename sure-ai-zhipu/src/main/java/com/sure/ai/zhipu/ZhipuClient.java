@@ -92,15 +92,17 @@ public class ZhipuClient extends OpenAiCompatClient {
 	 *   <li>{@code FINETUNE}——智谱微调为独立控制台/工单流程，无稳定公开 REST 端点，本类未适配（见类注释），故不声明。</li>
 	 * </ul>
 	 *
-	 * <p>{@code MODERATION}：智谱开放平台未见公开的 OpenAI 兼容 {@code /moderations} 端点，内容审核为独立服务，
-	 * 但未找到官方文档明确说明不支持，按保守原则暂予保留（未核实，保守保留）。</p>
+	 * <p>{@code MODERATION}（1.9.0 批次 1b 已按官方文档核实并移除）：智谱 OpenAI 兼容面
+	 * （{@code /api/paas/v4}）未提供 OpenAI 风格的 {@code /moderations} 端点；内容安全为平台内置的
+	 * 「内容审核」机制（输入拦截/输出限制），并非兼容面内可独立调用的审核接口。
+	 * 依据：<a href="https://docs.bigmodel.cn/cn/guide/platform/securityaudit">内容安全</a>。</p>
 	 *
 	 * @return Zhipu 主 Client 实际支持的能力集合
 	 */
 	@Override
 	protected Set<Capability> capabilities() {
 		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
-			Capability.IMAGE, Capability.TTS, Capability.STT, Capability.MODERATION);
+			Capability.IMAGE, Capability.TTS, Capability.STT);
 	}
 
 	/**

@@ -56,6 +56,7 @@ import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.FineTuneRequest;
 import com.sure.ai.model.ImageRequest;
 import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.ModerationRequest;
 import com.sure.ai.model.SttRequest;
 import com.sure.ai.model.SttResponse;
 import com.sure.ai.model.TtsRequest;
@@ -357,26 +358,29 @@ public class ZhipuClientTest {
 	}
 
 	/**
-	 * capabilities() 精确声明：智谱主 Client OpenAI 兼容面支持 chat/stream/embed/image(CogView)/tts/stt；
-	 * 不支持 VIDEO（见 {@link ZhipuVideoClient}）与 FINETUNE（未适配），调用应 guard 快速失败。
+	 * capabilities() 精确声明（1.9.0 批次 1b）：智谱主 Client OpenAI 兼容面支持 chat/stream/embed/image(CogView)/tts/stt；
+	 * 不声明 MODERATION（兼容面无 /moderations，内容安全为平台内置内容审核机制）、
+	 * VIDEO（见 {@link ZhipuVideoClient}）与 FINETUNE（未适配），调用应 guard 快速失败。
 	 */
 	@Test
 	public void testCapabilitiesDeclaration() throws Exception {
 		ZhipuClient client = newClient();
 		Set<Capability> caps = capabilitiesOf(client);
 		for (Capability c : new Capability[]{Capability.CHAT, Capability.CHAT_STREAM,
-			Capability.EMBED, Capability.IMAGE, Capability.TTS, Capability.STT,
-			Capability.MODERATION}) {
+			Capability.EMBED, Capability.IMAGE, Capability.TTS, Capability.STT}) {
 			assertTrue("应声明能力 " + c, caps.contains(c));
 		}
+		assertFalse("智谱主 Client 不声明 MODERATION（兼容面无 /moderations）",
+			caps.contains(Capability.MODERATION));
 		assertFalse("智谱主 Client 不声明 VIDEO（见 ZhipuVideoClient）", caps.contains(Capability.VIDEO));
 		assertFalse("智谱主 Client 不声明 FINETUNE（未适配）", caps.contains(Capability.FINETUNE));
-		assertEquals(7, caps.size());
+		assertEquals(6, caps.size());
 		// 未声明能力 → guard 在发请求前抛 AiException
 		assertThrows(AiException.class, () -> client.generate(VideoRequest.builder()
 			.model("cogvideox").prompt("x").build()));
 		assertThrows(AiException.class, () -> client.createFineTune(
 			FineTuneRequest.builder().model("glm-4").trainingFileId("f-1").build()));
+		assertThrows(AiException.class, () -> client.moderate(ModerationRequest.of("x")));
 		client.close();
 	}
 

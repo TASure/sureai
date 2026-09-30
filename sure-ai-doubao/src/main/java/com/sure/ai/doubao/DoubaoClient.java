@@ -82,15 +82,18 @@ public class DoubaoClient extends OpenAiCompatClient {
 	 *   主 Client 未接线对应路径。</li>
 	 * </ul>
 	 *
-	 * <p>{@code MODERATION}：方舟 OpenAI 兼容面未见公开的 {@code /moderations} 端点，亦未找到官方文档
-	 * 明确说明支持或不支持，按保守原则暂予保留（未核实，保守保留），避免误伤后续可能开放的端点。</p>
+	 * <p>{@code MODERATION}（1.9.0 批次 1b 已按官方文档核实并移除）：方舟 OpenAI 兼容面
+	 * （{@code /api/v3}）未提供 OpenAI 风格的 {@code /moderations} 端点；内容安全为独立的接入点级护栏
+	 * （命中时在 chat 响应中以 {@code choices[].moderation_hit_type} 返回风险标签），并非兼容面内可独立
+	 * 调用的审核接口。
+	 * 依据：<a href="https://www.volcengine.com/docs/82379/1330626">兼容 OpenAI SDK</a>。</p>
 	 *
 	 * @return Doubao 主 Client 实际支持的能力集合
 	 */
 	@Override
 	protected Set<Capability> capabilities() {
 		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
-			Capability.IMAGE, Capability.MODERATION);
+			Capability.IMAGE);
 	}
 
 	/**
