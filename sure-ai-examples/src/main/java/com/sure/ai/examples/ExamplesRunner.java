@@ -16,6 +16,8 @@
 
 package com.sure.ai.examples;
 
+import java.util.Arrays;
+
 /**
  * 示例调度入口。
  *
@@ -153,6 +155,18 @@ public final class ExamplesRunner {
 			case "gateway":
 				GatewayDemo.main(emptyArgs);
 				break;
+			case "knowledgebase":
+				// 转发 runner 名之后的参数（可选本地文档路径）
+				String[] docArgs = args.length > 1 ? Arrays.copyOfRange(args, 1, args.length)
+						: emptyArgs;
+				KnowledgeBaseDemo.main(docArgs);
+				break;
+			case "gateway-multi":
+				MultiPlatformGatewayDemo.main(emptyArgs);
+				break;
+			case "code-assistant":
+				CodeAssistantDemo.main(emptyArgs);
+				break;
 			case "proxy":
 				ProxyDemo.main(emptyArgs);
 				break;
@@ -199,6 +213,9 @@ public final class ExamplesRunner {
 		System.out.println("  mcpserver - MCP Server 演示（stdio 协议引擎，离线 fake chat 工具）");
 		System.out.println("  mcphttp   - MCP Server 演示（Streamable HTTP，loopback 回环）");
 		System.out.println("  gateway   - AI Gateway 演示（多供应商注册 + 轮询路由 + 故障转移，离线 fake）");
+		System.out.println("  knowledgebase - 知识库问答 RAG（读本地文档→分块→入库→检索→生成，可离线）");
+		System.out.println("  gateway-multi - 多平台统一网关对比（OpenAI/DeepSeek/Qwen 同问三答，可离线）");
+		System.out.println("  code-assistant - 代码助手（chatStream 流式 + calculator/datetime 工具调用，可离线）");
 		System.out.println("  proxy     - OpenAI 兼容代理演示（JDK HttpServer，loopback 自测）");
 	}
 }
