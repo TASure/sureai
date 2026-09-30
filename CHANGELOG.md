@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - Unreleased
+
+### Added
+- **7 个新平台模块（均为 OpenAI 兼容协议，`com.sure.ai.<slug>`）**：统一继承 `OpenAiCompatClient`、Bearer 鉴权、静态 `XxxUtil` 入口（`chat` / `chat(ChatRequest)` / `chatStream` / `client` / `init`），env 前缀 `SURE_AI_<PLATFORM>_API_KEY` / `_BASE_URL`。
+  - `sure-ai-minimax`（MiniMax 稀宇科技）：默认 `https://api.minimax.cn/v1`（国际站 `api.minimax.io/v1`）；`MiniMaxModels` 常量 `MiniMax-M3`（1M 上下文旗舰）/ `MiniMax-M2.7` / `MiniMax-M2.5`；`MiniMax-M3` 的 `thinking.type` / `reasoning_split` 等经 `ChatRequest.Builder#extra` 透传。仅 `CHAT`/`CHAT_STREAM`。
+  - `sure-ai-stepfun`（阶跃星辰）：默认 `https://api.stepfun.com/v1`（国际站 `api.stepfun.ai/v1`）；`StepFunModels` 常量 `step-5-preview`（旗舰 MoE）/ `step-2-mini` / `step-2-16k`。仅 `CHAT`/`CHAT_STREAM`。
+  - `sure-ai-baichuan`（百川智能）：默认 `https://api.baichuan-ai.com/v1`；`BaichuanModels` 常量 `Baichuan4-Turbo` / `Baichuan4` / `Baichuan3-Turbo`。仅 `CHAT`/`CHAT_STREAM`（其向量为原生 `/v1/embedding` 单数路径，与 OpenAI 不兼容，未声明 EMBED）。
+  - `sure-ai-lingyi`（01.AI 零一万物）：默认 `https://api.lingyiwanwu.com/v1`；`LingyiModels` 常量 `yi-large` / `yi-medium` / `yi-lightning`。仅 `CHAT`/`CHAT_STREAM`。
+  - `sure-ai-siliconflow`（硅基流动）：默认 `https://api.siliconflow.cn/v1`（国际站 `api.siliconflow.com/v1`）；模型形如 `组织/模型名`，`SiliconFlowModels` 常量 `deepseek-ai/DeepSeek-V3` / `Qwen/Qwen2.5-72B-Instruct` / `Qwen/Qwen3-32B` / `BAAI/bge-m3`；`SiliconFlowUtil.embed(model, List<String>)` 接入向量。声明 `CHAT`/`CHAT_STREAM`/`EMBED`。
+  - `sure-ai-hunyuan`（腾讯混元）：默认 `https://api.hunyuan.cloud.tencent.com/v1`（提供 `HunyuanClient.TOKENHUB_BASE_URL` 迁移端点）；`HunyuanModels` 常量 `hunyuan-turbos-latest` / `hunyuan-t1-latest` / `hunyuan-embedding`（1024 维）；`HunyuanUtil.embed(List<String>)` 固定向量模型。声明 `CHAT`/`CHAT_STREAM`/`EMBED`。
+  - `sure-ai-spark`（讯飞星火）：默认 `https://spark-api-open.xf-yun.com/v1`；`SparkModels` 短名 `lite`（永久免费）/ `pro` / `max` / `general`；API Key 形如 `APIPath:APIKey` 整体作为 Bearer。仅 `CHAT`/`CHAT_STREAM`。
+- **OpenTelemetry GenAI 语义约定桥接（sure-ai-otel `com.sure.ai.otel`）**：把 sureai 横切回调桥接为 OTel GenAI 指标，仅依赖 OTel API（provided 不传递），SDK/导出器由使用方自备。
+  - `OtelSupport` 静态入口：`metricsCollector(MeterProvider[, providerName, operationName])` / `retryListener(...)` / `agentEventSink()`；分别返回 `MetricsCollector` / `RetryListener` / `AgentEventSink`。
+  - `OtelGenAiMetrics`：映射 `gen_ai.client.operation.duration`（DoubleHistogram，s）/ `gen_ai.client.inference.usage.input_tokens` / `output_tokens`（LongCounter，{token}）；公共属性 `gen_ai.operation.name`（默认 chat）/ `gen_ai.provider.name` / `gen_ai.request.model` / `gen_ai.token.modality=text`，失败附低基数 `error.type`；Instrumentation Scope `com.sure.ai.otel`。
+  - `OtelRetryListener` / `OtelAgentEventSink`：重试事件、AgentEvent→span 事件桥接。
+  - **无感降级**：传 null / `MeterProvider.noop()` 即全空操作、零开销；runtime 未引入 OTel SDK 时本模块不被加载。
+- **全链路异步 / 虚拟线程（sure-ai-core `com.sure.ai.client.async`）**：把阻塞式 AI IO 承载在 JDK 21 虚拟线程上，对同步 API 完全向后兼容。
+  - `AiClient` default 方法族：`chatAsync(ChatRequest)` → `CompletableFuture<ChatResponse>`、`chatStreamAsync(ChatRequest, Consumer)` → `CompletableFuture<Void>`（走共享虚拟线程执行器）。
+  - `AsyncClients` 一行包装工厂：`chat/embed/image/video/audio(client[, Executor])` 分别产出 `AsyncAiClient` / `AsyncEmbeddingClient`（`embedAsync`）/ `AsyncImageClient`（`generateAsync`）/ `AsyncVideoClient`（`generateAsync`）/ `AsyncAudioClient`（`synthesizeAsync` / `transcribeAsync`）；无参重载默认虚拟线程，带 Executor 重载支持受控线程池。
+  - `AsyncExecutors`：`virtualThreadExecutor()` 进程级共享 per-task 虚拟线程执行器（命名前缀 `sureai-vt-`、守护线程、随进程存活不 shutdown）；`supplyAsync` / `runAsync` 注册「取消即中断工作线程」钩子，异常原样汇入 future。
+- **Quarkus 扩展（sure-ai-quarkus-extension + sure-ai-quarkus-extension-deployment 双模块）**：按 `sure.ai.<platform>.api-key` 条件把 `XxxClient` 注册为 Arc 合成 `@Singleton` Bean，注入即用。
+  - 配置根 `SureAiBuildConfig`（`@ConfigMapping(prefix="sure.ai")`，BUILD_TIME）+ 复用 `PlatformConfig`（api-key / secret-key / base-url / model / timeout / connect-timeout / proxy / organization / max-retries / rate-limit-qps / cache-ttl / extra-headers）；覆盖全部 22 个 `AiConfig` 族平台 + `bedrock` 独立 `BedrockGroup`（`access-key` 条件，SigV4 四元组）。
+  - 双模块职责：runtime 侧 `SureAiClientFactory`（纯逻辑、不引入 Quarkus 类型，`PLATFORM_CLIENT_CLASSES` 映射 + `toAiConfig` + 反射 `newClient`）+ `@Recorder SureAiRecorder`；deployment 侧 `SureAiProcessor`（`@BuildStep` + `@Record(STATIC_INIT)`，`SyntheticBeanBuildItem` 按类型注册），扩展特性名 `sure-ai`。
+  - 与 Spring Boot Starter 配置同构；core/平台模块零 Quarkus 依赖。
+- 新增 docs：`docs/async.md`（异步/虚拟线程）、`docs/quarkus-extension.md`（Quarkus 扩展）、`docs/platforms/{minimax,stepfun,baichuan,lingyi,siliconflow,hunyuan,spark}.md`（7 平台专项）；`docs/observability.md` 增补 OpenTelemetry GenAI 桥接章节、`docs/capabilities.md` 增补 7 平台与 5 平台精确化后的能力清单；README 中英文特性区与文档索引加入口。
+
+### Changed
+- **能力声明精确化（capabilities guard 收口）**：OpenAI / Azure / 豆包 / 通义千问 / 智谱从「继承兼容基类全量兜底」改为在各 Client 显式覆写 `capabilities()`，只声明真实可用能力；Doubao / Qwen / Zhipu 的兼容面无 `/moderations`，移除 MODERATION 声明并同步测试，未支持能力由 `guard()` 发请求前快速失败。
+- **Gemini Live（Realtime）WebSocket 端点由 v1alpha 精确化为 v1beta**：`GeminiRealtimeClient.WS_PATH` 现使用 `/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent`（早期预览 v1alpha）；同步新增 Azure Realtime（`AzureRealtimeClient`，GA `/openai/v1/realtime`，api-key 握手）。
+
+### 测试
+- 新增 121 个测试（批次 1a 36 + 批次 1b 37 + OTel 14 + 异步 19 + Quarkus 15）；全工程合计 1235 测试，`mvn -B verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 零违规）。
+
 ## [1.8.0] - Unreleased
 
 ### Added

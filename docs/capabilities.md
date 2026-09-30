@@ -93,30 +93,31 @@ grok does not support IMAGE capability
 
 以下清单逐字核对自各 Client 源码的 `capabilities()` 方法。
 
-### 继承基类全量声明的平台（保守兜底）
+### 显式声明能力集的平台
 
-`OpenAiCompatClient`（OpenAI 兼容协议基类）的 `capabilities()` 默认声明了全量能力：
-
-```java
-// com.sure.ai.client.compat.OpenAiCompatClient
-return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
-        Capability.IMAGE, Capability.VIDEO, Capability.TTS, Capability.STT,
-        Capability.MODERATION, Capability.FINETUNE);
-```
-
-**OpenAI / Azure / 豆包 / 通义千问 / 智谱** 的主 Client 均继承 `OpenAiCompatClient` 且**未覆写** `capabilities()`，因此沿用上述全量声明（保守兜底：基类假定你需要时都能调，实际是否可用由各平台模型/账号决定）。这些平台在调用上述五类受 guard 保护的能力时，**不会**触发快速失败。
-
-### 显式收窄能力集的平台
-
-下表逐平台列出「声明支持」与「调用会立即抛 `AiException`」的能力。受 guard 保护的能力共 5 个：`EMBED` / `IMAGE` / `VIDEO` / `MODERATION` / `FINETUNE`。
+自 **v1.9.0** 起，OpenAI / Azure / 豆包 / 通义千问 / 智谱也从「继承兼容基类全量兜底」改为**显式覆写 `capabilities()`**，只声明本平台真实可用的能力；v1.9.0 新增的 7 个 OpenAI 兼容平台（MiniMax / StepFun / Baichuan / Lingyi / SiliconFlow / Hunyuan / Spark）同样在模块内显式收窄。下表逐平台列出「声明支持」与「调用会立即抛 `AiException`」的能力。受 guard 保护的能力共 5 个：`EMBED` / `IMAGE` / `VIDEO` / `MODERATION` / `FINETUNE`。
 
 | 平台 slug | Client | `name()` | 声明支持的能力 | 调用即快速失败的能力 |
 |-----------|--------|----------|----------------|----------------------|
+| `openai` | `OpenAiClient` | `"openai"` | `CHAT`, `CHAT_STREAM`, `EMBED`, `IMAGE`, `VIDEO`, `TTS`, `STT`, `MODERATION`, `FINETUNE` | （无，沿用全量） |
+| `azure` | `AzureClient` | `"azure"` | `CHAT`, `CHAT_STREAM`, `EMBED`, `IMAGE`, `MODERATION`, `FINETUNE` | `VIDEO` |
+| `doubao` | `DoubaoClient` | `"doubao"` | `CHAT`, `CHAT_STREAM`, `EMBED`, `IMAGE` | `VIDEO`, `MODERATION`, `FINETUNE` |
+| `qwen` | `QwenClient` | `"qwen"` | `CHAT`, `CHAT_STREAM`, `EMBED`, `TTS`, `STT` | `IMAGE`, `VIDEO`, `MODERATION`, `FINETUNE` |
+| `zhipu` | `ZhipuClient` | `"zhipu"` | `CHAT`, `CHAT_STREAM`, `EMBED`, `IMAGE`, `TTS`, `STT` | `VIDEO`, `MODERATION`, `FINETUNE` |
 | `deepseek` | `DeepSeekClient` | `"deepseek"` | `CHAT`, `CHAT_STREAM` | `EMBED`, `IMAGE`, `VIDEO`, `MODERATION`, `FINETUNE` |
 | `grok` | `GrokClient` | `"grok"` | `CHAT`, `CHAT_STREAM` | `EMBED`, `IMAGE`, `VIDEO`, `MODERATION`, `FINETUNE` |
 | `mistral` | `MistralClient` | `"mistral"` | `CHAT`, `CHAT_STREAM`, `EMBED`, `FINETUNE` | `IMAGE`, `VIDEO`, `MODERATION` |
 | `llamacpp` | `LlamaCppClient` | `"llamacpp"` | `CHAT`, `CHAT_STREAM`, `EMBED` | `IMAGE`, `VIDEO`, `MODERATION`, `FINETUNE` |
 | `moonshot` | `MoonshotClient` | `"moonshot"` | `CHAT`, `CHAT_STREAM`, `EMBED` | `IMAGE`, `VIDEO`, `MODERATION`, `FINETUNE` |
+| `minimax` | `MiniMaxClient` | `"minimax"` | `CHAT`, `CHAT_STREAM` | `EMBED`, `IMAGE`, `VIDEO`, `MODERATION`, `FINETUNE` |
+| `stepfun` | `StepFunClient` | `"stepfun"` | `CHAT`, `CHAT_STREAM` | `EMBED`, `IMAGE`, `VIDEO`, `MODERATION`, `FINETUNE` |
+| `baichuan` | `BaichuanClient` | `"baichuan"` | `CHAT`, `CHAT_STREAM` | `EMBED`, `IMAGE`, `VIDEO`, `MODERATION`, `FINETUNE` |
+| `lingyi` | `LingyiClient` | `"lingyi"` | `CHAT`, `CHAT_STREAM` | `EMBED`, `IMAGE`, `VIDEO`, `MODERATION`, `FINETUNE` |
+| `spark` | `SparkClient` | `"spark"` | `CHAT`, `CHAT_STREAM` | `EMBED`, `IMAGE`, `VIDEO`, `MODERATION`, `FINETUNE` |
+| `siliconflow` | `SiliconFlowClient` | `"siliconflow"` | `CHAT`, `CHAT_STREAM`, `EMBED` | `IMAGE`, `VIDEO`, `MODERATION`, `FINETUNE` |
+| `hunyuan` | `HunyuanClient` | `"hunyuan"` | `CHAT`, `CHAT_STREAM`, `EMBED` | `IMAGE`, `VIDEO`, `MODERATION`, `FINETUNE` |
+
+> 说明：`OpenAiCompatClient` 的 `capabilities()` 默认仍声明全量（保守兜底），供未覆写的兼容平台沿用；上表中各家均已显式覆写为上表集合。豆包 / 通义 / 智谱的兼容面经官方文档核实**无 `/moderations` 端点**，v1.9.0 已从其 `capabilities()` 移除 `MODERATION`（OpenAI / Azure 保留）；对这三家调用 `moderate()` 现由 `guard(Capability.MODERATION)` 在发请求前快速失败。
 
 ### 范围说明
 

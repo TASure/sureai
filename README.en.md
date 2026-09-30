@@ -13,7 +13,7 @@
 |-----------|--------|-------------|-----------|
 | Third-party deps | **Zero** (JDK + built-in JSON/HTTP only) | Heavy transitive chain | Tied to Spring ecosystem |
 | Zero-config usage | **Static utility, one-line call** | Requires Builder wiring | Requires @Configuration + Beans |
-| Chinese platform coverage | **All 16 platforms** (Baidu, Zhipu, Doubao, etc.) | Partial | Partial |
+| Chinese platform coverage | **All 23 platforms** (Baidu, Zhipu, Doubao, MiniMax, Hunyuan, Spark, etc.) | Partial | Partial |
 | Module isolation | **Per-module zero-dep**, pull only what you need | Monolithic | Monolithic |
 | JDK requirement | 21+ (records / pattern matching) | 17+ | 17+ |
 
@@ -22,7 +22,7 @@
 - **Zero third-party runtime dependencies**: built-in lightweight JSON parser and HTTP client, no OkHttp/Jackson/Netty
 - **Static utilities out of the box**: `OpenAiUtil.chat(model, prompt)` — one line to chat
 - **Module-level isolation**: pull only the platform modules you need
-- **Full Chinese platform coverage**: OpenAI / Azure / Anthropic / Gemini / DeepSeek / Qwen / Zhipu / Moonshot / Doubao / Baidu / Ollama / AWS Bedrock
+- **Full Chinese platform coverage**: OpenAI / Azure / Anthropic / Gemini / DeepSeek / Qwen / Zhipu / Moonshot / Doubao / Baidu / Ollama / Grok / Mistral / Cohere / llama.cpp / AWS Bedrock; **v1.9.0 adds 7 OpenAI-compatible platforms**: MiniMax / StepFun / Baichuan / 01.AI (Lingyi) / SiliconFlow / Tencent Hunyuan / iFlytek Spark
 - **Streaming**: unified SSE streaming interface with per-chunk callback
 - **Function Calling**: tool declaration and invocation closed loop
 - **Embedding**: vector generation (see table below for supported platforms)
@@ -40,6 +40,9 @@
 - **Observability (retry callbacks / metrics / rate limit)**: `RetryListener` retry event callbacks + `MetricsCollector` metrics (built-in zero-dependency `AiMetrics`) + client-side QPS rate limiting (sure-core token bucket), optional `sure-ai-micrometer` Micrometer/Prometheus bridge; zero overhead when not mounted. See [docs/observability.md](docs/observability.md)
 - **Response Cache**: `ChatCacheKey` request-normalized SHA-256 + `CacheStore` SPI + built-in `LruCacheStore` (LRU+TTL, pure JDK), disabled by default with zero overhead; cache hits bypass network/metrics/retry; Redis adapter example in docs. See [docs/cache.md](docs/cache.md)
 - **Spring Boot Starter**: `sure-ai-spring-boot-starter` auto-configuration (`sure.ai.<platform>.api-key` property binding + `@ConditionalOnProperty` conditional assembly + `@Autowired` injection), for Spring Boot projects only; core/platform modules have zero Spring dependency. See [docs/spring-boot.md](docs/spring-boot.md)
+- **Quarkus extension (v1.9.0)**: `sure-ai-quarkus-extension` (runtime + deployment dual module) conditionally registers each `XxxClient` as an Arc synthetic `@Singleton` bean based on `sure.ai.<platform>.api-key`, ready for injection; configuration mirrors the Spring Starter, and core/platform modules have zero Quarkus dependency. See [docs/quarkus-extension.md](docs/quarkus-extension.md)
+- **Full async / virtual threads (v1.9.0)**: `AiClient` gains a `chatAsync`/`chatStreamAsync` default method family; `AsyncClients` wraps any synchronous client into `AsyncAiClient`/`AsyncEmbeddingClient`/`AsyncImageClient`/`AsyncVideoClient`/`AsyncAudioClient` in one line, running on JDK 21 virtual threads (`AsyncExecutors.virtualThreadExecutor()`); cancelable `CompletableFuture` with exceptions propagated as-is. See [docs/async.md](docs/async.md)
+- **OpenTelemetry GenAI bridge (v1.9.0)**: `sure-ai-otel` bridges `MetricsCollector`/`RetryListener`/`AgentEventSink` to OTel GenAI semantic-convention metrics (`gen_ai.client.operation.duration` / `input_tokens` / `output_tokens`); depends only on the OTel API (provided), SDK/exporters are user-supplied; passing a `null` MeterProvider degrades to a no-op with zero overhead. See [docs/observability.md](docs/observability.md#opentelemetry-genai-桥接可选模块)
 - **Circuit Breaker**: `CircuitBreaker` 3-state machine (CLOSED→OPEN→HALF_OPEN), sliding-window failure count + open timeout + half-open probe, optional via `AiConfig.circuitBreaker`, disabled by default (zero overhead), nested with retry/rate-limit. See [docs/circuit-breaker.md](docs/circuit-breaker.md)
 - **Rerank**: unified `RerankClient` abstraction, Qwen qwen3-rerank integration, pluggable two-stage re-ranking in the RAG retrieval chain
 - **Structured Output**: unified `response_format` abstraction (json_object / JSON Schema), zero-dependency `JsonMapper` strong-typed record deserialization, adapted across 8 platforms
@@ -77,8 +80,15 @@
 | Cohere | `sure-ai-cohere` | `https://api.cohere.com/v2` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ rerank-v3.5 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | llama.cpp | `sure-ai-llamacpp` | `http://localhost:8080/v1` | Optional Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | AWS Bedrock | `sure-ai-bedrock` | `https://bedrock-runtime.{region}.amazonaws.com` | SigV4 (AK/SK) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| MiniMax | `sure-ai-minimax` | `https://api.minimax.cn/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| StepFun | `sure-ai-stepfun` | `https://api.stepfun.com/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Baichuan | `sure-ai-baichuan` | `https://api.baichuan-ai.com/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 01.AI Lingyi | `sure-ai-lingyi` | `https://api.lingyiwanwu.com/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| SiliconFlow | `sure-ai-siliconflow` | `https://api.siliconflow.cn/v1` | Bearer | ✅ | ✅ BAAI/bge-m3 | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Tencent Hunyuan | `sure-ai-hunyuan` | `https://api.hunyuan.cloud.tencent.com/v1` | Bearer | ✅ | ✅ hunyuan-embedding | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| iFlytek Spark | `sure-ai-spark` | `https://spark-api-open.xf-yun.com/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-Per-platform docs: [AWS Bedrock](docs/bedrock.md) · [Cohere](docs/cohere.md) · [Grok](docs/grok.md) · [Mistral](docs/mistral.md) · [llama.cpp](docs/llamacpp.md); per-platform capability matrix see [docs/capabilities.md](docs/capabilities.md).
+Per-platform docs: [AWS Bedrock](docs/bedrock.md) · [Cohere](docs/cohere.md) · [Grok](docs/grok.md) · [Mistral](docs/mistral.md) · [llama.cpp](docs/llamacpp.md); per-platform docs for the rest (OpenAI / Azure / Anthropic / Gemini / DeepSeek / Qwen / Zhipu / Moonshot / Doubao / Baidu / Ollama and the v1.9.0 additions MiniMax / StepFun / Baichuan / Lingyi / SiliconFlow / Hunyuan / Spark) live under `docs/platforms/`; per-platform capability matrix see [docs/capabilities.md](docs/capabilities.md).
 
 Aggregation modules: `sure-ai-all` (one dependency for all platforms), `sure-ai-bom` (version management).
 
@@ -431,6 +441,20 @@ portable metadata filter abstraction. See [docs/rag.md](docs/rag.md),
 | | `SURE_AI_BAIDU_SECRET_KEY` | ✅ | Qianfan Secret Key |
 | | `SURE_AI_BAIDU_BASE_URL` | ❌ | Override default baseUrl |
 | Ollama | `SURE_AI_OLLAMA_BASE_URL` | ❌ | Override `localhost:11434` |
+| MiniMax | `SURE_AI_MINIMAX_API_KEY` | ✅ | API Key |
+| | `SURE_AI_MINIMAX_BASE_URL` | ❌ | Override default `api.minimax.cn/v1` (intl `api.minimax.io/v1`) |
+| StepFun | `SURE_AI_STEPFUN_API_KEY` | ✅ | API Key |
+| | `SURE_AI_STEPFUN_BASE_URL` | ❌ | Override default (intl `api.stepfun.ai/v1`) |
+| Baichuan | `SURE_AI_BAICHUAN_API_KEY` | ✅ | API Key |
+| | `SURE_AI_BAICHUAN_BASE_URL` | ❌ | Override default baseUrl |
+| 01.AI Lingyi | `SURE_AI_LINGYI_API_KEY` | ✅ | API Key |
+| | `SURE_AI_LINGYI_BASE_URL` | ❌ | Override default baseUrl |
+| SiliconFlow | `SURE_AI_SILICONFLOW_API_KEY` | ✅ | API Key |
+| | `SURE_AI_SILICONFLOW_BASE_URL` | ❌ | Override default (intl `api.siliconflow.com/v1`) |
+| Hunyuan | `SURE_AI_HUNYUAN_API_KEY` | ✅ | API Key |
+| | `SURE_AI_HUNYUAN_BASE_URL` | ❌ | Override default (can migrate to TokenHub endpoint) |
+| Spark | `SURE_AI_SPARK_API_KEY` | ✅ | Console `APIPath:APIKey` passed whole as Bearer |
+| | `SURE_AI_SPARK_BASE_URL` | ❌ | Override default baseUrl |
 
 ## Architecture & Isolation
 
@@ -441,6 +465,8 @@ sure-ai-core          ← common models/interfaces/HTTP/JSON (depended on by all
 sure-ai-rag           ← RAG pipeline (depends on core; platform-agnostic)
 sure-ai-agent         ← Agent ReAct multi-tool loop (depends on core; platform-agnostic)
 sure-ai-micrometer    ← observability Micrometer bridge (depends on core; micrometer-core is provided, not transitive)
+sure-ai-otel          ← observability OpenTelemetry GenAI bridge (depends on core; otel-api is provided, not transitive)
+sure-ai-quarkus-extension(-deployment) ← Quarkus auto-assembly extension (dual module; core/platforms have zero Quarkus deps)
   ├── sure-ai-openai
   ├── sure-ai-azure
   ├── sure-ai-anthropic

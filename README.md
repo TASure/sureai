@@ -13,7 +13,7 @@
 |------|--------|-------------|-----------|
 | 第三方依赖 | **零**（仅 JDK + 自研 JSON/HTTP） | 传递依赖链庞大 | 绑定 Spring 生态 |
 | 开箱即用 | **静态工具类一行调用** | 需 Builder 装配 | 需 @Configuration + Bean |
-| 国产平台覆盖 | **16 个平台全覆盖**（含百度、智谱、豆包等） | 部分覆盖 | 部分覆盖 |
+| 国产平台覆盖 | **23 个平台全覆盖**（含百度、智谱、豆包、MiniMax、混元、星火等） | 部分覆盖 | 部分覆盖 |
 | 模块隔离 | **模块级零依赖**，只引入需要的平台 | 整体引入 | 整体引入 |
 | JDK 要求 | 21+（record/pattern matching） | 17+ | 17+ |
 
@@ -22,7 +22,7 @@
 - **零第三方运行期依赖**：内置轻量 JSON 解析与 HTTP 客户端，不引入 OkHttp/Jackson/Netty
 - **静态工具类开箱即用**：`OpenAiUtil.chat(model, prompt)` 一行完成对话
 - **模块级隔离**：只引入需要的平台模块，不引入无关依赖
-- **国产平台全覆盖**：OpenAI / Azure / Anthropic / Gemini / DeepSeek / 通义千问 / 智谱 / Moonshot / 豆包 / 百度千帆 / Ollama / Grok / Mistral / Cohere / llama.cpp / AWS Bedrock
+- **国产平台全覆盖**：OpenAI / Azure / Anthropic / Gemini / DeepSeek / 通义千问 / 智谱 / Moonshot / 豆包 / 百度千帆 / Ollama / Grok / Mistral / Cohere / llama.cpp / AWS Bedrock；**v1.9.0 新增 7 个 OpenAI 兼容平台**：MiniMax（稀宇）/ 阶跃星辰 StepFun / 百川 Baichuan / 01.AI 零一万物 / 硅基流动 SiliconFlow / 腾讯混元 Hunyuan / 讯飞星火 Spark
 - **流式调用**：统一 SSE 流式接口，逐片回调
 - **Function Calling**：工具声明与调用闭环
 - **Embedding**：向量生成（支持平台见下表）
@@ -40,6 +40,9 @@
 - **可观测性（重试回调/指标/限流）**：`RetryListener` 重试事件回调 + `MetricsCollector` 指标埋点（内置零依赖 `AiMetrics`）+ 客户端 QPS 限流（sure-core 令牌桶），`sure-ai-micrometer` 可选 Micrometer/Prometheus 桥接，未挂载零开销。见 [docs/observability.md](docs/observability.md)
 - **响应缓存**：`ChatCacheKey` 请求归一化 SHA-256 + `CacheStore` SPI + 内置 `LruCacheStore`（LRU+TTL，纯 JDK），默认关闭零开销，命中不触发网络/指标/重试，Redis 适配见文档示例。见 [docs/cache.md](docs/cache.md)
 - **Spring Boot Starter**：`sure-ai-spring-boot-starter` 自动配置（`sure.ai.<platform>.api-key` 等属性绑定 + `@ConditionalOnProperty` 条件装配 + `@Autowired` 注入），仅 Spring Boot 工程使用，core/平台模块零 Spring 依赖。见 [docs/spring-boot.md](docs/spring-boot.md)
+- **Quarkus 扩展（v1.9.0）**：`sure-ai-quarkus-extension`（runtime + deployment 双模块）按 `sure.ai.<platform>.api-key` 条件把对应 `XxxClient` 注册为 Arc 合成 `@Singleton` Bean，注入即用；与 Spring Starter 配置同构，core/平台模块零 Quarkus 依赖。见 [docs/quarkus-extension.md](docs/quarkus-extension.md)
+- **全链路异步 / 虚拟线程（v1.9.0）**：`AiClient` 新增 `chatAsync`/`chatStreamAsync` default 方法族，`AsyncClients` 一行把任意同步 Client 包装为 `AsyncAiClient`/`AsyncEmbeddingClient`/`AsyncImageClient`/`AsyncVideoClient`/`AsyncAudioClient`，统一跑在 JDK 21 虚拟线程上（`AsyncExecutors.virtualThreadExecutor()`），`CompletableFuture` 可取消、异常原样透传。见 [docs/async.md](docs/async.md)
+- **OpenTelemetry GenAI 桥接（v1.9.0）**：`sure-ai-otel` 把 `MetricsCollector`/`RetryListener`/`AgentEventSink` 桥接为 OTel GenAI 语义约定指标（`gen_ai.client.operation.duration` / `input_tokens` / `output_tokens`），仅依赖 OTel API（provided），SDK/导出器由使用方自备；传 null MeterProvider 即空操作无感降级。见 [docs/observability.md](docs/observability.md#opentelemetry-genai-桥接可选模块)
 - **熔断器**：`CircuitBreaker` 三态状态机（CLOSED→OPEN→HALF_OPEN），滑动窗口失败计数+OPEN超时+HALF_OPEN探测，`AiConfig.circuitBreaker` 可选注入，默认关闭零开销，与重试/限流嵌套协作。见 [docs/circuit-breaker.md](docs/circuit-breaker.md)
 - **Rerank 重排序**：`RerankClient` 统一抽象，通义千问 qwen3-rerank 接入，二阶段精排可无缝接入 RAG 检索链路
 - **结构化输出**：`response_format` 统一抽象（json_object / JSON Schema），`JsonMapper` 零依赖强类型 record 反序列化，8 平台适配
@@ -77,8 +80,15 @@
 | Cohere | `sure-ai-cohere` | `https://api.cohere.com/v2` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ rerank-v3.5 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | llama.cpp | `sure-ai-llamacpp` | `http://localhost:8080/v1` | 可选 Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | AWS Bedrock | `sure-ai-bedrock` | `https://bedrock-runtime.{region}.amazonaws.com` | SigV4 (AK/SK) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| MiniMax 稀宇科技 | `sure-ai-minimax` | `https://api.minimax.cn/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 阶跃星辰 StepFun | `sure-ai-stepfun` | `https://api.stepfun.com/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 百川 Baichuan | `sure-ai-baichuan` | `https://api.baichuan-ai.com/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 01.AI 零一万物 | `sure-ai-lingyi` | `https://api.lingyiwanwu.com/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 硅基流动 SiliconFlow | `sure-ai-siliconflow` | `https://api.siliconflow.cn/v1` | Bearer | ✅ | ✅ BAAI/bge-m3 | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 腾讯混元 Hunyuan | `sure-ai-hunyuan` | `https://api.hunyuan.cloud.tencent.com/v1` | Bearer | ✅ | ✅ hunyuan-embedding | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 讯飞星火 Spark | `sure-ai-spark` | `https://spark-api-open.xf-yun.com/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-各平台专项文档：[AWS Bedrock](docs/bedrock.md) · [Cohere](docs/cohere.md) · [Grok](docs/grok.md) · [Mistral](docs/mistral.md) · [llama.cpp](docs/llamacpp.md)；各平台支持的能力清单见 [docs/capabilities.md](docs/capabilities.md)。
+各平台专项文档：[AWS Bedrock](docs/bedrock.md) · [Cohere](docs/cohere.md) · [Grok](docs/grok.md) · [Mistral](docs/mistral.md) · [llama.cpp](docs/llamacpp.md)；其余平台（OpenAI / Azure / Anthropic / Gemini / DeepSeek / 通义千问 / 智谱 / Moonshot / 豆包 / 百度 / Ollama 及 v1.9.0 新增的 MiniMax / StepFun / Baichuan / Lingyi / SiliconFlow / Hunyuan / Spark）的逐平台文档见 `docs/platforms/`；各平台支持的能力清单见 [docs/capabilities.md](docs/capabilities.md)。
 
 聚合模块：`sure-ai-all`（一个依赖引入全部平台）、`sure-ai-bom`（版本统一管理）。
 
@@ -428,6 +438,20 @@ BM25 关键词检索与向量+关键词混合检索、Markdown / 固定大小 / 
 | | `SURE_AI_BAIDU_SECRET_KEY` | ✅ | 千帆 Secret Key |
 | | `SURE_AI_BAIDU_BASE_URL` | ❌ | 覆盖默认 baseUrl |
 | Ollama | `SURE_AI_OLLAMA_BASE_URL` | ❌ | 覆盖 `localhost:11434` |
+| MiniMax | `SURE_AI_MINIMAX_API_KEY` | ✅ | API Key |
+| | `SURE_AI_MINIMAX_BASE_URL` | ❌ | 覆盖默认 `api.minimax.cn/v1`（可改国际站 `api.minimax.io/v1`） |
+| 阶跃星辰 | `SURE_AI_STEPFUN_API_KEY` | ✅ | API Key |
+| | `SURE_AI_STEPFUN_BASE_URL` | ❌ | 覆盖默认地址（国际站 `api.stepfun.ai/v1`） |
+| 百川 | `SURE_AI_BAICHUAN_API_KEY` | ✅ | API Key |
+| | `SURE_AI_BAICHUAN_BASE_URL` | ❌ | 覆盖默认地址 |
+| 01.AI 零一万物 | `SURE_AI_LINGYI_API_KEY` | ✅ | API Key |
+| | `SURE_AI_LINGYI_BASE_URL` | ❌ | 覆盖默认地址 |
+| 硅基流动 | `SURE_AI_SILICONFLOW_API_KEY` | ✅ | API Key |
+| | `SURE_AI_SILICONFLOW_BASE_URL` | ❌ | 覆盖默认地址（国际站 `api.siliconflow.com/v1`） |
+| 腾讯混元 | `SURE_AI_HUNYUAN_API_KEY` | ✅ | API Key |
+| | `SURE_AI_HUNYUAN_BASE_URL` | ❌ | 覆盖默认地址（可迁移至 TokenHub 端点） |
+| 讯飞星火 | `SURE_AI_SPARK_API_KEY` | ✅ | 控制台 `APIPath:APIKey` 整体作为 Bearer |
+| | `SURE_AI_SPARK_BASE_URL` | ❌ | 覆盖默认地址 |
 
 ## 架构与隔离设计
 
@@ -438,6 +462,8 @@ sure-ai-core          ← 公共模型/接口/HTTP/JSON（所有平台依赖此�
 sure-ai-rag           ← RAG 检索增强生成（依赖 core，与平台解耦）
 sure-ai-agent         ← Agent 编排 ReAct 多工具循环（依赖 core，与平台解耦）
 sure-ai-micrometer    ← 可观测性 Micrometer 桥接（依赖 core，micrometer-core provided 不传递）
+sure-ai-otel          ← 可观测性 OpenTelemetry GenAI 桥接（依赖 core，otel-api provided 不传递）
+sure-ai-quarkus-extension(-deployment) ← Quarkus 自动装配扩展（双模块；core/平台零 Quarkus 依赖）
   ├── sure-ai-openai
   ├── sure-ai-azure
   ├── sure-ai-anthropic

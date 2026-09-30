@@ -158,6 +158,62 @@ AiConfig config = AiConfig.builder()
 | `onRetry` | counter `sureai.requests.retry{path,status}` |
 | `onTokenUsage` | counter `sureai.tokens.prompt / completion / total{model}` |
 
+## OpenTelemetry GenAI 桥接（可选模块）
+
+`sure-ai-otel` 把 sureai 的三类横切回调桥接为 **OpenTelemetry GenAI 语义约定**指标，供 OTLP / Jaeger / Tempo / Langfuse 等后端采集。模块**仅依赖 OpenTelemetry API（`provided`，不传递）**，SDK 与导出器由使用方在 runtime 自行引入。
+
+> **无感降级**：传入 `null`（或 `MeterProvider.noop()`）时，桥接实现全部为空操作、零开销；未在 runtime 引入 OpenTelemetry SDK 时本模块类不会被加载，现有行为完全不变。
+
+### 接入三步
+
+```java
+// 1) 应用侧自行构建 OpenTelemetry SDK（runtime 引入 opentelemetry-sdk + 导出器）
+OpenTelemetry otel = OpenTelemetrySdk.builder()...build();
+MeterProvider mp = otel.getMeterProvider();
+
+// 2) 构造 sureai client 时挂载桥接（com.sure.ai.otel.OtelSupport）
+AiConfig config = AiConfig.builder()
+    .apiKey(key)
+    .metricsCollector(OtelSupport.metricsCollector(mp, "openai", "chat"))
+    .retryListener(OtelSupport.retryListener(mp, "openai", "chat"))
+    .build();
+
+// 3) Agent 事件桥接为 span 事件（订阅事件广播器）
+publisher.subscribe(OtelSupport.agentEventSink());
+```
+
+### 静态入口 `OtelSupport`
+
+`com.sure.ai.otel.OtelSupport` 是对齐 sureai Util 门面范式的静态入口：
+
+| 方法 | 返回 | 说明 |
+|------|------|------|
+| `metricsCollector(MeterProvider)` | `MetricsCollector` | 默认操作名 `chat` |
+| `metricsCollector(MeterProvider, providerName, operationName)` | `MetricsCollector` | 自定义 `gen_ai.provider.name` / `gen_ai.operation.name` |
+| `retryListener(MeterProvider)` | `RetryListener` | 默认操作名 `chat` |
+| `retryListener(MeterProvider, providerName, operationName)` | `RetryListener` | 自定义操作名 |
+| `agentEventSink()` | `AgentEventSink` | 把 `AgentEvent` 写为当前 span 事件 |
+
+### 映射的 GenAI 语义约定指标
+
+指标名 / 单位逐字取自 [opentelemetry/semantic-conventions-genai](https://github.com/open-telemetry/semantic-conventions-genai)，仪器作用域名（Instrumentation Scope）为 `com.sure.ai.otel`：
+
+| OTel 指标 | 类型 / 单位 | 来源 |
+|-----------|-------------|------|
+| `gen_ai.client.operation.duration` | DoubleHistogram / `s` | `onRequestSuccess` / `onRequestFailure` 记录一次操作耗时（ms→s）；失败附 `error.type` |
+| `gen_ai.client.inference.usage.input_tokens` | LongCounter / `{token}` | `onTokenUsage` 的 prompt tokens |
+| `gen_ai.client.inference.usage.output_tokens` | LongCounter / `{token}` | `onTokenUsage` 的 completion tokens |
+
+公共属性：`gen_ai.operation.name`（默认 `chat`，可按 `embeddings` 等配置）、`gen_ai.provider.name`（如 `openai`，留空则不写）、`gen_ai.request.model`、`gen_ai.token.modality=text`；`error.type` 取异常类简单名或 HTTP 状态码字符串（低基数）。
+
+```xml
+<dependency>
+    <groupId>io.github.tasure</groupId>
+    <artifactId>sure-ai-otel</artifactId>
+    <version>1.4.0</version>
+</dependency>
+```
+
 ## 完整配置示例
 
 ```java
