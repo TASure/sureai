@@ -1,9 +1,10 @@
 # sureai
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.tasure/sure-ai-core)](https://central.sonatype.com/artifact/io.github.tasure/sure-ai-core)
+[![CI](https://github.com/TASure/sureai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/TASure/sureai/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/TASure/sureai)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platforms-23-blue)](docs/capabilities.md)
 [![JDK](https://img.shields.io/badge/JDK-21+-orange.svg)](https://openjdk.org/projects/jdk/21/)
-[![Maven Central](https://img.shields.io/badge/maven--central-1.4.0-lightgrey.svg)](https://central.sonatype.com/)
-[![CI](https://img.shields.io/badge/CI-passing-brightgreen.svg)](.github/workflows/ci.yml)
 
 **Zero third-party dependency Java LLM integration toolkit.** One independent module and static utility class per mainstream AI platform, with strict module-level isolation — pull in only what you need.
 
@@ -542,6 +543,13 @@ This runs: compile → unit tests → checkstyle → spotbugs → jacoco coverag
 ## Contributing
 
 Issues and PRs are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Discussions & Support
+
+- **Questions, ideas, roadmap chat**: head to [GitHub Discussions](https://github.com/TASure/sureai/discussions) — keep the issue tracker actionable.
+- **Bugs & feature requests**: file an [Issue](https://github.com/TASure/sureai/issues) using the templates.
+- **Security vulnerabilities**: do **not** open a public issue or discussion; report privately per [SECURITY.md](SECURITY.md).
+- **Supply-chain integrity / how to verify release artifacts**: see [docs/trust.md](docs/trust.md).
 
 ## Development & Governance Team
 

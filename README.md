@@ -1,9 +1,10 @@
 # sureai
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.tasure/sure-ai-core)](https://central.sonatype.com/artifact/io.github.tasure/sure-ai-core)
+[![CI](https://github.com/TASure/sureai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/TASure/sureai/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/TASure/sureai)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platforms-23-blue)](docs/capabilities.md)
 [![JDK](https://img.shields.io/badge/JDK-21+-orange.svg)](https://openjdk.org/projects/jdk/21/)
-[![Maven Central](https://img.shields.io/badge/maven--central-1.4.0-lightgrey.svg)](https://central.sonatype.com/)
-[![CI](https://img.shields.io/badge/CI-passing-brightgreen.svg)](.github/workflows/ci.yml)
 
 **零第三方依赖的 Java 大模型接入工具基础设施。** 每个主流 AI 平台一个独立模块与静态入口工具类，模块间互相隔离，按需引入。
 
@@ -539,6 +540,13 @@ mvn -B clean verify
 ## 贡献指南
 
 欢迎提交 Issue 和 PR！详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## 讨论与支持
+
+- **使用疑问 / 想法交流 / 路线图探讨**：请到 [GitHub Discussions](https://github.com/TASure/sureai/discussions) 发帖，避免 Issue 队列被非 actionable 的讨论淹没。
+- **Bug 与功能请求**：用 [Issues](https://github.com/TASure/sureai/issues) 并按模板提交。
+- **安全漏洞**：**不要**公开 Issue 或 Discussions，按 [SECURITY.md](SECURITY.md) 的私下渠道邮件报告。
+- **供应链完整性 / 如何校验发布产物**：见 [docs/trust.md](docs/trust.md)。
 
 ## 开发与治理团队
 

@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - Unreleased
+
+本版本线为「生产级信任」专项：在不改变任何运行期行为（零运行期依赖变化）的前提下，补齐发布供应链信任链、依赖漏洞扫描、解析器模糊健壮性测试与社区工程化基建。
+
+### Added
+- **CycloneDX SBOM**：`cyclonedx-maven-plugin`（仅 build 期插件）在聚合模块 `sure-ai-all` 的 `package` 阶段生成完整 CycloneDX BOM（31 个组件：30 个内部 `io.github.tasure:*` + 运行期唯一第三方依赖 `sure-core`），并随 `mvn deploy` 附加为 Maven 构件；CI Release 把 `bom.json` / `bom.xml` 归档到 GitHub Release。见 `docs/RELEASING.md#sbomcyclonedx`。
+- **SLSA Build Provenance 出处签名**：`actions/attest-build-provenance@v2`（Sigstore keyless）对 SBOM + 全部模块 jar 做 DSSE 签名，上传仓库 attestations API，对应 SLSA Build L3；消费方用 `gh attestation verify <artifact> --repo TASure/sureai` 在线校验。见 `docs/RELEASING.md#slsa--软件出处build-provenance-attestation`。
+- **安全政策与依赖漏洞扫描**：重写 `SECURITY.md`（受支持版本线、90 天协调披露、响应时限承诺）；新增独立 `security` Maven profile 挂 `org.owasp:dependency-check-maven`，命令式 `-Psecurity` 在聚合点扫描 NVD CVE，门禁 `failBuildOnCVSS=7`；`ci.yml` 加并行 `dependency-check` job（`continue-on-error: true`）。当前基线 **0 CVE**。
+- **解析器模糊健壮性测试（Fuzz）**：6 个确定性 FuzzTest（固定种子 `Random(42)`、零新依赖、零网络）覆盖 `JsonParser` / `SseLineReader` / MCP 帧 / CLI 参数 / Redis RESP / FilterExpression。
+- **社区工程化基建**：新增 `.github/CODEOWNERS`（默认 owner `@TASure`）；增强 `ISSUE_TEMPLATE`（bug 补环境/安全提示，feature 补影响面）与 `PULL_REQUEST_TEMPLATE`（补 checkstyle / 文档 / CHANGELOG 自检项）；`CONTRIBUTING.md` 追加新贡献者流程、`good first issue` 指引、Discussions 引导；README 顶部换为 live 徽章（Maven Central / CI / License / 平台数）并加「讨论与支持」段（中英文同步）。
+- **信任手册 `docs/trust.md`**：GPG 签名 + SBOM + SLSA 三层信任链 + 依赖扫描 + Fuzz 的一页式操作速查（是什么/怎么生成/怎么验证/CI 在哪跑 + 快速命令表）。
+
+### Fixed
+- **Fuzz 发现并修复 4 个解析器健壮性缺陷**：
+  - `JsonParser` 超深嵌套触发 `StackOverflowError`——加 `MAX_DEPTH=1000` 上限；
+  - `JsonParser` 畸形数字使 `NumberFormatException` 逃逸——统一收敛为业务异常 `AiException`；
+  - `RedisVectorStore` RESP 长度字段畸形数字 `NumberFormatException` 逃逸——收敛为 `AiException`；
+  - `RedisVectorStore` RESP 超大长度导致 OOM / 负下标——加长度上限保护。
+
+### 测试
+- 新增 21 个测试（全部为 Fuzz 模糊用例）；全工程合计 **1283** 个测试，`mvn -B verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 零违规）。聚合 SBOM 31 个组件，OWASP dependency-check 扫描 **0 CVE**。
+
 ## [2.0.0] - Unreleased
 
 ### Added
