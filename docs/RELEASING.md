@@ -131,6 +131,41 @@ grype sbom:sure-ai-all/target/bom.json
 
 > 注：本轮仅改动 workflow 定义，不实际触发发布；Release 附件在真正打 tag 推送时才会生成。
 
+## 依赖漏洞扫描（OWASP dependency-check）
+
+与上面的 SBOM 互补：SBOM 回答「**我们依赖了什么**」，OWASP dependency-check 回答「**这些依赖有没有已知 CVE**」。本扫描通过独立的 `security` Maven profile 接入，**仅 build 期插件，零运行期依赖变化**。
+
+- **插件**：`org.owasp:dependency-check-maven:12.2.2`（挂在父 `pom.xml` 的 `<profile id="security">`，默认不激活）。版本核实：<https://mvnrepository.com/artifact/org.owasp/dependency-check-maven>（12.2.2 为 12.x 成熟补丁线；13.0.0 为 2026-08 新主版本，暂不追新）。
+- **命令式调用，不进默认 verify**：插件**不绑定任何生命周期阶段**，必须显式 `-Psecurity` 并用命令式 goal 调用。日常 `mvn -B verify` 不激活该 profile，主构建速度与行为完全不变。
+- **扫描聚合点**：`sure-ai-all`（其依赖树即完整模块链 + 唯一运行期第三方依赖 `sure-core`）；`skipTestScope=true` 跳过 test 作用域（junit）降噪。
+
+### 本地运行
+
+```bash
+# 1) 先把全部模块 install 到本地 .m2（sure-ai-all 依赖内部 SNAPSHOT，否则聚合点解析不到依赖树）
+mvn -B -DskipTests -Dgpg.skip=true install
+
+# 2) 执行扫描（在聚合点 sure-ai-all 上跑 check goal）
+mvn -B -Psecurity -pl sure-ai-all dependency-check:check -Dgpg.skip=true
+```
+
+- **报告位置**：`sure-ai-all/target/dependency-check/`
+  - `dependency-check-report.html` —— 人读报告，浏览器直接打开查看每个命中依赖的 CVE 列表与详情链接。
+  - `dependency-check-report.xml` —— 同结果的 XML，供程序化消费/归档。
+- **门禁阈值 `failBuildOnCVSS=7`**：扫描出 **CVSS ≥ 7.0（High 及以上）** 的漏洞时 goal 返回非零、构建失败；< 7.0 仅在报告中标注。（插件默认 11=永不失败，本项目收紧到 7。）
+- **数据源与首跑耗时**：插件首次运行会从 NVD（NIST）拉取 CVE/CPE 本地数据库（约数百 MB，落在 `~/.m2/repository/org/owasp/dependency-check-data/`），并同步 CISA KEV（已知被利用漏洞清单）；**首次较慢（可能数分钟）**，后续按 `nvdValidForHours`（默认 4h）增量更新。需要稳定联网；离线环境无法扫描。
+- **可选：NVD API Key**：匿名调用 NVD 限速较严（每次请求间隔约 8s）。在 <https://nvd.nist.gov/developers/request-an-api-key> 免费申请后，通过命令行传入可显著提速：
+  ```bash
+  mvn -B -Psecurity -pl sure-ai-all dependency-check:check -DnvdApiKey=你的NVD_API_KEY
+  ```
+- **已关闭的 analyzer**：OSS Index（Sonatype Guide）现已强制鉴权，匿名会报错；本工程运行期零第三方依赖，NVD 本地库 + KEV 已足够，故在 profile 中设 `ossIndexAnalyzerEnabled=false`，避免对外部鉴权服务的依赖。
+
+### CI 行为
+
+`.github/workflows/ci.yml` 新增 `dependency-check` job（与 `build` 矩阵**并行**）：先 `mvn -B -DskipTests install` 安装全模块，再 `mvn -B -Psecurity -pl sure-ai-all dependency-check:check`，最后用 `actions/upload-artifact@v4` 把 `sure-ai-all/target/dependency-check/` 归档为 artifact `dependency-check-report`。
+
+该 job 设 `continue-on-error: true`：NVD 数据库下载抖动、或某条新披露 CVE 触发 `failBuildOnCVSS=7` 时，只让该 job 标红，**不阻塞 build 矩阵的 PR 门禁**；报告随 artifact 归档供人工复核。待基线稳定（长期无 High 级命中）后，可把 `continue-on-error` 改为 `false` 以强制执行门禁。
+
 ## CI / GitHub Actions 自动化
 
 除上述手动流程外，仓库根目录 `.github/workflows/` 下提供了三条 workflow，分别承担发布、性能基线与常规 CI 门禁。手动发布流程仍然有效（例如沙箱内需要用 hosts 文件规避 DNS 问题时），CI 流程只是把相同的 `mvn -B -Prelease clean deploy` 搬到 runner 上自动执行。
@@ -175,6 +210,7 @@ grype sbom:sure-ai-all/target/bom.json
   - JDK 21：`ubuntu-latest` + `macos-latest`，并额外 include 一个 `windows-latest`（`continue-on-error: true`，Windows 路径分隔符/脚本行为尚未在 CI 全量验证，失败不阻断整体）；
   - JDK 25：仅 `ubuntu-latest`（通过 `exclude` 把 JDK25 + macos 排除掉，节省资源）。
 - 每个 job 执行 `mvn -B verify`；JDK21 的 job 额外上传 `sure-ai-*/target/site/jacoco/` 作为 JaCoCo 覆盖率 artifact。
+- 另有一个**与 build 矩阵并行**的 `dependency-check` job（见上文 [依赖漏洞扫描（OWASP dependency-check）](#依赖漏洞扫描owasp-dependency-check)），独立跑 OWASP 扫描并归档 HTML/XML 报告，`continue-on-error: true`，不进 `mvn verify`、不拖慢主门禁。
 
 ## 已知问题与规避（v1.1.0 实测）
 

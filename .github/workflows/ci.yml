@@ -47,3 +47,39 @@ jobs:
         with:
           name: jacoco-report-${{ matrix.os }}-jdk${{ matrix.java }}
           path: sure-ai-*/target/site/jacoco/
+
+  # OWASP dependency-check 依赖漏洞扫描：与 build 矩阵并行的独立 job。
+  # - 仅 build 期插件（org.owasp:dependency-check-maven，挂在 -Psecurity profile），零运行期依赖变化；
+  # - 不进默认 mvn verify（保主构建速度），本 job 显式以命令式 goal 调用；
+  # - 需要联网拉取 NVD CVE 数据库（首次约数百 MB，GitHub Actions 允许出站）；
+  # - continue-on-error: true：NVD 抖动或新披露 CVE 触发 failBuildOnCVSS=7 时，仅报告变红，
+  #   不阻塞 build 矩阵门禁；报告以 artifact 归档供人工/后续门禁复核。基线稳定后可改为 false 以强制执行。
+  dependency-check:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      # sure-ai-all 依赖全部内部 SNAPSHOT 模块，必须先 install 到本地 .m2，
+      # 后续在聚合点 -pl sure-ai-all 才能解析出完整依赖树（与 benchmark.yml 先 install 的先例一致）。
+      - name: Install modules to local repository
+        run: mvn -B -DskipTests -Dgpg.skip=true install
+
+      - name: OWASP dependency-check
+        run: mvn -B -Psecurity -pl sure-ai-all dependency-check:check -Dgpg.skip=true
+
+      - name: Upload dependency-check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: sure-ai-all/target/dependency-check/
+          if-no-files-found: warn

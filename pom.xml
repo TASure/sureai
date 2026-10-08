@@ -558,5 +558,46 @@
                 </plugins>
             </build>
         </profile>
+
+        <!-- 依赖漏洞扫描 profile（OWASP dependency-check）：
+             - 默认【不激活】，必须显式 -Psecurity 才生效；
+             - 插件不绑定任何 Maven 生命周期阶段，CI/本地均以命令式 goal 直接调用
+               （mvn -Psecurity dependency-check:check），因此即便误激活也不会跑进默认 verify，
+               主构建（mvn -B verify）速度与行为完全不受影响；
+             - 仅 build 期插件，零运行期依赖变化。
+             用法与报告产物见 docs/RELEASING.md「依赖漏洞扫描（OWASP dependency-check）」。 -->
+        <profile>
+            <id>security</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <!-- 12.2.2：12.x 成熟补丁线（2026-05）；13.0.0 为 2026-08 新主版本，暂不追新。 -->
+                        <version>12.2.2</version>
+                        <configuration>
+                            <!-- CVSS >= 7.0（High）时使构建失败；插件默认 11（永不失败）。
+                                 仅作门禁阈值，实际是否阻断 CI 由 dependency-check job 的
+                                 continue-on-error 决定（见 .github/workflows/ci.yml）。 -->
+                            <failBuildOnCVSS>7</failBuildOnCVSS>
+                            <!-- 同时输出 HTML（人读报告）与 XML（程序化消费/归档） -->
+                            <formats>
+                                <format>HTML</format>
+                                <format>XML</format>
+                            </formats>
+                            <!-- 只扫 compile/runtime 依赖，跳过 test 作用域（junit）降噪；
+                                 插件默认即 true，此处显式固定。 -->
+                            <skipTestScope>true</skipTestScope>
+                            <!-- 报告固定输出到本模块 target/dependency-check/ -->
+                            <outputDirectory>${project.build.directory}/dependency-check</outputDirectory>
+                            <!-- OSS Index（Sonatype Guide）现已强制鉴权，匿名调用会报错；
+                                 本工程运行期零第三方依赖，NVD 本地库 + CISA KEV 已足够，
+                                 关闭该 analyzer 以消除对外部鉴权服务的依赖，保证 CI 可复现。 -->
+                            <ossIndexAnalyzerEnabled>false</ossIndexAnalyzerEnabled>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 </project>
