@@ -16,6 +16,7 @@
 package com.sure.ai.agent.react;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -23,6 +24,8 @@ import static org.junit.Assert.assertTrue;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.sure.ai.agent.AgentListener;
@@ -299,5 +302,158 @@ public class ReActAgentTest {
 		// base(system) + 当前 user = 2 条，无额外历史
 		assertEquals(2, msgs.size());
 		assertEquals("你好", msgs.get(1).content());
+	}
+
+	/** 工具执行结果消息按 tool_call 顺序回填（不依赖实际完成先后）。 */
+	private static List<ChatMessage> toolMessages(ChatRequest request) {
+		List<ChatMessage> toolMsgs = new ArrayList<>();
+		for (ChatMessage m : request.messages()) {
+			if (m.toolCallId() != null) {
+				toolMsgs.add(m);
+			}
+		}
+		return toolMsgs;
+	}
+
+	@Test
+	public void testParallelToolCallsRunConcurrentlyAndInOrder() throws Exception {
+		ToolRegistry registry = new ToolRegistry();
+		CountDownLatch aStarted = new CountDownLatch(1);
+		CountDownLatch bStarted = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		registry.register(ToolFunction.of("a", "甲", "{}"), args -> {
+			aStarted.countDown();
+			try {
+				assertTrue(release.await(5, TimeUnit.SECONDS));
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+			return "result-a";
+		});
+		registry.register(ToolFunction.of("b", "乙", "{}"), args -> {
+			bStarted.countDown();
+			try {
+				assertTrue(release.await(5, TimeUnit.SECONDS));
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+			return "result-b";
+		});
+
+		FakeAiClient client = new FakeAiClient()
+			.withToolCalls(List.of(call("c1", "a", "{}"), call("c2", "b", "{}")))
+			.withText("done");
+		ReActAgent agent = new ReActAgent(client, baseRequest(), registry);
+
+		// 后台跑编排；主线程证明两个工具确实并发启动
+		String[] answer = new String[1];
+		Thread worker = new Thread(() -> answer[0] = agent.run("综合"));
+		worker.start();
+
+		// 并发证据：a 阻塞期间 b 也已启动（串行模式下 b 永远不会此时启动）
+		assertTrue("a 已启动", aStarted.await(5, TimeUnit.SECONDS));
+		assertTrue("b 在 a 阻塞期间也已启动 → 证明并发", bStarted.await(3, TimeUnit.SECONDS));
+
+		release.countDown();
+		worker.join(10_000L);
+		assertEquals("done", answer[0]);
+
+		// 结果按模型给出的顺序回填（c1→a, c2→b），与完成先后无关
+		ChatRequest second = client.requests().get(1);
+		List<ChatMessage> tools = toolMessages(second);
+		assertEquals(2, tools.size());
+		assertEquals("c1", tools.get(0).toolCallId());
+		assertEquals("result-a", tools.get(0).content());
+		assertEquals("c2", tools.get(1).toolCallId());
+		assertEquals("result-b", tools.get(1).content());
+	}
+
+	@Test
+	public void testParallelToolFailureIsolation() {
+		ToolRegistry registry = new ToolRegistry();
+		registry.register(ToolFunction.of("ok", "正常", "{}"), args -> "one");
+		registry.register(ToolFunction.of("boom", "炸", "{}"), args -> {
+			throw new IllegalStateException("boom-text");
+		});
+		registry.register(ToolFunction.of("three", "第三个", "{}"), args -> "three");
+
+		FakeAiClient client = new FakeAiClient()
+			.withToolCalls(List.of(
+					call("c1", "ok", "{}"),
+					call("c2", "boom", "{}"),
+					call("c3", "three", "{}")))
+			.withText("我收到全部结果了");
+
+		AtomicInteger errors = new AtomicInteger();
+		ReActAgent agent = new ReActAgent(client, baseRequest(), registry,
+				new AgentListener() {
+					@Override
+					public void onError(Throwable e) {
+						errors.incrementAndGet();
+					}
+				}, 10, Duration.ofSeconds(30));
+
+		String answer = agent.run("并发调三个");
+		assertEquals("我收到全部结果了", answer);
+		assertTrue(errors.get() >= 1);
+
+		// 失败隔离：三个工具的结果都回填，boom 的错误不影响 ok/three
+		List<ChatMessage> tools = toolMessages(client.requests().get(1));
+		assertEquals(3, tools.size());
+		assertEquals("c1", tools.get(0).toolCallId());
+		assertEquals("one", tools.get(0).content());
+		assertEquals("c2", tools.get(1).toolCallId());
+		assertTrue(tools.get(1).content().contains("boom-text"));
+		assertEquals("c3", tools.get(2).toolCallId());
+		assertEquals("three", tools.get(2).content());
+	}
+
+	@Test
+	public void testParallelSwitchOffFallsBackToSerial() throws Exception {
+		ToolRegistry registry = new ToolRegistry();
+		CountDownLatch aStarted = new CountDownLatch(1);
+		CountDownLatch bStarted = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		registry.register(ToolFunction.of("a", "甲", "{}"), args -> {
+			aStarted.countDown();
+			try {
+				assertTrue(release.await(5, TimeUnit.SECONDS));
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+			return "result-a";
+		});
+		registry.register(ToolFunction.of("b", "乙", "{}"), args -> {
+			bStarted.countDown();
+			return "result-b";
+		});
+
+		FakeAiClient client = new FakeAiClient()
+			.withToolCalls(List.of(call("c1", "a", "{}"), call("c2", "b", "{}")))
+			.withText("serial-done");
+		ReActAgent agent = new ReActAgent(client, baseRequest(), registry)
+			.withParallelToolCalls(false);
+		assertFalse(agent.parallelToolCalls());
+
+		String[] answer = new String[1];
+		Thread worker = new Thread(() -> answer[0] = agent.run("串行"));
+		worker.start();
+
+		assertTrue("a 已启动", aStarted.await(5, TimeUnit.SECONDS));
+		// 串行证据：a 阻塞期间 b 尚未启动
+		assertFalse("串行模式下 b 在 a 完成前不应启动",
+			bStarted.await(300, TimeUnit.MILLISECONDS));
+
+		release.countDown();
+		worker.join(10_000L);
+		assertEquals("serial-done", answer[0]);
+
+		// 关闭开关后结果顺序仍一致
+		List<ChatMessage> tools = toolMessages(client.requests().get(1));
+		assertEquals(2, tools.size());
+		assertEquals("c1", tools.get(0).toolCallId());
+		assertEquals("result-a", tools.get(0).content());
+		assertEquals("c2", tools.get(1).toolCallId());
+		assertEquals("result-b", tools.get(1).content());
 	}
 }

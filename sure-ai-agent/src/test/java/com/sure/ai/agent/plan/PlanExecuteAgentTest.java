@@ -24,6 +24,8 @@ import static org.junit.Assert.assertTrue;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.sure.ai.agent.AgentListener;
@@ -330,5 +332,114 @@ public class PlanExecuteAgentTest {
 		// 规划 + (工具调用轮 + 文本轮) + 汇总 = 4
 		assertEquals(4, client.requests().size());
 		assertFalse(registry.isEmpty());
+	}
+
+	@Test
+	public void testParallelToolCallsInStep() throws Exception {
+		ToolRegistry registry = new ToolRegistry();
+		CountDownLatch aStarted = new CountDownLatch(1);
+		CountDownLatch bStarted = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		registry.register(com.sure.ai.model.ToolFunction.of("a", "甲", "{}"), args -> {
+			aStarted.countDown();
+			try {
+				assertTrue(release.await(5, TimeUnit.SECONDS));
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+			return "a-result";
+		});
+		registry.register(com.sure.ai.model.ToolFunction.of("boom", "炸", "{}"), args -> {
+			bStarted.countDown();
+			throw new IllegalStateException("boom-step");
+		});
+
+		ScriptedAiClient client = new ScriptedAiClient()
+			.withText("""
+					[{"step":"一步"}]
+					""")
+			.withToolCalls(List.of(
+					com.sure.ai.model.ToolCall.of("c1", "a", "{}"),
+					com.sure.ai.model.ToolCall.of("c2", "boom", "{}")))
+			.withText("步骤综合结果")
+			.withText("最终答案");
+
+		CountingListener listener = new CountingListener();
+		PlanExecuteAgent agent = new PlanExecuteAgent(client, baseRequest(), registry,
+				listener, 10, Duration.ofSeconds(30));
+
+		String[] answer = new String[1];
+		Thread worker = new Thread(() -> answer[0] = agent.run("任务"));
+		worker.start();
+
+		// 并发证据：a 阻塞期间 boom 也已启动；boom 抛异常不影响 a
+		assertTrue(aStarted.await(5, TimeUnit.SECONDS));
+		assertTrue(bStarted.await(3, TimeUnit.SECONDS));
+		release.countDown();
+		worker.join(10_000L);
+
+		assertEquals("最终答案", answer[0]);
+		assertTrue(listener.error.get() >= 1);
+
+		// 步骤工具轮后的请求里，结果按 c1→c2 顺序回填
+		ChatRequest afterTools = client.requests().get(2);
+		List<ChatMessage> toolMsgs = new ArrayList<>();
+		for (ChatMessage m : afterTools.messages()) {
+			if (m.toolCallId() != null) {
+				toolMsgs.add(m);
+			}
+		}
+		assertEquals(2, toolMsgs.size());
+		assertEquals("c1", toolMsgs.get(0).toolCallId());
+		assertEquals("a-result", toolMsgs.get(0).content());
+		assertEquals("c2", toolMsgs.get(1).toolCallId());
+		assertTrue(toolMsgs.get(1).content().contains("boom-step"));
+	}
+
+	@Test
+	public void testParallelSwitchOffInStepIsSerial() throws Exception {
+		ToolRegistry registry = new ToolRegistry();
+		CountDownLatch aStarted = new CountDownLatch(1);
+		CountDownLatch bStarted = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		registry.register(com.sure.ai.model.ToolFunction.of("a", "甲", "{}"), args -> {
+			aStarted.countDown();
+			try {
+				assertTrue(release.await(5, TimeUnit.SECONDS));
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+			return "a-result";
+		});
+		registry.register(com.sure.ai.model.ToolFunction.of("b", "乙", "{}"), args -> {
+			bStarted.countDown();
+			return "b-result";
+		});
+
+		ScriptedAiClient client = new ScriptedAiClient()
+			.withText("""
+					[{"step":"一步"}]
+					""")
+			.withToolCalls(List.of(
+					com.sure.ai.model.ToolCall.of("c1", "a", "{}"),
+					com.sure.ai.model.ToolCall.of("c2", "b", "{}")))
+			.withText("步骤结果")
+			.withText("最终答案");
+
+		PlanExecuteAgent agent = new PlanExecuteAgent(client, baseRequest(), registry,
+				null, 10, Duration.ofSeconds(30))
+			.withParallelToolCalls(false);
+		assertFalse(agent.parallelToolCalls());
+
+		String[] answer = new String[1];
+		Thread worker = new Thread(() -> answer[0] = agent.run("任务"));
+		worker.start();
+
+		assertTrue(aStarted.await(5, TimeUnit.SECONDS));
+		// 串行：a 阻塞期间 b 未启动
+		assertFalse(bStarted.await(300, TimeUnit.MILLISECONDS));
+		release.countDown();
+		worker.join(10_000L);
+		assertEquals("最终答案", answer[0]);
 	}
 }

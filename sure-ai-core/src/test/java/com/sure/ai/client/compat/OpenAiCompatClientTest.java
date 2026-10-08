@@ -274,6 +274,34 @@ public class OpenAiCompatClientTest {
 		client.close();
 	}
 
+	/** 多 tool_calls：单轮返回 N 个工具调用必须全部按序解析（OpenAI 协议族共用本策略）。 */
+	@Test
+	public void testMultipleToolCallsParsedInOrder() {
+		handle(200, "{\"id\":\"c-multi\",\"model\":\"gpt\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":null,"
+			+ "\"tool_calls\":["
+			+ "{\"id\":\"call_1\",\"type\":\"function\","
+			+ "\"function\":{\"name\":\"getWeather\",\"arguments\":\"{\\\"city\\\":\\\"X\\\"}\"}},"
+			+ "{\"id\":\"call_2\",\"type\":\"function\","
+			+ "\"function\":{\"name\":\"calculate\",\"arguments\":\"{\\\"expr\\\":\\\"1+1\\\"}\"}}"
+			+ "]},"
+			+ "\"finish_reason\":\"tool_calls\"}]}");
+		OpenAiCompatClient client = newClient();
+		ChatResponse resp = client.chat(ChatRequest.builder().model("gpt")
+			.messages(ChatMessage.user("综合一下")).build());
+		List<ToolCall> calls = resp.choices().get(0).message().toolCalls();
+		assertNotNull(calls);
+		assertEquals(2, calls.size());
+		// 顺序与数组顺序一致，全部解析而非只取第一个
+		assertEquals("call_1", calls.get(0).id());
+		assertEquals("getWeather", calls.get(0).name());
+		assertTrue(calls.get(0).argumentsJson().contains("city"));
+		assertEquals("call_2", calls.get(1).id());
+		assertEquals("calculate", calls.get(1).name());
+		assertTrue(calls.get(1).argumentsJson().contains("expr"));
+		client.close();
+	}
+
 	/** 多模态：user 消息带 ImagePart。 */
 	@Test
 	public void testMultimodal() {
