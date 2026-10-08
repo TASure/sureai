@@ -28,6 +28,9 @@ import java.util.Map;
  */
 public final class JsonWriter {
 
+	/** 小写十六进制数字表（控制字符 \\uXXXX 转义用，与原 String.format %04x 一致）。 */
+	private static final char[] HEX_DIGITS = "0123456789abcdef".toCharArray();
+
 	/** 私有构造器。 */
 	private JsonWriter() {
 		throw new AssertionError("No instances");
@@ -111,38 +114,44 @@ public final class JsonWriter {
 	/** 写入带引号转义的字符串。 */
 	private static void writeString(String str, StringBuilder sb) {
 		sb.append('"');
-		for (int i = 0; i < str.length(); i++) {
+		int len = str.length();
+		int start = 0;
+		int i = 0;
+		while (i < len) {
 			char c = str.charAt(i);
-			switch (c) {
-				case '"':
-					sb.append("\\\"");
-					break;
-				case '\\':
-					sb.append("\\\\");
-					break;
-				case '\n':
-					sb.append("\\n");
-					break;
-				case '\r':
-					sb.append("\\r");
-					break;
-				case '\t':
-					sb.append("\\t");
-					break;
-				case '\b':
-					sb.append("\\b");
-					break;
-				case '\f':
-					sb.append("\\f");
-					break;
-				default:
-					if (c < 0x20) {
-						sb.append(String.format("\\u%04x", (int) c));
-					} else {
-						sb.append(c);
-					}
+			// 需转义的字符：先把上一段"普通字符"整块追加，再写转义序列。
+			String repl = switch (c) {
+				case '"' -> "\\\"";
+				case '\\' -> "\\\\";
+				case '\n' -> "\\n";
+				case '\r' -> "\\r";
+				case '\t' -> "\\t";
+				case '\b' -> "\\b";
+				case '\f' -> "\\f";
+				default -> null;
+			};
+			if (repl != null) {
+				sb.append(str, start, i);
+				sb.append(repl);
+				start = i + 1;
+			} else if (c < 0x20) {
+				sb.append(str, start, i);
+				appendUnicodeEscape(sb, c);
+				start = i + 1;
 			}
+			i++;
 		}
+		// 收尾：剩余普通字符整块追加。
+		sb.append(str, start, len);
 		sb.append('"');
+	}
+
+	/** 手动拼接四位小写十六进制转义（替代 String.format，避免格式化器开销）。 */
+	private static void appendUnicodeEscape(StringBuilder sb, int c) {
+		sb.append("\\u");
+		sb.append(HEX_DIGITS[(c >> 12) & 0xF]);
+		sb.append(HEX_DIGITS[(c >> 8) & 0xF]);
+		sb.append(HEX_DIGITS[(c >> 4) & 0xF]);
+		sb.append(HEX_DIGITS[c & 0xF]);
 	}
 }
