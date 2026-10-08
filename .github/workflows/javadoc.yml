@@ -70,7 +70,7 @@ jobs:
         run: mvn -B org.apache.maven.plugins:maven-javadoc-plugin:3.6.3:aggregate -Dgpg.skip=true
 
       - name: Configure Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       # path 指向【直接含 index.html 的目录】（target/site/apidocs/index.html 即站点首页）。
       - name: Upload Javadoc artifact
