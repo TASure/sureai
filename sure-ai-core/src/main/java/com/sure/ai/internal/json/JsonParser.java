@@ -29,11 +29,17 @@ import com.sure.ai.exception.AiException;
  */
 public final class JsonParser {
 
+	/** 最大允许嵌套深度（对象/数组层数），超过即视为恶意输入抛业务异常，防止 StackOverflowError。 */
+	private static final int MAX_DEPTH = 1000;
+
 	/** 输入文本 */
 	private final String s;
 
 	/** 当前下标 */
 	private int pos;
+
+	/** 当前嵌套深度（每进入一个对象/数组值 +1） */
+	private int depth;
 
 	/**
 	 * 私有构造器。
@@ -70,25 +76,33 @@ public final class JsonParser {
 		if (this.pos >= this.s.length()) {
 			throw err("unexpected end of input");
 		}
-		char c = this.s.charAt(this.pos);
-		switch (c) {
-			case '{':
-				return parseObject();
-			case '[':
-				return parseArray();
-			case '"':
-				return new JsonPrimitive(parseString());
-			case 't':
-				expectLiteral("true");
-				return new JsonPrimitive(Boolean.TRUE);
-			case 'f':
-				expectLiteral("false");
-				return new JsonPrimitive(Boolean.FALSE);
-			case 'n':
-				expectLiteral("null");
-				return JsonPrimitive.jsonNull();
-			default:
-				return parseNumber();
+		if (this.depth >= MAX_DEPTH) {
+			throw err("nesting too deep (limit " + MAX_DEPTH + ")");
+		}
+		this.depth++;
+		try {
+			char c = this.s.charAt(this.pos);
+			switch (c) {
+				case '{':
+					return parseObject();
+				case '[':
+					return parseArray();
+				case '"':
+					return new JsonPrimitive(parseString());
+				case 't':
+					expectLiteral("true");
+					return new JsonPrimitive(Boolean.TRUE);
+				case 'f':
+					expectLiteral("false");
+					return new JsonPrimitive(Boolean.FALSE);
+				case 'n':
+					expectLiteral("null");
+					return JsonPrimitive.jsonNull();
+				default:
+					return parseNumber();
+			}
+		} finally {
+			this.depth--;
 		}
 	}
 

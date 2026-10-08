@@ -357,7 +357,7 @@ public class RedisVectorStore implements VectorStore {
 		return switch (b) {
 			case '*' -> readArray(in);
 			case '$' -> readBulk(in);
-			case ':' -> Long.parseLong(readLine(in));
+			case ':' -> parseCount(readLine(in));
 			case '+' -> readLine(in);
 			case '-' -> throw new AiException("Redis 错误: " + readLine(in));
 			case '_' -> {
@@ -368,10 +368,16 @@ public class RedisVectorStore implements VectorStore {
 		};
 	}
 
+	/** 数组元素数上限：防御恶意服务器宣称天文数量导致 {@link OutOfMemoryError}。 */
+	private static final long MAX_ARRAY_ELEMENTS = 10_000_000L;
+
 	private static Object readArray(InputStream in) throws IOException {
-		long count = Long.parseLong(readLine(in));
+		long count = parseCount(readLine(in));
 		if (count < 0) {
 			return null;
+		}
+		if (count > MAX_ARRAY_ELEMENTS) {
+			throw new AiException("Redis 数组元素数超过上限: " + count);
 		}
 		List<Object> list = new ArrayList<>((int) count);
 		for (long i = 0; i < count; i++) {
@@ -381,9 +387,12 @@ public class RedisVectorStore implements VectorStore {
 	}
 
 	private static Object readBulk(InputStream in) throws IOException {
-		long len = Long.parseLong(readLine(in));
+		long len = parseCount(readLine(in));
 		if (len < 0) {
 			return null;
+		}
+		if (len > Integer.MAX_VALUE) {
+			throw new AiException("Redis bulk 长度超过可分配上限: " + len);
 		}
 		byte[] buf = new byte[(int) len];
 		int read = 0;
@@ -400,6 +409,18 @@ public class RedisVectorStore implements VectorStore {
 			throw new AiException("Redis bulk 结尾 CRLF 缺失");
 		}
 		return new String(buf, StandardCharsets.UTF_8);
+	}
+
+	/**
+	 * 解析 RESP 行内十进制整数长度/计数：非数字或超出 long 范围一律转业务异常，
+	 * 不得让 {@link NumberFormatException} 逃逸。
+	 */
+	private static long parseCount(String line) throws IOException {
+		try {
+			return Long.parseLong(line);
+		} catch (NumberFormatException e) {
+			throw new AiException("Redis 数字字段非法: '" + line + "'");
+		}
 	}
 
 	private static String readLine(InputStream in) throws IOException {

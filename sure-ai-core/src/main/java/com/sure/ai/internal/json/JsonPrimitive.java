@@ -95,7 +95,12 @@ public final class JsonPrimitive extends JsonElement {
 				// 超过 long 范围，落到 double
 			}
 		}
-		return new JsonPrimitive(Double.valueOf(Double.parseDouble(rawToken)), rawToken);
+		try {
+			return new JsonPrimitive(Double.valueOf(Double.parseDouble(rawToken)), rawToken);
+		} catch (NumberFormatException ex) {
+			// 畸形数字词法（如 "-e"、"1e"、"1.2.3"）：按语法错误抛业务异常，不得让 NumberFormatException 逃逸
+			throw new AiException("Invalid JSON number: " + rawToken);
+		}
 	}
 
 	/** 私有数字构造器。 */
