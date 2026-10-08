@@ -22,6 +22,12 @@ on:
 
 permissions:
   contents: write
+  # SLSA build provenance attestation（GitHub 原生 / Sigstore keyless）所需：
+  #   id-token: write      向 GitHub OIDC provider 换取短期 Sigstore 签名证书
+  #   attestations: write   把签名后的 in-toto attestation 上传到本仓库 attestations API
+  # （attest 步骤本身不需要 contents: write，但下面 Attach SBOM to Release 需要，故保留。）
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -111,6 +117,23 @@ jobs:
         run: |
           mvn -B -pl sure-ai-all package -DskipTests -Dgpg.skip=true
           ls -la sure-ai-all/target/bom.xml sure-ai-all/target/bom.json
+
+      - name: Attest build provenance (SLSA v1.0)
+        # 信任链第三层：对本轮构建产物生成 GitHub 原生、Sigstore 签名的 SLSA Build Provenance attestation。
+        #   - subject = 聚合 SBOM（sure-ai-all/target/bom.json + bom.xml）+ 全部模块 jar
+        #     （sure-ai-*/target/*.jar；jar 产物分散在各平台模块 target，聚合点 sure-ai-all 为 pom 包，不出 jar）。
+        #   - action 用 OIDC 换短期 Sigstore 证书，对 in-toto/v1 provenance statement 做 DSSE 签名，
+        #     并上传到本仓库 attestations API；消费方用 `gh attestation verify` 在线校验（见 docs/RELEASING.md）。
+        #   - subject-path 官方支持 glob / 路径列表（总数 ≤ 1024）；本仓库 ~40 模块 × (主/sources/javadoc) jar 远低于上限。
+        # 前置：permissions 已含 id-token: write + attestations: write（见文件头 permissions 块）。
+        # 产物可用性：上方 `clean deploy` 已把各模块 jar 落盘到各自 target，本步骤不做 clean，jar 仍在；
+        # Generate SBOM 已落盘 bom.json/bom.xml。
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            sure-ai-all/target/bom.json
+            sure-ai-all/target/bom.xml
+            sure-ai-*/target/*.jar
 
       - name: Attach SBOM to GitHub Release
         # 将 CycloneDX SBOM 附加到当前 tag 的 Release（JSON 为主，XML 为辅）。

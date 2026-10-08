@@ -131,6 +131,63 @@ grype sbom:sure-ai-all/target/bom.json
 
 > 注：本轮仅改动 workflow 定义，不实际触发发布；Release 附件在真正打 tag 推送时才会生成。
 
+## SLSA / 软件出处（Build Provenance Attestation）
+
+与 GPG 签名、SBOM 并列，构成发布产物的**三层供应链信任链**：
+
+| 层 | 回答的问题 | 实现 |
+| --- | --- | --- |
+| GPG 签名 | 产物是谁签的（密钥归属） | `maven-gpg-plugin`（`-Prelease`），公钥上 keyserver |
+| SBOM | 产物里装了什么依赖、有没有 CVE | CycloneDX BOM（见上节）+ OWASP dependency-check |
+| **SLSA Provenance** | **产物是从哪个源码 commit、在哪个 CI workflow 上、怎么构建出来的** | GitHub 原生 artifact attestation（`actions/attest-build-provenance@v2` + Sigstore keyless） |
+
+第三层在 `.github/workflows/release.yml` 的 `Generate SBOM` 之后、`Attach SBOM to Release` 之前新增一步：
+
+```yaml
+- name: Attest build provenance (SLSA v1.0)
+  uses: actions/attest-build-provenance@v2
+  with:
+    subject-path: |
+      sure-ai-all/target/bom.json
+      sure-ai-all/target/bom.xml
+      sure-ai-*/target/*.jar
+```
+
+- **被签名的 subject**：聚合 SBOM（`sure-ai-all/target/bom.json` + `bom.xml`）以及全部模块 jar（`sure-ai-*/target/*.jar`；jar 分散在各平台模块 `target/`，聚合点 `sure-ai-all` 是 pom 包、不出 jar）。`subject-path` 官方支持 glob / 路径列表（总数 ≤ 1024），本仓库模块数远低于上限。
+- **签名机制**：action 用 workflow 的 OIDC token 向 GitHub 换取**短期 Sigstore 签名证书**，对一条 in-toto/v1 格式的 SLSA Build Provenance statement 做 DSSE 签名，随后上传到**本仓库的 attestations API**。全程**无需自建/保管签名密钥**（Sigstore 公钥基础设施托管，public repo 走 Sigstore public-good instance）。
+- **所需权限**：workflow 的 `permissions` 在原有 `contents: write` 之外新增 `id-token: write`（取 OIDC）与 `attestations: write`（上传 attestation）。
+- **SLSA 级别**：该 action 生成 `https://slsa.dev/provenance/v1` predicate；在 GitHub 托管 runner（`ubuntu-latest`）上由本 action 构建，属于 SLSA Build Track 的可信构建者，对应 **SLSA Build L3** 保障（GitHub 官方将 artifact attestations 作为 SLSA L3 的参考实现）。
+
+### 验证（消费方 / 发布后自检）
+
+前置：`gh auth login`，且 **GitHub CLI ≥ 2.49.0**（`gh attestation` 子命令自此版本引入；老版本先升级 `gh`）。attestation 由 GitHub 托管，在线校验无需自备密钥：
+
+```bash
+# 1) 在线校验某个产物（用 --repo 精确到仓库，安全保证最强）
+gh attestation verify sure-ai-all/target/bom.json --repo TASure/sureai
+
+# 2) 按 owner 范围校验（粒度更宽）
+gh attestation verify path/to/some.jar --owner TASure
+
+# 3) 输出完整校验结果（含签名证书、时间戳、provenance predicate），供人读/策略引擎消费
+gh attestation verify sure-ai-all/target/bom.json --repo TASure/sureai --format json
+
+# 4) 只看 provenance predicate 内容（jq 过滤）
+gh attestation verify sure-ai-all/target/bom.json --repo TASure/sureai --format json \
+  --jq '.[].verificationResult.statement.predicate'
+```
+
+- 默认即校验 predicate 类型 `https://slsa.dev/provenance/v1`，并校验签名证书里的 `SourceRepository` / `SourceRepositoryOwner` / SAN（即「确实是 TASure/sureai 这个仓库的 Actions 签的」）。
+- 如需更严，可加 `--signer-workflow <owner>/<repo>/<path>/workflow.yml` 限定签名 workflow、`--source-ref <tag>` 限定源码 ref、`--deny-self-hosted-runners` 拒绝自托管 runner。
+- **离线 / 气隙校验**：把 bundle 落到本地后用 `--bundle`（`-b`）指定，配合 `--custom-trusted-root`：
+  ```bash
+  gh attestation verify path/to/artifact.jar --repo TASure/sureai --bundle sha256:<digest>.jsonl
+  ```
+
+> 来源：GitHub Docs《Using artifact attestations to establish provenance for builds》<https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds>；`gh attestation verify` 手册 <https://cli.github.com/manual/gh_attestation_verify>；离线校验 <https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/verifying-attestations-offline>。
+
+> 注：本步依赖 GitHub Actions 环境 + OIDC token，沙箱内无法实跑（无 runner / 无 OIDC），仅交付 workflow 配置与上述验证命令；真正打 `v*` tag 推送后才会生成 attestation。attestation 生成后可在仓库 Actions 标签页 / `gh attestation verify` 中看到。
+
 ## 依赖漏洞扫描（OWASP dependency-check）
 
 与上面的 SBOM 互补：SBOM 回答「**我们依赖了什么**」，OWASP dependency-check 回答「**这些依赖有没有已知 CVE**」。本扫描通过独立的 `security` Maven profile 接入，**仅 build 期插件，零运行期依赖变化**。
@@ -190,7 +247,7 @@ mvn -B -Psecurity -pl sure-ai-all dependency-check:check -Dgpg.skip=true
 
 - runner 通过 `actions/setup-java@v5` 的 `server-id: ossrh` 直接把用户名/密码写入 `~/.m2/settings.xml` 的 `<server id="ossrh">`，与父 POM `distributionManagement` / nexus-staging 插件配置的 serverId 对齐；同时导入 GPG 私钥。
 - 与手动发布一样，CI 上传到 OSSRH 后 `autoReleaseAfterClose=false`，仍需登录 Sonatype 控制台手动 **Close + Release**（见上文第 5 步）。
-- deploy 成功后，CI 额外生成 CycloneDX SBOM 并通过 `softprops/action-gh-release@v2` 把 `bom.json` / `bom.xml` 附加到当前 tag 的 GitHub Release（详见上文 [SBOM（CycloneDX）](#sbomcyclonedx) 一节）。为此 workflow 的 `permissions` 已从 `contents: read` 提升为 `contents: write`。
+- deploy 成功后，CI 依次执行：(1) 生成 CycloneDX SBOM；(2) `actions/attest-build-provenance@v2` 对 SBOM + 全部模块 jar 生成 SLSA Build Provenance 签名 attestation（上传仓库 attestations API）；(3) 通过 `softprops/action-gh-release@v2` 把 `bom.json` / `bom.xml` 附加到当前 tag 的 GitHub Release（详见上文 [SBOM（CycloneDX）](#sbomcyclonedx) 与 [SLSA / 软件出处](#slsa--软件出处build-provenance-attestation) 两节）。为此 workflow 的 `permissions` 在 `contents: write`（Release 附件）之外，另加 `id-token: write`（OIDC）与 `attestations: write`（上传 attestation）。
 
 ### benchmark.yml（JMH 性能基线）
 
