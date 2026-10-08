@@ -91,6 +91,46 @@ git push origin main
 - JavaDoc 必须无错误（`mvn -Prelease javadoc:javadoc` 预检查）。
 - 发布后约 10-30 分钟可在 Maven Central 搜索到。
 
+## SBOM（CycloneDX）
+
+sureai 通过 `cyclonedx-maven-plugin`（2.9.1，仅 build 期插件，**零运行期依赖变化**）在 `sure-ai-all` 聚合模块的 `package` 阶段生成完整 CycloneDX BOM。
+
+- **聚合点**：`sure-ai-all`（pom 包，依赖全部平台模块）。其依赖树即完整 SBOM：30 个内部模块（`io.github.tasure:*`）+ 唯一运行期第三方依赖 `io.github.tasure:sure-core:0.2.0`；测试作用域依赖（junit）已排除。
+- **版本集中管理**：父 `pom.xml` 的 `<pluginManagement>` 声明插件版本；实际绑定只在 `sure-ai-all/pom.xml`，不污染其他模块的 verify 链。
+
+### 本地生成
+
+```bash
+# 生成聚合 SBOM（上游模块需已 install 到本地 .m2；首次可加 -am）
+mvn -B -pl sure-ai-all -am package -DskipTests -Dgpg.skip=true
+
+# 产物：
+#   sure-ai-all/target/bom.xml   (CycloneDX XML)
+#   sure-ai-all/target/bom.json  (CycloneDX JSON，CI/扫描优先使用)
+```
+
+插件同时把 BOM 附加为 Maven 构件（`sure-ai-all-<version>-cyclonedx.xml` / `.json`），随 `mvn deploy` 一并上传到 OSSRH。
+
+### 校验
+
+```bash
+# 1) CycloneDX schema 合法性校验（cyclonedx-cli，见 https://github.com/CycloneDX/cyclonedx-cli）
+cyclonedx validate --input-file sure-ai-all/target/bom.json --input-format json --input-version v1_6 --fail-on-errors
+cyclonedx validate --input-file sure-ai-all/target/bom.xml  --input-format xml  --input-version v1_6 --fail-on-errors
+
+# 2) 漏洞扫描（grype，自动识别 CycloneDX；见 https://github.com/anchore/grype）
+grype sbom:sure-ai-all/target/bom.json
+```
+
+### CI 行为
+
+`.github/workflows/release.yml` 在 `mvn -Prelease clean deploy` 成功后，额外执行：
+
+1. `mvn -B -pl sure-ai-all package -DskipTests -Dgpg.skip=true`（确保 BOM 新鲜）；
+2. 通过 `softprops/action-gh-release@v2` 把 `bom.json` + `bom.xml` 附加到当前 `v*` tag 对应的 GitHub Release（需 `permissions: contents: write`）。
+
+> 注：本轮仅改动 workflow 定义，不实际触发发布；Release 附件在真正打 tag 推送时才会生成。
+
 ## CI / GitHub Actions 自动化
 
 除上述手动流程外，仓库根目录 `.github/workflows/` 下提供了三条 workflow，分别承担发布、性能基线与常规 CI 门禁。手动发布流程仍然有效（例如沙箱内需要用 hosts 文件规避 DNS 问题时），CI 流程只是把相同的 `mvn -B -Prelease clean deploy` 搬到 runner 上自动执行。
@@ -115,6 +155,7 @@ git push origin main
 
 - runner 通过 `actions/setup-java@v5` 的 `server-id: ossrh` 直接把用户名/密码写入 `~/.m2/settings.xml` 的 `<server id="ossrh">`，与父 POM `distributionManagement` / nexus-staging 插件配置的 serverId 对齐；同时导入 GPG 私钥。
 - 与手动发布一样，CI 上传到 OSSRH 后 `autoReleaseAfterClose=false`，仍需登录 Sonatype 控制台手动 **Close + Release**（见上文第 5 步）。
+- deploy 成功后，CI 额外生成 CycloneDX SBOM 并通过 `softprops/action-gh-release@v2` 把 `bom.json` / `bom.xml` 附加到当前 tag 的 GitHub Release（详见上文 [SBOM（CycloneDX）](#sbomcyclonedx) 一节）。为此 workflow 的 `permissions` 已从 `contents: read` 提升为 `contents: write`。
 
 ### benchmark.yml（JMH 性能基线）
 

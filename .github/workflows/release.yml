@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   release:
@@ -104,3 +104,21 @@ jobs:
         run: |
           KEYNAME="${GPG_KEY_ID:-D4CB857FBF6D720F38F26062350F235EAF989176}"
           mvn -B -Prelease clean deploy -Dgpg.keyname="$KEYNAME" -Dgpg.passphrase="${{ secrets.GPG_PASSPHRASE }}"
+
+      - name: Generate SBOM (CycloneDX)
+        # 重新触发 sure-ai-all 的 package 阶段以产出聚合 BOM（上游模块已由上一步 deploy 装入本地 .m2，
+        # 无需 -am）。产物：sure-ai-all/target/bom.xml + bom.json。
+        run: |
+          mvn -B -pl sure-ai-all package -DskipTests -Dgpg.skip=true
+          ls -la sure-ai-all/target/bom.xml sure-ai-all/target/bom.json
+
+      - name: Attach SBOM to GitHub Release
+        # 将 CycloneDX SBOM 附加到当前 tag 的 Release（JSON 为主，XML 为辅）。
+        # softprops/action-gh-release 按 github.ref（触发本 workflow 的 v* tag）创建/更新 Release。
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sure-ai-all/target/bom.json
+            sure-ai-all/target/bom.xml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
