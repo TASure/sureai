@@ -8,6 +8,8 @@
 
 **Zero third-party dependency Java LLM integration toolkit.** One independent module and static utility class per mainstream AI platform, with strict module-level isolation — pull in only what you need.
 
+> **📖 English documentation track:** a guided set of concept guides lives in [`docs/en/`](docs/en/README.md) — start with the [5-minute Quick Start](docs/en/quickstart.md), then the [CLI](docs/en/cli.md) and [cookbook recipes](docs/COOKBOOK.md). The full Chinese documentation index is in [README.md](README.md).
+
 ## How it differs from langchain4j / Spring AI
 
 | Dimension | sureai | langchain4j | Spring AI |
