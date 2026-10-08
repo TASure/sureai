@@ -83,3 +83,46 @@ jobs:
           name: dependency-check-report
           path: sure-ai-all/target/dependency-check/
           if-no-files-found: warn
+
+  # GraalVM native-image 真实编译验证：对 sure-ai-cli fat jar 做 AOT 编译 + 冒烟。
+  # - 独立 job、不进主 CI 门槛：native 编译慢（5–10 分钟）且 GraalVM 版本更新频繁，
+  #   continue-on-error: true 保证 GraalVM 抖动或元数据待补时不阻塞 build 矩阵门禁；
+  # - 使用 graalvm/setup-graalvm@v1 官方 action：JDK 21 + graalvm-community 发行版 +
+  #   components: native-image（自动安装 native-image 组件）+ Maven 缓存；
+  # - fat jar 内 META-INF/native-image/ 各模块元数据（reflect-config / native-image.properties）
+  #   由 native-image 构建器自动发现并合并，无需手动指定配置路径；
+  # - 冒烟：`./sure-ai-cli list`——列出 23 个平台，纯本地、零网络、零 API key，
+  #   验证 native 可执行文件能正常启动、类加载、静态初始化、record 访问器反射均正常。
+  native:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up GraalVM JDK 21 + native-image
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm-community'
+          components: 'native-image'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: 'maven'
+
+      # 打 fat jar：-am 连带构建 sure-ai-all 聚合的全部上游模块（core/rag/agent/mcp/各平台）。
+      # -Dgpg.skip=true：package 阶段不触发 GPG 签名（CI 无签名密钥）。
+      - name: Build fat jar
+        run: mvn -B -DskipTests -Dgpg.skip=true package -pl sure-ai-cli -am
+
+      # native-image 从 fat jar 编译：META-INF/native-image/ 下各模块元数据自动发现。
+      # 输出到 sure-ai-cli/target/native-image/（避免与 sure-ai-cli/ 模块目录同名冲突）。
+      - name: Native-image compile
+        run: |
+          mkdir -p sure-ai-cli/target/native-image
+          native-image -jar sure-ai-cli/target/sure-ai-cli-2.2.0-SNAPSHOT.jar \
+            -H:Name=sure-ai-cli -H:Path=sure-ai-cli/target/native-image
+
+      # 冒烟：list 子命令零网络、零 API key，验证 native 二进制可启动 + ProviderRegistry
+      # 静态初始化 + record 访问器（reflect-config.json 覆盖的 model record）正常工作。
+      - name: Smoke test (list)
+        run: ./sure-ai-cli/target/native-image/sure-ai-cli list
