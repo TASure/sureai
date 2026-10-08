@@ -223,9 +223,47 @@ mvn -B -Psecurity -pl sure-ai-all dependency-check:check -Dgpg.skip=true
 
 该 job 设 `continue-on-error: true`：NVD 数据库下载抖动、或某条新披露 CVE 触发 `failBuildOnCVSS=7` 时，只让该 job 标红，**不阻塞 build 矩阵的 PR 门禁**；报告随 artifact 归档供人工复核。待基线稳定（长期无 High 级命中）后，可把 `continue-on-error` 改为 `false` 以强制执行门禁。
 
+## Javadoc（聚合 API 文档）托管到 GitHub Pages
+
+sureai 通过独立的 `javadoc` workflow 把**全模块聚合 Javadoc** 发布到 GitHub Pages，供开发者在线查阅各平台模块的公开 API。零运行期依赖变化（仅 build 期 `maven-javadoc-plugin`，版本与 `release` profile 同为 3.6.3）。
+
+- **聚合点是【仓库根父 POM】，不是 `sure-ai-all`**：`maven-javadoc-plugin:aggregate` 聚合的是 **reactor 中的 Maven 项目**。在根目录执行（不带 `-pl`），根 POM 的 `<modules>`（约 40 个模块）全部进入 reactor，插件一次性生成一套合并文档（含 `overview-summary.html` / `allclasses-index.html` / `overview-tree.html`）。
+  > ⚠️ 切勿写成 `mvn -pl sure-ai-all javadoc:aggregate`：`sure-ai-all` 是 **pom 包、自身无一行源码**，对它聚合只会得到一个空目录（实测约 10 秒「成功」但无任何类）。本仓库既往「先 install 再 `-pl sure-ai-all`」的用法适用于依赖树类目标（如 dependency-check、SBOM），**不适用于** `javadoc:aggregate`。
+- **为什么必须先 install**：聚合 Javadoc 要解析每个模块的 compile classpath，其中跨模块引用（`sure-ai-*` 之间）在 standalone 调 `aggregate` 时不会自动带 `target/classes`，须先把全量模块装进本地 `.m2`。这与 ci.yml 的 dependency-check job、benchmark.yml「先 install 再聚合」的先例一致。
+
+### 本地生成与预览
+
+```bash
+# 1) 先把全部模块 install 到本地 .m2（聚合 Javadoc 解析跨模块类路径所需）
+mvn -B -DskipTests -Dgpg.skip=true install
+
+# 2) 在【仓库根目录】执行聚合 Javadoc（全限定坐标锁版本，避免本机是否激活 release profile 的差异）
+mvn -B org.apache.maven.plugins:maven-javadoc-plugin:3.6.3:aggregate -Dgpg.skip=true
+
+# 3) 产物（仓库根，不是 sure-ai-all 下）：
+#    target/site/apidocs/index.html
+# 浏览器打开本地预览：
+#    open target/site/apidocs/index.html   # macOS
+#    xdg-open target/site/apidocs/index.html  # Linux
+```
+
+- **doclint 现状**：保持插件默认 doclint。当前源码在默认 doclint 下仅有 *missing* 类**警告**（缺 `@param` / `@return` / 默认构造注释），**不阻断构建**；历史 v1.9.0 的畸形 HTML doclint **错误**已在源码层修复，故无需 `-Ddoclint=none`。
+- **发布前预检查**：日常发布前仍按上文「注意事项」跑 `mvn -Prelease javadoc:javadoc` 预检查单模块 javadoc 无错误。
+
+### 在线地址
+
+- workflow 部署后，站点为 GitHub Pages 默认 URL：`https://<owner>.github.io/<repo>/`。
+  - 对本仓库（`TASure/sureai`）即 **`https://tasure.github.io/sureai/`**——**以仓库 Settings → Pages 开启后的实际生成地址为准**，本文不臆造子路径。
+- **启用一次性前置**（沙箱无法代做，需仓库管理员）：仓库 **Settings → Pages → Build and deployment → Source 选 "GitHub Actions"**。首次部署成功后 GitHub 才会分配上述 URL。
+- 触发：push 到 `main`（文档随主干常新）或 Actions 页手动 `workflow_dispatch`；打 `v*` tag 的发布文档由 release 流程覆盖，本 workflow 不重复绑 tag。
+
+### 备选：javadoc.io
+
+制品发布到 Maven Central 后，[javadoc.io](https://www.javadoc.io/) 会**自动**抓取每个上传的 `-javadoc.jar`，按 `https://www.javadoc.io/doc/io.github.tasure/<artifactId>/<version>/` 提供浏览，**无需任何 workflow**。它是按「单制品 + 具体版本」粒度；GitHub Pages 这边则提供「跨全部模块、随主干滚动更新」的聚合视图。二者互补：Pages 看最新主干全貌，javadoc.io 查某个已发布版本的单个制品。
+
 ## CI / GitHub Actions 自动化
 
-除上述手动流程外，仓库根目录 `.github/workflows/` 下提供了三条 workflow，分别承担发布、性能基线与常规 CI 门禁。手动发布流程仍然有效（例如沙箱内需要用 hosts 文件规避 DNS 问题时），CI 流程只是把相同的 `mvn -B -Prelease clean deploy` 搬到 runner 上自动执行。
+除上述手动流程外，仓库根目录 `.github/workflows/` 下提供了四条 workflow，分别承担发布、性能基线、常规 CI 门禁与聚合 Javadoc 托管。手动发布流程仍然有效（例如沙箱内需要用 hosts 文件规避 DNS 问题时），CI 流程只是把相同的 `mvn -B -Prelease clean deploy` 搬到 runner 上自动执行。
 
 ### release.yml（自动发布到 OSSRH 暂存）
 
@@ -268,6 +306,19 @@ mvn -B -Psecurity -pl sure-ai-all dependency-check:check -Dgpg.skip=true
   - JDK 25：仅 `ubuntu-latest`（通过 `exclude` 把 JDK25 + macos 排除掉，节省资源）。
 - 每个 job 执行 `mvn -B verify`；JDK21 的 job 额外上传 `sure-ai-*/target/site/jacoco/` 作为 JaCoCo 覆盖率 artifact。
 - 另有一个**与 build 矩阵并行**的 `dependency-check` job（见上文 [依赖漏洞扫描（OWASP dependency-check）](#依赖漏洞扫描owasp-dependency-check)），独立跑 OWASP 扫描并归档 HTML/XML 报告，`continue-on-error: true`，不进 `mvn verify`、不拖慢主门禁。
+
+### javadoc.yml（聚合 Javadoc → GitHub Pages）
+
+- **文件**：`.github/workflows/javadoc.yml`
+- **触发条件**：push 到 `main`（文档随主干常新）；手动触发：Actions 页面 `workflow_dispatch`。
+- **执行步骤**：
+  1. `actions/checkout@v4` + `actions/setup-java@v5`（temurin 21，`cache: maven`）；
+  2. `mvn -B -DskipTests -Dgpg.skip=true install`（先把全量模块装进本地 `.m2`）；
+  3. `mvn -B org.apache.maven.plugins:maven-javadoc-plugin:3.6.3:aggregate -Dgpg.skip=true`（**根目录**聚合，产物 `target/site/apidocs/`；全限定坐标锁版本，见上文 [Javadoc 托管](#javadoc聚合-api-文档托管到-github-pages)）；
+  4. `actions/configure-pages@v5` → `actions/upload-pages-artifact@v3`（`path: target/site/apidocs`）→ `actions/deploy-pages@v4`。
+- **权限**：`contents: read`（checkout）+ `pages: write` + `id-token: write`（GitHub 原生 Pages 部署，keyless，无需自建/保管 token）；job 挂 `github-pages` environment。
+- **前置**：仓库 Settings → Pages → Source 选 **GitHub Actions**（一次性，见上文）。沙箱内无法实跑 Pages 部署（需 GitHub 环境 + Pages 开启），仅交付 workflow 定义；真正 push 到 main 后才会生成线上站点。
+- **与现有 ci/release 互不影响**：独立文件、独立触发，不改 ci.yml / release.yml，零新增第三方 Action。
 
 ## 已知问题与规避（v1.1.0 实测）
 

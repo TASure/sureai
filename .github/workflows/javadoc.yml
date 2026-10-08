@@ -1,0 +1,83 @@
+# 聚合 Javadoc 托管到 GitHub Pages。
+#
+# 触发方式：
+#   1. push 到 main：每次主干合入即重建并发布聚合 Javadoc，保证文档与主干常新；
+#   2. 在 Actions 页面手动触发（workflow_dispatch）。
+#
+# 设计要点（与本仓库 ci.yml / release.yml 风格一致）：
+#   - 零第三方 Action、零运行期依赖变化：仅用 GitHub 官方 Pages actions；
+#   - 先把全部模块 install 到本地 .m2，再生成聚合 Javadoc（理由见下「为什么先 install」）；
+#   - 聚合点是【仓库根父 POM】，不是 sure-ai-all（实测：sure-ai-all 是无源码的 pom，
+#     对它跑 javadoc:aggregate 聚合不到任何类，产物为空）。详见 docs/RELEASING.md。
+#
+# 前置（仓库管理员一次性配置，沙箱无法代做）：
+#   仓库 Settings → Pages → Build and deployment → Source 选 "GitHub Actions"。
+#   配置后本 workflow 部署的实际站点地址为 https://<owner>.github.io/<repo>/
+#   （本仓库即 https://tasure.github.io/sureai/，以仓库 Settings 实际生成的 URL 为准）。
+name: Javadoc
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# contents: read     checkout 仓库源码；
+# pages: write       向 GitHub Pages 部署 API 上传发布产物；
+# id-token: write    向 GitHub OIDC provider 换取 Pages 部署凭证（deploy-pages 所需，keyless，无需自建密钥）。
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Pages 官方推荐：部署 job 跑在 ubuntu-latest，并挂 github-pages environment
+# （该 environment 在仓库开启 Pages、Source=GitHub Actions 后由 GitHub 自动创建）。
+jobs:
+  publish-javadoc:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      # 为什么先 install：
+      #   聚合 Javadoc（javadoc:aggregate）在【根父 POM】上一次跑完 reactor 内全部 ~40 个模块，
+      #   它需要解析每个模块的 compile classpath——其中跨模块引用（sure-ai-* 之间）在 standalone
+      #   调 aggregate 时不会随 reactor 自动带 target/classes，必须先把全量模块装进本地 .m2。
+      #   与 ci.yml 的 dependency-check job、benchmark.yml「先 install 再聚合」的先例一致。
+      #   -DskipTests：跳过测试执行（本 job 目的是文档，不重复跑门禁）；-Dgpg.skip=true：本 job 不签名。
+      - name: Install all modules to local repository
+        run: mvn -B -DskipTests -Dgpg.skip=true install
+
+      # 生成聚合 Javadoc。
+      #   - 根目录执行（不带 -pl）：maven-javadoc-plugin 的 aggregate goal 聚合的是【reactor 中的项目】，
+      #     根 POM 的 <modules> 即全部模块，产物落在【仓库根 target/site/apidocs/】（含 overview-summary、
+      #     allclasses-index 等聚合页）。切勿写成 -pl sure-ai-all——该模块是无源码 pom，聚合结果为空。
+      #   - 全限定插件坐标+版本：CI runner 干净环境默认不激活 release profile（该 profile 才在 pom 里
+      #     声明 maven-javadoc-plugin 版本）；显式锁 3.6.3（与 release profile 同版），避免 Maven 解析到
+      #     Central 最新主版本导致 doclint/输出行为漂移。
+      #   - doclint：保持插件默认。当前源码在默认 doclint 下仅有 missing 类警告（缺 @param/@return），
+      #     不阻断构建；历史 v1.9.0 的畸形 HTML doclint 错误已在源码层修复。
+      - name: Build aggregated Javadoc
+        run: mvn -B org.apache.maven.plugins:maven-javadoc-plugin:3.6.3:aggregate -Dgpg.skip=true
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      # path 指向【直接含 index.html 的目录】（target/site/apidocs/index.html 即站点首页）。
+      - name: Upload Javadoc artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/site/apidocs
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
