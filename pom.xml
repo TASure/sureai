@@ -320,6 +320,13 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.11.0</version>
             </plugin>
+            <!-- 固定资源插件版本：3.4.0 起默认排除 **/.gitignore（CI runner 默认版本漂移
+                 会导致 sure-ai-archetype 模板 .gitignore 不进 target/classes、测试失败） -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
