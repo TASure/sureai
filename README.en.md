@@ -5,6 +5,10 @@
 [![License](https://img.shields.io/github/license/TASure/sureai)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platforms-23-blue)](docs/capabilities.md)
 [![JDK](https://img.shields.io/badge/JDK-21+-orange.svg)](https://openjdk.org/projects/jdk/21/)
+[![GitHub Stars](https://img.shields.io/github/stars/TASure/sureai)](https://github.com/TASure/sureai/stargazers)
+[![GitHub Downloads](https://img.shields.io/github/downloads/TASure/sureai/total)](https://github.com/TASure/sureai/releases)
+
+> The Stars / Downloads badges above are live [shields.io](https://shields.io/) badges: Stars mirrors GitHub stars in real time; Downloads counts cumulative Release artifact downloads (updates on each release — showing 0 before the first release is expected).
 
 **Zero third-party dependency Java LLM integration toolkit.** One independent module and static utility class per mainstream AI platform, with strict module-level isolation — pull in only what you need.
 
@@ -549,6 +553,7 @@ Issues and PRs are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Discussions & Support
 
 - **Questions, ideas, roadmap chat**: head to [GitHub Discussions](https://github.com/TASure/sureai/discussions) — keep the issue tracker actionable.
+  - **How Discussions works**: for Q&A, read the 📌 pinned posts first; put roadmap / version-planning talk under the *Roadmap* category; raise new ideas in *Ideas* and only convert to an Issue once they're scoped.
 - **Bugs & feature requests**: file an [Issue](https://github.com/TASure/sureai/issues) using the templates.
 - **Security vulnerabilities**: do **not** open a public issue or discussion; report privately per [SECURITY.md](SECURITY.md).
 - **Supply-chain integrity / how to verify release artifacts**: see [docs/trust.md](docs/trust.md).

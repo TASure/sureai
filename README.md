@@ -5,6 +5,10 @@
 [![License](https://img.shields.io/github/license/TASure/sureai)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platforms-23-blue)](docs/capabilities.md)
 [![JDK](https://img.shields.io/badge/JDK-21+-orange.svg)](https://openjdk.org/projects/jdk/21/)
+[![GitHub Stars](https://img.shields.io/github/stars/TASure/sureai)](https://github.com/TASure/sureai/stargazers)
+[![GitHub Downloads](https://img.shields.io/github/downloads/TASure/sureai/total)](https://github.com/TASure/sureai/releases)
+
+> 上方 Stars / Downloads 为 [shields.io](https://shields.io/) 动态徽章：Stars 实时同步 GitHub 收藏数；Downloads 统计 Release 产物累计下载量（随发版自动更新，发版前显示 0 属正常）。
 
 **零第三方依赖的 Java 大模型接入工具基础设施。** 每个主流 AI 平台一个独立模块与静态入口工具类，模块间互相隔离，按需引入。
 
@@ -544,6 +548,7 @@ mvn -B clean verify
 ## 讨论与支持
 
 - **使用疑问 / 想法交流 / 路线图探讨**：请到 [GitHub Discussions](https://github.com/TASure/sureai/discussions) 发帖，避免 Issue 队列被非 actionable 的讨论淹没。
+  - **怎么用 Discussions**：问答类（Q&A）找答案前先看置顶帖（📌 Pinned）；路线图 / 版本规划讨论放 *Roadmap* 分类；新想法先用 *Ideas* 分类聊清楚再决定是否转 Issue。
 - **Bug 与功能请求**：用 [Issues](https://github.com/TASure/sureai/issues) 并按模板提交。
 - **安全漏洞**：**不要**公开 Issue 或 Discussions，按 [SECURITY.md](SECURITY.md) 的私下渠道邮件报告。
 - **供应链完整性 / 如何校验发布产物**：见 [docs/trust.md](docs/trust.md)。
