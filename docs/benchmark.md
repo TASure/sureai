@@ -75,3 +75,22 @@ mvn -pl sure-ai-benchmark exec:java
 
 > 口径说明：`avgt` 越低越好；ops/s 由 `1e6 / us_per_op` 换算，仅供量级参考。对象构建（Builder/ChatMessage）在亚微秒级；JSON 序列化 ~1µs、解析/请求体序列化 ~2µs；SSE 流解析与 100 元素数组构建约 5µs。纯本地计算、零网络。
 
+## 2.3.0 优化前后对比（已归档）
+
+- **环境**：JDK `21.0.12.1+1-LTS`（OpenJDK 64-Bit Server VM），JMH 1.37，单线程，`-f 1`；未加额外 JVM 参数；与 2.2.0 同一台机器同一 JDK。
+- **参数**：沿用类上注解 `@Warmup(3, 10s)` + `@Measurement(5, 10s)` + `@Fork(1)`（与 2.2.0 完全一致）。
+- **两组数据含义**：`before` = 性能优化 commit（`fdb7e59`）之前的基线；`after` = `fdb7e59`「核心路径性能优化」落地后的 HEAD。两组均覆盖全部 7 个探针。
+- **原始数据**：[`benchmarks/benchmark-2.3.0.json`](benchmarks/benchmark-2.3.0.json)（单文件双 phase：`phases.before` / `phases.after`，含完整 rawData / percentiles / confidence；`deltas` 为预计算提升比例）。
+
+| 基准方法 | before us/op | after us/op | 变化 | 是否触及路径 |
+|---|---|---|---|---|
+| `JsonBenchmark.jsonObjectParse` | 2.124 ± 0.026 | 1.427 ± 0.032 | **−32.8%** | ✅ 核心优化目标 |
+| `JsonBenchmark.jsonObjectSerialize` | 0.945 ± 0.022 | 0.790 ± 0.007 | **−16.4%** | ✅ 核心优化目标 |
+| `SseParseBenchmark.parseSseStream` | 4.572 ± 0.213 | 4.133 ± 0.113 | **−9.6%** | ✅ 优化触及 |
+| `OpenAiCompatClientBenchmark.serializeChatRequestBody` | 2.068 ± 0.047 | 2.008 ± 0.014 | −2.9% | 🟡 间接受益（内部走 jsonObjectSerialize） |
+| `ChatRequestBenchmark.buildChatMessage` | 0.0185 ± 0.0004 | 0.0184 ± 0.0005 | −0.6%（噪声） | ⚪ 未触及代码路径 |
+| `ChatRequestBenchmark.buildChatRequest` | 0.0422 ± 0.0013 | 0.0426 ± 0.0025 | +0.9%（噪声） | ⚪ 未触及代码路径 |
+| `JsonBenchmark.jsonArrayBuild`（100 元素） | 4.690 ± 0.083 | 4.701 ± 0.140 | +0.2%（噪声） | ⚪ 未触及代码路径 |
+
+> 结论：本批性能优化集中在 JSON 反序列化主路径（`jsonObjectParse` −32.8%，达到既定目标）、序列化路径（`jsonObjectSerialize` −16.4%）与 SSE 行解析（`parseSseStream` −9.6%）；`serializeChatRequestBody` 因内部复用序列化路径获得 −2.9% 的间接受益。三个未触及路径（`jsonArrayBuild` / `buildChatRequest` / `buildChatMessage`）变化均在 ±1% 的 JMH 单 fork 噪声带内，符合预期——既无回退，也无意外增益。
+

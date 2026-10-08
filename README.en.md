@@ -461,9 +461,11 @@ portable metadata filter abstraction. See [docs/rag.md](docs/rag.md),
 ## Performance Benchmarks
 
 Hot paths in core (JSON serialize/parse, ChatRequest building, OpenAI request-body serialization, SSE line parsing) are covered by JMH micro-benchmarks (module `sure-ai-benchmark`, pure CPU, zero network).
-Latest run (2.2.0, JDK 21.0.12.1, AverageTime): JSON serialize/parse, request building and SSE parsing are all sub-microsecond to single-digit-microsecond.
+Latest run (2.3.0, JDK 21.0.12.1, AverageTime): JSON serialize/parse, request building and SSE parsing are all sub-microsecond to single-digit-microsecond.
 
-See [docs/benchmark.md](docs/benchmark.md) for details and methodology, and [docs/benchmarks/benchmark-2.2.0.json](docs/benchmarks/benchmark-2.2.0.json) for the raw archived result.
+**v2.3.0 hot-path optimization (JMH before/after)**: the JSON parse hot path is **32.8% faster** (2.124 → 1.427 µs/op), JSON serialize −16.4%, SSE line parse −9.6%; untouched probes stay within ±1% noise, no regression.
+
+See [docs/benchmark.md](docs/benchmark.md) for details and methodology, and [docs/benchmarks/benchmark-2.3.0.json](docs/benchmarks/benchmark-2.3.0.json) for the archived raw result (before/after phases with full rawData).
 
 ## Environment Variables
 

@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - Unreleased
+
+本版本线为「核心性能与协议完备」专项：在保持对外 API 完全向后兼容的前提下，收口 MCP 2026-07-28 无状态扩展面、ReAct Agent 单轮并行工具调用，并对 core 的 JSON / SSE 热点路径做性能优化。
+
+### Added
+- **MCP 无状态扩展面（sure-ai-mcp / sure-ai-mcp-server，对照 2026-07-28 规范收口）**：
+  - **MRTR（Multi Round-Trip Requests，多轮请求）**：术语澄清——MRTR 是 Multi Round-Trip Requests（[SEP-2322](https://modelcontextprotocol.io/specification/2026-07-28/changelog)），并非「multi-agent transport」。已对**所有** JSON-RPC 结果注入 `resultType="complete"`（含有状态 `initialize` / `ping` / `tools/call`）；未实现 `InputRequiredResult`（`resultType:"input_required"` + `inputRequests`）与客户端 `inputResponses` 重试的完整多轮回调（需客户端侧 elicitation/sampling 交互输入循环，留待后续）。
+  - **subscriptions / listen**：`subscriptions/listen` RPC 取代旧 HTTP GET 端点与 `resources/subscribe` / `resources/unsubscribe`；HTTP 下以 `text/event-stream` 应答，首帧发 `notifications/subscriptions/acknowledged` 并在 `_meta.io.modelcontextprotocol/subscriptionId` 回显请求 id。本批工具启动期静态注册、无运行期列表变更源，故 ack 后随附一条 graceful-close 完成结果即结束流，未做持续长连接推送；`resources/subscribe` / `unsubscribe` 按规范移除（-32601）。
+  - **Mcp-Method / Mcp-Name 请求头**：客户端 `StreamableHttpMcpTransport` 每次 POST 镜像 `Mcp-Method`（必带）与 `Mcp-Name`（`tools/call` / `resources/read` / `prompts/get`），非 ASCII 名走 `=?base64?...?=` 哨兵格式；服务端 Base64 解码后与 body 比对，不一致返回 `400` + JSON-RPC `-32020 HeaderMismatch`。未携带头的旧请求一律放行（向后兼容）；`MCP-Protocol-Version` 头强制校验与 `x-mcp-header` / `Mcp-Param-*` 镜像未实现。
+  - **OAuth 受保护资源元数据（RFC 9728）**：HTTP 传输在 `/.well-known/oauth-protected-resource[<path>]` 暴露 `resource` / `authorization_servers` / `scopes_supported`，可用 `authorizationServers(...)` / `scopesSupported(...)` 配置；仅暴露元数据，不做真实 token 校验 / 客户端凭证换 token。
+  - 详见 `docs/mcp-server.md#无状态扩展面2026-07-28v230-收口`。
+- **Agent 单轮并行工具调用（sure-ai-agent `ReActAgent`）**：模型单轮返回多个 `tool_calls` 时默认并发执行（虚拟线程 `AsyncExecutors.virtualThreadExecutor()`），分波控制在 `ReActAgent.DEFAULT_MAX_PARALLEL_TOOL_CALLS = 8` 路以内；结果按下标收集到数组后由调用线程统一回填对话历史，**顺序与模型给出 tool_calls 严格一致**；单个工具抛异常 / 超时被 `safeExecute` 收敛为错误文本回填，不影响同轮其余工具（失败隔离）。`withParallelToolCalls(boolean)` 派生配置相同的新编排器，传 `false` 回退历史串行（行为与 2.2.0 逐字节一致）。详见 `docs/agent.md#并行工具调用v230`。
+
+### Changed
+- 无破坏性变更：所有新能力均默认开启但可关闭，旧构造器与旧行为逐字节保留。
+
+### Perf
+- **core 热点路径 JMH 前后对比**（同一台机器、JDK `21.0.12.1+1-LTS`、JMH 1.37、`@Warmup(3,10s)` + `@Measurement(5,10s)` + `@Fork(1)`、单线程、无额外 JVM 参数；before = `fdb7e59` 之前基线，after = `fdb7e59` 之后 HEAD）：
+  - `JsonBenchmark.jsonObjectParse`：2.124 → 1.427 µs/op，**−32.8%**（核心目标达标）；
+  - `JsonBenchmark.jsonObjectSerialize`：0.945 → 0.790 µs/op，**−16.4%**；
+  - `SseParseBenchmark.parseSseStream`：4.572 → 4.133 µs/op，**−9.6%**；
+  - `OpenAiCompatClientBenchmark.serializeChatRequestBody`：2.068 → 2.008 µs/op，−2.9%（间接受益于序列化路径）；
+  - 未触及路径（`jsonArrayBuild` / `buildChatRequest` / `buildChatMessage`）变化在 ±1% 噪声带内，无回退。
+- 归档：`docs/benchmarks/benchmark-2.3.0.json`（单文件双 phase：`phases.before` / `phases.after`，含完整 rawData / percentiles / confidence 与预计算 `deltas`）；对比表与口径见 `docs/benchmark.md#230-优化前后对比已归档`。
+
+### Fixed
+- 无（本批无线上缺陷修复）。
+
+### 测试
+- 本迭代新增测试 **16** 个（MCP 无状态扩展面 10 + Agent 并行工具调用 6；perf 优化 0——JMH 基准本身不进 `mvn verify`）；全工程合计 **1299** 个测试，`mvn -B verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 零违规）。
+
 ## [2.2.0] - Unreleased
 
 本版本线为「全球化与开发者体验」专项：在不改变任何运行期行为（零运行期依赖变化）的前提下，补齐英文文档国际化、Javadoc 在线托管、GraalVM native 真实编译 CI、Cookbook 场景扩充与性能基准归档，面向海外开发者与开源社区运营。

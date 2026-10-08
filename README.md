@@ -456,9 +456,11 @@ BM25 关键词检索与向量+关键词混合检索、Markdown / 固定大小 / 
 ## 性能基准
 
 core 的序列化 / 反序列化 / 请求体构建 / SSE 解析等热点路径有 JMH 微基准（模块 `sure-ai-benchmark`，纯 CPU、零网络）。
-最近一次实测（2.2.0，JDK 21.0.12.1，AverageTime）：JSON 序列化 / 解析、ChatRequest 构建、OpenAI 请求体序列化、SSE 行解析均在亚微秒~数微秒量级。
+最近一次实测（2.3.0，JDK 21.0.12.1，AverageTime）：JSON 序列化 / 解析、ChatRequest 构建、OpenAI 请求体序列化、SSE 行解析均在亚微秒~数微秒量级。
 
-完整结果与口径见 [docs/benchmark.md](docs/benchmark.md)，原始数据归档见 [docs/benchmarks/benchmark-2.2.0.json](docs/benchmarks/benchmark-2.2.0.json)。
+**v2.3.0 核心路径优化（JMH 前后对比）**：JSON 解析主路径延迟降低 **32.8%**（2.124 → 1.427 µs/op），JSON 序列化 −16.4%，SSE 行解析 −9.6%；未触及路径变化在 ±1% 噪声带内，无回退。
+
+完整结果与口径见 [docs/benchmark.md](docs/benchmark.md)，原始数据归档见 [docs/benchmarks/benchmark-2.3.0.json](docs/benchmarks/benchmark-2.3.0.json)（含 before/after 双 phase 与完整 rawData）。
 
 ## 环境变量配置
 
