@@ -367,6 +367,266 @@ native-image \
 
 ---
 
+## 场景 10：GraphRAG 全局主题检索（知识图谱）
+
+**目标**：在向量检索之外，用「实体—关系图谱 + 社区主题摘要」回答需要纵观全局、跨文档归纳的问题。源码内置 `com.sure.ai.rag.graph`，非外部依赖。
+
+```java
+import java.util.List;
+import com.sure.ai.rag.graph.GraphRagIndexer;
+import com.sure.ai.rag.graph.GraphRagRetriever;
+import com.sure.ai.rag.graph.LlmCommunitySummarizer;
+import com.sure.ai.rag.graph.LlmEntityRelationExtractor;
+import com.sure.ai.rag.model.Document;
+
+// 抽取器：LLM 把文本解析为「主体 | 关系 | 客体」三元组（异常/脏行容错跳过）
+var extractor = LlmEntityRelationExtractor.builder()
+        .chatClient(client).model("gpt-4o-mini").build();
+// 社区摘要器：把一个社区的实体/关系归纳为一句主题（异常回退机械拼接）
+var summarizer = LlmCommunitySummarizer.builder()
+        .chatClient(client).model("gpt-4o-mini").build();
+
+// 建图：抽取实体关系 → 标签传播社区发现 → 逐社区摘要
+GraphRagIndexer indexer = GraphRagIndexer.builder()
+        .extractor(extractor)
+        .summarizer(summarizer)   // detector 缺省即 LabelPropagationCommunityDetector
+        .build();
+indexer.ingest(List.of(
+        Document.of("doc-1", "sureai 由 TASure 发起，核心模块是 sure-ai-core。"),
+        Document.of("doc-2", "sure-ai-core 提供 JDK HttpClient 与 JSON 解析，被 23 个平台模块复用。")));
+
+// 检索：query 字面命中实体 → 定位社区 → 按命中数降序返回社区摘要
+GraphRagRetriever retriever = GraphRagRetriever.builder().indexer(indexer).build();
+for (Document d : retriever.retrieve("sure-ai-core 复用了哪些模块？", 3)) {
+    System.out.println("社区#" + d.metadata().get("communityId") + " → " + d.text());
+}
+System.out.println("实体数=" + indexer.graph().entities().size()
+        + "，社区数=" + indexer.communities().size());
+```
+
+**关键点**：
+- `KnowledgeGraph` 实体名经 `normalizeName`（去空白、转小写）归一去重，线程安全。
+- `GraphRagRetriever.retrieve` 是确定性的（按 query 命中实体数排序），检索阶段零额外 LLM 调用；只有建图（抽取 + 摘要）消耗 token。
+- 与向量检索互补：向量擅长「找相关片段」，GraphRAG 擅长「跨文档全局主题」，可两路召回后合并。
+
+**离线可跑性**：建图/摘要需 LLM（**需 API key**）；未配 Key 时抽取器与摘要器按既有容错降级（不写图、回退机械拼接），用 Fake client 可把整条管线跑通。
+
+**进阶**：图谱内部结构见 [docs/rag.md](rag.md) 的 GraphRAG 章节；社区发现算法、与向量检索融合见 [docs/agent-advanced.md](agent-advanced.md) 同类检索增强讨论。
+
+---
+
+## 场景 11：Agent 人工审批（Human-in-the-Loop）
+
+**目标**：高风险工具（如联网请求、写操作）执行前先暂停，交人工/策略审批，通过才继续。
+
+```java
+import java.time.Duration;
+import java.util.List;
+import com.sure.ai.agent.AgentListener;
+import com.sure.ai.agent.approval.ApprovalGate;
+import com.sure.ai.agent.approval.ConsoleApprovalHandler;
+import com.sure.ai.agent.approval.ToolNameApprovalPolicy;
+import com.sure.ai.agent.react.ReActAgent;
+import com.sure.ai.agent.tool.ToolRegistry;
+import com.sure.ai.agent.tool.builtin.HttpTool;
+import com.sure.ai.model.ChatMessage;
+import com.sure.ai.model.ChatRequest;
+
+ToolRegistry registry = new ToolRegistry();
+registry.register(HttpTool.toToolFunction(), new HttpTool());
+
+// 策略：只有命中白名单的工具才需要审批；Handler：控制台交互读 y/n
+ApprovalGate gate = new ApprovalGate(
+        ToolNameApprovalPolicy.of("http_call"),
+        new ConsoleApprovalHandler());
+
+ChatRequest base = ChatRequest.builder()
+        .model("gpt-4o-mini")
+        .messages(List.of(ChatMessage.system("你可以联网查资料。")))
+        .build();
+
+// 最长构造器传入 approvalGate（倒数第二个参数），LongTermMemory 传 null
+ReActAgent agent = new ReActAgent(client, base, registry, new AgentListener() {
+}, 5, Duration.ofSeconds(30), null, null, null, gate, null);
+
+String answer = agent.run("帮我查一下 example.com 的首页标题。");
+System.out.println(answer);
+```
+
+**关键点**：
+- 每次工具执行前 `gate.requiresApproval(toolName, args)` 先过策略；命中则 `gate.request(ApprovalRequest.of(agentId, tool, args, desc, highRisk))` 阻塞等待 `ApprovalDecision`。
+- 策略可换：`AllToolsApprovalPolicy` / `NeverApprovalPolicy` / `HighRiskApprovalPolicy` / `ToolNameApprovalPolicy.of(...)`；Handler 可换：`ConsoleApprovalHandler` / `AutoApprovalHandler` / `AutoRejectHandler` / `TimeoutApprovalHandler`，或自实现 `ApprovalHandler`。
+- 拒绝后 Agent 不会报错中断，而是把「被拒绝」作为观察回灌模型，让它换方案或放弃。
+
+**离线可跑性**：审批门本身纯本地；跑通完整循环仍需一个 chat client（**需 API key**，或用 Fake client）。
+
+**进阶**：检查点持久化（审批后可断点续跑）、会话记忆见 [docs/agent.md](agent.md) 与 [docs/agent-advanced.md](agent-advanced.md)。
+
+---
+
+## 场景 12：Gateway 多供应商路由（权重 + 能力 + 故障转移）
+
+**目标**：按权重分流、按能力过滤、失败自动切换供应商，调用方无感知。
+
+```java
+import java.util.List;
+import java.util.Set;
+import com.sure.ai.client.Capability;
+import com.sure.ai.gateway.CapabilityRoutingStrategy;
+import com.sure.ai.gateway.ClientRegistry;
+import com.sure.ai.gateway.FailoverConfig;
+import com.sure.ai.gateway.GatewayClient;
+import com.sure.ai.gateway.WeightedRoutingStrategy;
+import com.sure.ai.model.ChatMessage;
+import com.sure.ai.model.ChatRequest;
+
+ClientRegistry registry = new ClientRegistry();
+// 同一平台多实例也可注册：第 2 参数 instanceId；第 5 参数声明能力，第 6 参数 weight
+registry.register("openai", "primary", openAiClient,
+        Set.of(Capability.CHAT, Capability.CHAT_STREAM), 2.0, "gpt-4o-mini");
+registry.register("openai", "backup", openAiClient,
+        Set.of(Capability.CHAT, Capability.CHAT_STREAM), 1.0, "gpt-4o-mini");
+registry.register("deepseek", "default", deepSeekClient,
+        Set.of(Capability.CHAT), 1.0, "deepseek-chat");
+
+// 先按能力过滤候选，再按权重加权随机（权重越高被选中概率越大）
+GatewayClient gateway = new GatewayClient(registry,
+        new CapabilityRoutingStrategy(new WeightedRoutingStrategy()),
+        FailoverConfig.builder().maxAttempts(3).build());
+
+ChatResponse resp = gateway.chat(ChatRequest.builder()
+        .model("gpt-4o-mini")
+        .messages(List.of(ChatMessage.user("用一句话介绍你自己。")))
+        .build());
+```
+
+**关键点**：
+- 路由策略可任意嵌套：`CapabilityRoutingStrategy`（只留具备所需能力的候选）包住 `WeightedRoutingStrategy`（按 weight 概率分流）；另有 `RoundRobinStrategy` / `LowestCostStrategy` / `LowestLatencyStrategy` / `ExplicitRoutingStrategy`。
+- 同平台多实例靠 `instanceId` 区分，权重默认 1.0。
+- 4xx（鉴权/限流）不跨家转移，5xx/超时/IO 异常才转移，最多 `maxAttempts` 次。
+
+**离线可跑性**：路由/故障转移逻辑纯本地；要真出结果仍需各平台 client（**需 API key**），离线可用 Fake client 观察分流与 failover。
+
+**进阶**：租户配额、密钥池轮转、延迟追踪见 [docs/gateway.md](gateway.md)；三平台同问对比的离线示例见 `sure-ai-examples` 的 `MultiPlatformGatewayDemo`。
+
+---
+
+## 场景 13：OTel GenAI 追踪接入（OtelSupport）
+
+**目标**：把请求时长、token 用量、重试、Agent 事件桥接为 OpenTelemetry GenAI 语义约定指标，导出到自建后端。
+
+```java
+import com.sure.ai.client.AiConfig;
+import com.sure.ai.otel.OtelSupport;
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.metrics.MeterProvider;
+
+// 由使用方自备 OTel SDK（SDK/导出器不随 sure-ai-otel 传递）
+OpenTelemetry otel = ...; // 例：OtlpHttpExporter + BatchSpanProcessor 装配
+MeterProvider mp = otel.getMeterProvider();
+
+AiConfig config = AiConfig.builder()
+        .apiKey(System.getenv("SURE_AI_OPENAI_API_KEY"))
+        .metricsCollector(OtelSupport.metricsCollector(mp, "openai", "chat"))
+        .retryListener(OtelSupport.retryListener(mp, "openai", "chat"))
+        .build();
+
+// Agent 场景再桥接事件流（可选）
+var agentEventSink = OtelSupport.agentEventSink();
+```
+
+**关键点**：
+- 映射到 `gen_ai.client.operation.duration`（DoubleHistogram）、`input_tokens` / `output_tokens`（LongCounter），公共属性 `gen_ai.operation.name` / `gen_ai.provider.name` / `gen_ai.request.model`。
+- 传 `MeterProvider.noop()` 或 null 即全空操作、零开销；运行期未引 OTel SDK 时本模块不被加载。
+- `sure-ai-otel` 仅依赖 OTel API（provided），SDK/导出器由你自己装配。
+
+**离线可跑性**：指标桥接本身本地可测（用 `MeterProvider.noop()` 不报错）；真实导出需起 OTel collector（**按需**）。
+
+**进阶**：完整指标映射表与重试语义见 [docs/observability.md](observability.md)；内置零依赖 `AiMetrics`（不接 OTel）见场景 6。
+
+---
+
+## 场景 14：CLI + RAG 本地离线问答
+
+**目标**：不写 Java，用 `sureai-cli rag` 把本地文档喂进去直接问答，全程不下载文档。
+
+```bash
+# 打 fat jar
+mvn -pl sure-ai-cli -am package -DskipTests
+
+# 1. 摄入本地文档并提问（--doc 可多次，支持多文档）
+export SURE_AI_OPENAI_API_KEY=sk-xxx
+java -jar sure-ai-cli/target/sure-ai-cli-2.2.0-SNAPSHOT.jar rag \
+  "公司成立于哪年？主营业务是什么？" \
+  --doc ./company.txt --doc ./history.txt
+
+# 2. 流程：读本地 UTF-8 文本 → 递归分块 → InMemoryVectorStore 入库 → topK=4 检索 → 拼上下文生成
+# 3. 换平台：--provider deepseek / --model xxx
+java -jar sure-ai-cli/target/sure-ai-cli-2.2.0-SNAPSHOT.jar rag "..." --doc ./a.txt --provider deepseek
+```
+
+**关键点**：
+- `rag` 子命令只读本机 `--doc` 指定的纯文本，**不发起任何文档网络下载**；向量库为进程内 `InMemoryVectorStore`，退出即销毁。
+- 凭证优先级：`--api-key` > `SURE_AI_<平台>_API_KEY`；退出码 0 成功 / 1 输入错误 / 2 平台异常。
+- 无 Key 时其余子命令（`list`）可离线跑；`rag` 的向量化与生成仍需一个可用 chat/embedding client（**需 API key**）。
+
+**离线可跑性**：摄入/分块/检索管道本地完成；仅最终生成与向量化调用模型。
+
+**进阶**：环境变量表、退出码、全部子命令见 [docs/cli.md](cli.md)；管线原理见 [docs/rag.md](rag.md)。
+
+---
+
+## 场景 15：多模态检索（图文混合入库与召回）
+
+**目标**：把「文本 + 图片片段」作为一条多模态文档入库，文本向量化可检索；注入 `ImageEmbedder` 后图片也向量化。
+
+```java
+import java.util.List;
+import com.sure.ai.model.ImagePart;
+import com.sure.ai.model.TextPart;
+import com.sure.ai.rag.RagUtil;
+import com.sure.ai.rag.embedding.EmbeddingProvider;
+import com.sure.ai.rag.strategy.MultimodalDocument;
+import com.sure.ai.rag.strategy.MultimodalIngestor;
+import com.sure.ai.rag.strategy.MultimodalRetriever;
+
+// 文本向量化适配器（包一层你的 EmbeddingClient；EmbeddingResponse.embeddings() 即向量列表）
+EmbeddingProvider textEmbed = text ->
+        embeddingClient.embed("text-embedding-3-small", text).embeddings().get(0);
+
+var ingestor = MultimodalIngestor.builder()
+        .store(RagUtil.inMemoryStore())
+        .textEmbeddingProvider(textEmbed)
+        // 未注入 ImageEmbedder 时图片仅登记 mm_image_count 元数据，不报错
+        .build();
+
+MultimodalDocument doc = MultimodalDocument.of("card-1", List.of(
+        TextPart.of("这是 sureai 架构图的说明：核心是 sure-ai-core。"),
+        ImagePart.ofUrl("https://example.com/arch.png")));
+ingestor.ingest(doc);
+
+// 检索：返回纯文本 Document（Retriever 接口），或取完整图文 parts
+var retriever = MultimodalRetriever.builder()
+        .store(RagUtil.inMemoryStore())
+        .textEmbeddingProvider(textEmbed)
+        .ingestor(ingestor)
+        .build();
+for (MultimodalDocument md : retriever.retrieveMultimodal("架构核心是什么？", 3)) {
+    System.out.println(md.text() + " 图片数=" + md.imageCount());
+}
+```
+
+**关键点**：
+- `MultimodalDocument.of(id, List<MessagePart>)` 聚合 `TextPart` / `ImagePart`；`text()` 聚合全部文本用于向量化，`images()` 取出全部图片片段。
+- `MultimodalIngestor` 文本必入库；图片仅在注入 `ImageEmbedder`（`embed(ImagePart)->float[]`）时逐张向量化，否则只写 `mm_image_count` 元数据——可渐进启用。
+- `retrieve()` 返回纯文本 `Document`（可当普通 Retriever 拼进 RAG 管线）；`retrieveMultimodal()` 返回带图片 parts 的完整文档。
+
+**离线可跑性**：入库/检索管道本地可跑；文本向量化需 embedding client（**需 API key**），图片向量化需你实现的 `ImageEmbedder`。
+
+**进阶**：多模态文档格式与图片理解见 [docs/multimodal.md](multimodal.md)；向量库与元数据过滤见 [docs/vector-stores.md](vector-stores.md)。
+
+---
+
 ## 附：示例运行器
 
 `sure-ai-examples` 模块内置 `ExamplesRunner`，离线即可跑（无 Key 自动走 Fake 分支）：

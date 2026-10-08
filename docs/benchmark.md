@@ -55,3 +55,23 @@ mvn -pl sure-ai-benchmark exec:java
 - 建议在空闲机器上运行，关闭 JIT 干扰（`-f 1` 单 fork）
 - 对比不同版本时保持相同 JDK、相同 `-wi`/`-i` 参数
 - 基准仅覆盖纯 CPU 路径（序列化/解析/对象构建），不含网络 IO
+
+## 2.2.0 实测结果（已归档）
+
+- **环境**：JDK `21.0.12.1+1-LTS`（OpenJDK 64-Bit Server VM），JMH 1.37，单线程，`-f 1`；未加额外 JVM 参数。
+- **参数**：沿用类上注解 `@Warmup(3, 10s)` + `@Measurement(5, 10s)` + `@Fork(1)`（标准配置，未缩短预热/迭代）；整轮墙钟约 11 分钟。
+- **运行方式**：直接 `java -cp <test-classes>+<依赖>` `org.openjdk.jmh.Main -rf json -rff docs/benchmarks/benchmark-2.2.0.json`（绕过 exec:java 的 forked classpath 限制，保证 `ForkedMain` 可加载）。
+- **原始数据**：[`benchmarks/benchmark-2.2.0.json`](benchmarks/benchmark-2.2.0.json)
+
+| 基准方法 | us/op（±误差） | ≈ 吞吐 ops/s |
+|---|---|---|
+| `ChatRequestBenchmark.buildChatMessage` | 0.019 ± 0.002 | ~52.3 M |
+| `ChatRequestBenchmark.buildChatRequest` | 0.044 ± 0.001 | ~22.7 M |
+| `JsonBenchmark.jsonObjectSerialize` | 0.993 ± 0.019 | ~1.01 M |
+| `JsonBenchmark.jsonObjectParse` | 2.177 ± 0.038 | ~459 k |
+| `OpenAiCompatClientBenchmark.serializeChatRequestBody` | 2.351 ± 0.229 | ~425 k |
+| `SseParseBenchmark.parseSseStream` | 4.878 ± 0.313 | ~205 k |
+| `JsonBenchmark.jsonArrayBuild`（100 元素） | 4.896 ± 0.162 | ~204 k |
+
+> 口径说明：`avgt` 越低越好；ops/s 由 `1e6 / us_per_op` 换算，仅供量级参考。对象构建（Builder/ChatMessage）在亚微秒级；JSON 序列化 ~1µs、解析/请求体序列化 ~2µs；SSE 流解析与 100 元素数组构建约 5µs。纯本地计算、零网络。
+

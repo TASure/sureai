@@ -453,6 +453,13 @@ BM25 关键词检索与向量+关键词混合检索、Markdown / 固定大小 / 
 以及 HyDE / Multi-Query / CRAG / GraphRAG / RAG 评估等高级能力。
 详见 [docs/rag.md](docs/rag.md)、[docs/vector-stores.md](docs/vector-stores.md)。
 
+## 性能基准
+
+core 的序列化 / 反序列化 / 请求体构建 / SSE 解析等热点路径有 JMH 微基准（模块 `sure-ai-benchmark`，纯 CPU、零网络）。
+最近一次实测（2.2.0，JDK 21.0.12.1，AverageTime）：JSON 序列化 / 解析、ChatRequest 构建、OpenAI 请求体序列化、SSE 行解析均在亚微秒~数微秒量级。
+
+完整结果与口径见 [docs/benchmark.md](docs/benchmark.md)，原始数据归档见 [docs/benchmarks/benchmark-2.2.0.json](docs/benchmarks/benchmark-2.2.0.json)。
+
 ## 环境变量配置
 
 | 平台 | 环境变量 | 必填 | 说明 |

@@ -458,6 +458,13 @@ plus advanced capabilities: HyDE / Multi-Query / CRAG / GraphRAG / RAG evaluatio
 portable metadata filter abstraction. See [docs/rag.md](docs/rag.md),
 [docs/vector-stores.md](docs/vector-stores.md).
 
+## Performance Benchmarks
+
+Hot paths in core (JSON serialize/parse, ChatRequest building, OpenAI request-body serialization, SSE line parsing) are covered by JMH micro-benchmarks (module `sure-ai-benchmark`, pure CPU, zero network).
+Latest run (2.2.0, JDK 21.0.12.1, AverageTime): JSON serialize/parse, request building and SSE parsing are all sub-microsecond to single-digit-microsecond.
+
+See [docs/benchmark.md](docs/benchmark.md) for details and methodology, and [docs/benchmarks/benchmark-2.2.0.json](docs/benchmarks/benchmark-2.2.0.json) for the raw archived result.
+
 ## Environment Variables
 
 | Platform | Variable | Required | Description |

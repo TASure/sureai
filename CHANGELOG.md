@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - Unreleased
+
+本版本线为「全球化与开发者体验」专项：在不改变任何运行期行为（零运行期依赖变化）的前提下，补齐英文文档国际化、Javadoc 在线托管、GraalVM native 真实编译 CI、Cookbook 场景扩充与性能基准归档，面向海外开发者与开源社区运营。
+
+### Added
+- **英文文档国际化（`docs/en/` 11 篇）**：核心文档全套英译——`quickstart.md` / `agent.md` / `cli.md` / `gateway.md` / `mcp-server.md` / `observability.md` / `platforms.md` / `rag.md` / `structured-output.md` / `trust.md` + 英文文档索引 `docs/en/README.md`；README 已有英文版 `README.en.md`。中英文文档同源维护，入口在 README 顶部语言切换徽章。
+- **Javadoc 在线托管（GitHub Pages）**：新增 `docs` workflow 用官方 actions（`actions/deploy-pages`）把 `mvn javadoc:jar` 产物发布到 GitHub Pages，覆盖 **40 个包**；本地 release profile 激活 javadoc 插件。在线浏览入口补进 README 文档索引。
+- **GraalVM native 真实编译 CI job**：`ci.yml` 新增 native 编译验证 job，在带 GraalVM 的 runner 上做真实 `native-image` 编译（非仅元数据守卫测试）。**本地实测**：编译 **2m58s**、产物 **41MB**、冒烟通过（fat jar → native → 样例调用正常）。
+- **Cookbook 扩充 6 个新场景（`docs/COOKBOOK.md`）**：在原有 9 场景基础上追加——①GraphRAG 全局主题检索（`com.sure.ai.rag.graph`：实体关系抽取 → 标签传播社区发现 → 社区摘要 → 命中实体定位社区）；②Agent 人工审批 HITL（`ApprovalGate` + `ToolNameApprovalPolicy` + `ConsoleApprovalHandler`，命中策略工具执行前阻塞待人工决定）；③Gateway 多供应商路由（`WeightedRoutingStrategy` 加权分流 + `CapabilityRoutingStrategy` 能力过滤 + `FailoverConfig` 故障转移，同平台多实例按 `instanceId`/`weight` 区分）；④OTel GenAI 追踪接入（`OtelSupport.metricsCollector/retryListener/agentEventSink` → `gen_ai.*` 指标）；⑤CLI + RAG 本地离线问答（`sureai-cli rag --doc` 多文档摄入，不下载文档）；⑥多模态检索（`MultimodalDocument` 聚合 `TextPart`/`ImagePart`，注入 `ImageEmbedder` 后图片向量化）。所有代码块与当前源码 API 逐字对齐，每场景标注「需 API key」或可离线跑通方式。
+- **性能基准归档（`docs/benchmarks/benchmark-2.2.0.json`）**：首次对 `sure-ai-benchmark` 跑完整 JMH 并归档 JSON 结果，`docs/benchmark.md` 增补 2.2.0 实测结果小节（操作数/秒、各基准方法、运行环境），README 中英文新增「性能基准」小节链接归档。
+- **竞品对比页与社区运营小件**：新增 `docs/comparison.md` 横向对比 sureai / LangChain4j / Spring AI / Semantic Kernel **四竞品**（依赖、流式、RAG、Agent、native、多平台）；README 加 stars / downloads 徽章与 GitHub Discussions 引导。
+
+### Changed
+- 无运行期行为变更：本批仅文档（`.md`）与基准数据（`docs/benchmarks/*.json`），零 `.java` / `pom.xml` 改动。
+
+### 测试
+- 本迭代新增测试 **0** 个（纯文档与基准归档批次）；全工程合计 **1283** 个测试（沿用 2.1.0 基线）。`sure-ai-benchmark` 模块本身 `skipTests=true`（基准非单元测试），本次仅手动执行 JMH 归档，不纳入 `mvn verify`。
+
 ## [2.1.0] - Unreleased
 
 本版本线为「生产级信任」专项：在不改变任何运行期行为（零运行期依赖变化）的前提下，补齐发布供应链信任链、依赖漏洞扫描、解析器模糊健壮性测试与社区工程化基建。
