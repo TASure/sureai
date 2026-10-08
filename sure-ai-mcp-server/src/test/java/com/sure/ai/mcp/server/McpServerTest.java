@@ -191,4 +191,65 @@ public class McpServerTest {
 		JsonObject r = resultOf(this.server.dispatch(req(11, "ping", null)));
 		assertNotNull(r);
 	}
+
+	// ==================== 2026-07-28 无状态扩展面（v2.3.0 收口） ====================
+
+	/** MRTR：所有结果都必须带 resultType（普通结果为 complete）。 */
+	@Test
+	public void allResultsCarryResultType() {
+		assertEquals("complete", resultOf(this.server.dispatch(req(20, "initialize", Json.object()))).getString("resultType"));
+		assertEquals("complete", resultOf(this.server.dispatch(req(21, "ping", null))).getString("resultType"));
+		assertEquals("complete", resultOf(this.server.dispatch(req(22, "tools/list", null))).getString("resultType"));
+		JsonObject callParams = Json.object();
+		callParams.put("name", "echo");
+		callParams.set("arguments", Json.object());
+		assertEquals("complete", resultOf(this.server.dispatch(req(23, "tools/call", callParams))).getString("resultType"));
+	}
+
+	/** subscriptions/listen：回显服务端承诺的订阅子集，丢弃未声明/不支持的键。 */
+	@Test
+	public void subscriptionsListenEchosAcceptedFilter() {
+		JsonObject filter = Json.object();
+		filter.put("toolsListChanged", Boolean.TRUE);
+		filter.put("promptsListChanged", Boolean.FALSE);
+		filter.put("bogusType", Boolean.TRUE);
+		JsonArray uris = Json.array();
+		uris.add("file:///a.json");
+		filter.set("resourceSubscriptions", uris);
+		JsonObject params = Json.object();
+		params.set("notifications", filter);
+		JsonObject r = resultOf(this.server.dispatch(req(24, "subscriptions/listen", params)));
+		assertEquals("complete", r.getString("resultType"));
+		JsonObject n = r.getJsonObject("notifications");
+		assertTrue(n.getBoolean("toolsListChanged"));
+		assertFalse(n.has("promptsListChanged"));
+		assertFalse(n.has("bogusType"));
+		assertEquals(1, n.getJsonArray("resourceSubscriptions").size());
+	}
+
+	/** 旧的 resources/subscribe/unsubscribe 在 2026-07-28 已被移除，应方法未找到。 */
+	@Test
+	public void resourcesSubscribeRemoved() {
+		JsonObject sub = Json.parse(this.server.dispatch(req(25, "resources/subscribe", null))).getAsJsonObject();
+		assertTrue(sub.has("error"));
+		assertEquals(-32601, sub.getJsonObject("error").getInt("code"));
+		JsonObject unsub = Json.parse(this.server.dispatch(req(26, "resources/unsubscribe", null))).getAsJsonObject();
+		assertTrue(unsub.has("error"));
+		assertEquals(-32601, unsub.getJsonObject("error").getInt("code"));
+	}
+
+	/** 无状态 tools/call 也应在 _meta 里带 serverInfo（服务端自报身份）。 */
+	@Test
+	public void statelessCallCarriesServerInfoMeta() {
+		JsonObject meta = Json.object();
+		meta.put(McpServer.META_PROTOCOL_VERSION, "2026-07-28");
+		JsonObject params = Json.object();
+		params.put("name", "echo");
+		params.set("arguments", Json.object());
+		params.set("_meta", meta);
+		JsonObject r = resultOf(this.server.dispatch(req(27, "tools/call", params)));
+		assertEquals("complete", r.getString("resultType"));
+		assertEquals("test-server", r.getJsonObject("_meta")
+			.getJsonObject(McpServer.META_SERVER_INFO).getString("name"));
+	}
 }

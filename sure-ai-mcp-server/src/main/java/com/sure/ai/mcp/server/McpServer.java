@@ -228,6 +228,15 @@ public final class McpServer {
 		}
 		try {
 			JsonObject result = handle(method, params, stateless);
+			// 2026-07-28 MRTR（Multi Round-Trip Requests）：所有结果都必须带 resultType。
+			// 本批仅实现 resultType 合规：普通结果一律标 complete；input_required 多轮回调见文档说明。
+			if (!result.has("resultType")) {
+				result.put("resultType", "complete");
+			}
+			// 无状态模式下，服务端应在每个结果的 _meta 里自报身份（已有 _meta 不覆盖）。
+			if (stateless && !result.has("_meta")) {
+				result.set("_meta", metaWithServerInfo());
+			}
 			return resultFrame(idEl, result);
 		} catch (McpRpcException ex) {
 			return errorFrame(idEl, ex.code, ex.getMessage(), ex.data);
@@ -254,6 +263,8 @@ public final class McpServer {
 				return listResult("resources", Json.array(), stateless);
 			case "prompts/list":
 				return listResult("prompts", Json.array(), stateless);
+			case "subscriptions/listen":
+				return subscriptionsListenResult(params);
 			default:
 				throw new McpRpcException(McpError.METHOD_NOT_FOUND, "Method not found: " + method, null);
 		}
@@ -334,6 +345,19 @@ public final class McpServer {
 			result.put("cacheScope", this.cacheScope);
 			result.set("_meta", metaWithServerInfo());
 		}
+		return result;
+	}
+
+	/**
+	 * {@code subscriptions/listen} 结果：回显服务端承诺的订阅子集。
+	 *
+	 * <p>HTTP 传输层会把该请求升级为 SSE 长连接并先回 ack 通知（见
+	 * {@link HttpMcpServerTransport}）；同步传输（stdio）下则以本结果即时应答、关闭订阅——
+	 * 本批无运行期列表变更源，故不实际推送变更通知。</p>
+	 */
+	private JsonObject subscriptionsListenResult(JsonObject params) {
+		JsonObject result = Json.object();
+		result.set("notifications", McpSubscriptions.accepted(params));
 		return result;
 	}
 
