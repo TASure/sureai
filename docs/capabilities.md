@@ -125,6 +125,11 @@ grok does not support IMAGE capability
 - `Anthropic` / `Gemini` / `Bedrock` / `Cohere` 的主 Client 直接继承 `AbstractAiClient`（而非 `OpenAiCompatClient`），其对话/嵌入等方法各自独立实现，不经过兼容基类的 guard 入口。
 - TTS / STT 虽列入基类声明集合，但兼容基类的 `synthesize()` / `transcribe()` 直接委托音频策略、未挂 guard；具体 TTS/STT 能力由各平台专用 Client（如 `AzureTtsClient`、`DoubaoTtsClient`）实现。
 
+> **注意：本表的 `IMAGE` / `VIDEO` 指「图像/视频生成」能力（受 guard 的生成接口），与多模态「输入」（图像理解 / 视频理解）是两回事。**
+> 各平台的图像/视频**输入**支持情况（Anthropic 视觉、Gemini/Qwen-VL 视频输入、工具结果回传语义）
+> 不在本表范围，已在 v2.4.0 批次按官方文档联网核实并记录，详见
+> [multimodal.md](multimodal.md) 与各平台文档的「能力核实」注记。本批未改动任何平台的生成能力声明。
+
 ## 演进约定
 
 后续新增平台时，应在其 Client 中覆写 `capabilities()`，**只声明真实可用的能力**，而非一律继承全量兜底；这样未支持的能力会在发请求前被 `guard()` 清晰拦截，而不是把含糊的 4xx 抛给用户。

@@ -11,7 +11,8 @@ sureai 用一套**内容块（MessagePart）**架构统一描述一条消息里�
 MessagePart (sealed)
    ├── TextPart       文本片段（可挂 Prompt 缓存控制）
    ├── ImagePart      图片片段（URL 或 Base64 内联）
-   └── DocumentPart   文档片段（PDF Base64 内联 或 文件 ID 引用）
+   ├── DocumentPart   文档片段（PDF Base64 内联 或 文件 ID 引用）
+   └── VideoPart      视频片段（URL/文件引用 或 Base64 内联，v2.4.0 新增）
 ```
 
 在一条用户消息里用 `ChatMessage.user(List<MessagePart>)` 组合多个片段：
@@ -31,9 +32,12 @@ ChatMessage.user(List.of(
 | `ImagePart` | `ImagePart.ofBase64(base64, mimeType)` | Base64 内联图片 |
 | `DocumentPart` | `DocumentPart.ofBase64(name, mimeType, base64)` | Base64 内联 PDF |
 | `DocumentPart` | `DocumentPart.ofFileId(fileId)` | 引用已上传文件 ID |
+| `VideoPart` | `VideoPart.ofUrl(url)` | 视频 URL / Gemini fileUri（v2.4.0） |
+| `VideoPart` | `VideoPart.ofBase64(base64, mimeType)` | Base64 内联视频（v2.4.0） |
 
 `ImagePart.resolvedUrl()` 对外统一返回 `data:<mime>;base64,<data>` 形式的地址（URL 形式原样返回），
-OpenAI 兼容平台与百度直接把它塞进 `image_url.url`。
+OpenAI 兼容平台与百度直接把它塞进 `image_url.url`。`VideoPart.resolvedUrl()` 同理，
+供 OpenAI 兼容平台（通义千问）塞进 `video_url.url`。
 
 ## 2. 图像理解
 
@@ -87,7 +91,32 @@ ChatMessage.user(List.of(
 | 通义千问 | `{"type":"file","file":{"file_data":...}}` | ✅ |
 | 百度千帆 | 不支持 PDF 输入，调用时抛 `AiException` | ❌ |
 
-## 4. Prompt 缓存
+## 4. 视频输入（v2.4.0 新增）
+
+`VideoPart` 描述一段视频（视频理解输入）。**注意这是「视频理解输入」，不是「视频生成」**；
+视频生成走各平台独立的异步任务客户端（如 `QwenVideoClient`）。
+
+```java
+ChatMessage.user(List.of(
+    TextPart.of("总结这段视频。"),
+    VideoPart.ofUrl("https://example.com/demo.mp4")
+    // 或 VideoPart.ofBase64(b64, "video/mp4")
+))
+```
+
+### 视频输入序列化矩阵（2026 官方文档核实）
+
+| 平台 | 视频序列化形态 | 支持 | 官方依据 |
+|---|---|---|---|
+| Google Gemini | URL/文件引用 → `{"fileData":{"fileUri":...,"mimeType":"video/mp4"}}`；base64 → `inlineData` | ✅ | ai.google.dev/gemini-api/docs/video-understanding |
+| 通义千问 Qwen-VL | `{"type":"video_url","video_url":{"url":resolvedUrl()}}` | ✅（仅部分 Qwen-VL/QVQ/Qwen-Omni 模型） | help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions |
+| Anthropic | 仅图像理解，**不支持视频输入** | ❌（已核实） | platform.claude.com/docs/en/build-with-claude/vision |
+
+> Gemini 视频引用的 `fileUri` 通常来自 Files API 上传（返回的 `file.uri`）或 Cloud Storage
+> `gs://` 路径；内联 base64 适合 <100MB 的短视频。Qwen-VL 的 `video_url.url` 为公网 URL 或
+> Base64 Data URL。
+
+## 5. Prompt 缓存
 
 `CacheControl`（record，目前仅 `CacheControl.ephemeral()`）标记某段文本「可被平台缓存」，
 通过 `TextPart.ofWithCache(text, cacheControl)` 挂到文本片段上：
@@ -106,25 +135,26 @@ TextPart system = TextPart.ofWithCache(
 
 > 长系统提示词 / 多轮长上下文场景下，Prompt 缓存可显著降低重复前缀的输入 token 费用。
 
-## 5. 平台对比表
+## 6. 平台对比表
 
-| 平台 | 图像理解 | PDF 文档 | Prompt 缓存 |
-|---|---|---|---|
-| OpenAI | ✅ | ✅ | ✅ 自动缓存（无需参数） |
-| Azure | ✅ | ✅ | ✅ 自动缓存 |
-| Anthropic | ✅ | ✅ | ✅ `cache_control: ephemeral` |
-| Google Gemini | ✅ | ✅ | ✅ `cachedContent`（extra 传入） |
-| 通义千问 | ✅ | ✅ `{"type":"file"}` | ❌ |
-| 智谱 GLM | ✅ | ❌ | ❌ |
-| 豆包 | ✅ | ❌ | ❌ |
-| 百度千帆 | ✅ | ❌ 抛 `AiException` | ❌ |
-| DeepSeek / Moonshot | ✅（OpenAI 兼容） | ❌ | ❌ |
+| 平台 | 图像理解 | PDF 文档 | 视频输入 | Prompt 缓存 |
+|---|---|---|---|---|
+| OpenAI | ✅ | ✅ | （原生协议，未在本批适配） | ✅ 自动缓存（无需参数） |
+| Azure | ✅ | ✅ | 未核实 | ✅ 自动缓存 |
+| Anthropic | ✅ base64/url/file 三种 source | ✅ | ❌ 不支持视频（已核实） | ✅ `cache_control: ephemeral` |
+| Google Gemini | ✅ | ✅ | ✅ `fileData`/`inlineData`（已核实） | ✅ `cachedContent`（extra 传入） |
+| 通义千问 | ✅ | ✅ `{"type":"file"}` | ✅ `{"type":"video_url"}`（已核实） | ❌ |
+| 智谱 GLM | ✅ | ❌ | 未核实 | ❌ |
+| 豆包 | ✅ | ❌ | 未核实 | ❌ |
+| 百度千帆 | ✅ | ❌ 抛 `AiException` | 未核实 | ❌ |
+| DeepSeek / Moonshot | ✅（OpenAI 兼容） | ❌ | 未核实 | ❌ |
 
-## 6. 测试说明
+## 7. 测试说明
 
 各平台模块的单元测试用本地 `HttpServer` mock 断言：OpenAI 兼容平台的 `image_url` / `input_file`
-字段；Gemini 的 `inlineData`（裸 base64、mimeType）；Anthropic 的 `image`/`document` source 结构
-与 `cache_control` 标记；百度 PDF 抛 `AiException`。
+/ `video_url` 字段；Gemini 的 `inlineData` / `fileData`（裸 base64、mimeType、fileUri）；
+Anthropic 的 `image`/`document` source 结构（含 `source.type=url`）、`cache_control` 断点，
+以及并行工具结果合并为单条 user 消息的多个 `tool_result` 块；百度 PDF 抛 `AiException`。
 
 ```bash
 mvn -B -pl sure-ai-anthropic -am test

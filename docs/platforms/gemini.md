@@ -80,6 +80,20 @@ GeminiUtil.chatStream(
 - 支持 Embedding（`gemini-embedding-001`）
 - 支持 Function Calling
 
+## 能力核实（v2.4.0，2026-10 联网核对）
+
+- **视频输入已核实支持**：新增 `VideoPart`——URL/文件引用序列化为
+  `{"fileData":{"fileUri":...,"mimeType":"video/mp4"}}`（fileUri 通常来自 Files API 上传或
+  `gs://` Cloud Storage），base64 内联序列化为 `inlineData`。依据：
+  https://ai.google.dev/gemini-api/docs/video-understanding
+- **图像输入**：`ImagePart`/`DocumentPart` 序列化为 camelCase `inlineData`（裸 base64）。
+- **工具结果回传已核实并补全**：assistant 工具调用轮序列化为 `role=model` + `functionCall` 块
+  （支持并行多调用）；工具结果轮（`ChatMessage.tool(...)`）序列化为 `role=user` +
+  `functionResponse` 块（`response` 为 JSON 对象，工具结果为 JSON 文本时直接解析，否则包成
+  `{"result": text}`）。依据：https://ai.google.dev/gemini-api/docs/quickstart （function-calling）
+
 ## 官方文档
 
 https://ai.google.dev/api/rest/v1beta/models/generateContent
+https://ai.google.dev/gemini-api/docs/video-understanding
+

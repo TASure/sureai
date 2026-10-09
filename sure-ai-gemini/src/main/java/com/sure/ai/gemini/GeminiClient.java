@@ -52,6 +52,7 @@ import com.sure.ai.model.TokenUsage;
 import com.sure.ai.model.ToolCall;
 import com.sure.ai.model.ToolFunction;
 import com.sure.ai.model.ToolSpec;
+import com.sure.ai.model.VideoPart;
 
 /**
  * Google Gemini API 客户端。
@@ -337,6 +338,12 @@ public class GeminiClient extends AbstractAiClient
 		String roleName = m.role() == Role.ASSISTANT ? "model" : "user";
 		c.put("role", roleName);
 		JsonArray parts = Json.array();
+		// 工具结果回传：tool 角色消息 → user 轮 functionResponse 块。
+		if (m.toolCallId() != null) {
+			parts.add(buildFunctionResponse(m));
+			c.put("parts", parts);
+			return c;
+		}
 		if (m.parts() != null) {
 			for (MessagePart part : m.parts()) {
 				parts.add(serializePart(part));
@@ -346,8 +353,61 @@ public class GeminiClient extends AbstractAiClient
 			p.put("text", m.content());
 			parts.add(p);
 		}
+		// 助手工具调用：model 轮 functionCall 块（支持并行多调用）。
+		if (m.toolCalls() != null) {
+			for (ToolCall call : m.toolCalls()) {
+				JsonObject fc = Json.object();
+				fc.put("name", call.name());
+				fc.set("args", Json.parse(call.argumentsJson() == null ? "{}" : call.argumentsJson()));
+				if (call.id() != null) {
+					fc.put("id", call.id());
+				}
+				JsonObject p = Json.object();
+				p.set("functionCall", fc);
+				parts.add(p);
+			}
+		}
 		c.put("parts", parts);
 		return c;
+	}
+
+	/**
+	 * 构造 functionResponse 块：把工具结果内容包成 {@code response} 对象。
+	 *
+	 * <p>Gemini 要求 {@code response} 为 JSON 对象；工具结果若是 JSON 文本则直接解析，
+	 * 否则包成 {@code {"result": <text>}}。</p>
+	 *
+	 * @param m 工具结果消息
+	 * @return functionResponse part
+	 */
+	private static JsonObject buildFunctionResponse(ChatMessage m) {
+		JsonObject fr = Json.object();
+		fr.put("name", m.name() != null ? m.name() : "function");
+		String content = m.content();
+		JsonElement parsed = null;
+		if (content != null) {
+			String trimmed = content.trim();
+			if (trimmed.startsWith("{")) {
+				try {
+					parsed = Json.parse(trimmed);
+				} catch (RuntimeException ex) {
+					parsed = null;
+				}
+			}
+		}
+		if (parsed != null && parsed.isObject()) {
+			fr.set("response", parsed);
+		} else {
+			JsonObject wrapper = Json.object();
+			wrapper.put("result", content != null ? content : "");
+			fr.set("response", wrapper);
+		}
+		if (m.toolCallId() != null) {
+			fr.put("id", m.toolCallId());
+		}
+		JsonObject p = Json.object();
+		p.set("functionResponse", fr);
+		return p;
 	}
 
 	/** 序列化多模态片段。 */
@@ -363,6 +423,18 @@ public class GeminiClient extends AbstractAiClient
 			o.set("inlineData", buildInlineData(
 				dp.mimeType() != null ? dp.mimeType() : "application/pdf",
 				dp.data() != null ? dp.data() : ""));
+		} else if (p instanceof VideoPart vp) {
+			// 视频输入：URL/文件引用 → fileData；base64 内联 → inlineData。
+			if (vp.url() != null) {
+				JsonObject fd = Json.object();
+				fd.put("fileUri", vp.url());
+				fd.put("mimeType", vp.mimeType() != null ? vp.mimeType() : "video/mp4");
+				o.set("fileData", fd);
+			} else {
+				o.set("inlineData", buildInlineData(
+					vp.mimeType() != null ? vp.mimeType() : "video/mp4",
+					vp.base64() != null ? vp.base64() : ""));
+			}
 		}
 		return o;
 	}

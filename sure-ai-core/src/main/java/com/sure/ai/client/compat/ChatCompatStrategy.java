@@ -41,6 +41,7 @@ import com.sure.ai.model.TokenUsage;
 import com.sure.ai.model.ToolCall;
 import com.sure.ai.model.ToolFunction;
 import com.sure.ai.model.ToolSpec;
+import com.sure.ai.model.VideoPart;
 
 /**
  * Chat 能力域策略：非流式 {@code /chat/completions} 的请求体构建与响应解析。
@@ -256,6 +257,12 @@ final class ChatCompatStrategy {
 				}
 				o.put("input_file", inner);
 			}
+		} else if (p instanceof VideoPart vp) {
+			// 通义千问 Qwen-VL 视频文件输入：{"type":"video_url","video_url":{"url":...}}
+			o.put("type", "video_url");
+			JsonObject inner = Json.object();
+			inner.put("url", vp.resolvedUrl());
+			o.put("video_url", inner);
 		}
 		return o;
 	}

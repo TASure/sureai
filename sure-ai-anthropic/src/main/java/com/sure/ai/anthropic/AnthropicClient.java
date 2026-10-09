@@ -133,7 +133,10 @@ public class AnthropicClient extends AbstractAiClient implements AiClient, Model
 		body.put("model", req.model());
 		StringBuilder systemText = new StringBuilder();
 		JsonArray messages = Json.array();
-		for (ChatMessage m : req.messages()) {
+		List<ChatMessage> all = req.messages();
+		int i = 0;
+		while (i < all.size()) {
+			ChatMessage m = all.get(i);
 			if (m.role() == Role.SYSTEM) {
 				if (m.content() != null) {
 					if (systemText.length() > 0) {
@@ -141,9 +144,22 @@ public class AnthropicClient extends AbstractAiClient implements AiClient, Model
 					}
 					systemText.append(m.content());
 				}
+				i++;
+				continue;
+			}
+			// Anthropic 并行工具调用语义：所有 tool_result 必须合并到紧随 assistant
+			// tool_use 之后的单条 user 消息里，逐条 user 回传会被拒收。
+			if (m.toolCallId() != null) {
+				List<ChatMessage> toolBatch = new ArrayList<>();
+				while (i < all.size() && all.get(i).toolCallId() != null) {
+					toolBatch.add(all.get(i));
+					i++;
+				}
+				messages.add(serializeToolResults(toolBatch));
 				continue;
 			}
 			messages.add(serializeMessage(m));
+			i++;
 		}
 		body.put("messages", messages);
 		if (systemText.length() > 0) {
@@ -254,15 +270,41 @@ public class AnthropicClient extends AbstractAiClient implements AiClient, Model
 			o.put("content", blocks);
 		}
 		if (m.toolCallId() != null) {
-			JsonObject block = Json.object();
-			block.put("type", "tool_result");
-			block.put("tool_use_id", m.toolCallId());
-			block.put("content", m.content() != null ? m.content() : "");
 			JsonArray blocks = Json.array();
-			blocks.add(block);
+			blocks.add(buildToolResultBlock(m));
 			o.put("content", blocks);
 		}
 		return o;
+	}
+
+	/**
+	 * 把连续的工具结果消息合并为单条 user 消息，内容为多个 {@code tool_result} 块。
+	 *
+	 * <p>Anthropic 并行工具调用要求：assistant 一轮返回多个 {@code tool_use} 块后，
+	 * 所有对应 {@code tool_result} 必须放在紧随其后的<b>同一条</b> user 消息里；
+	 * 逐条 user 回传会被拒收（官方 parallel-tool-use 文档）。</p>
+	 *
+	 * @param toolMessages 连续的工具结果消息
+	 * @return 合并后的 user 消息对象
+	 */
+	static JsonObject serializeToolResults(List<ChatMessage> toolMessages) {
+		JsonObject o = Json.object();
+		o.put("role", Role.USER.value());
+		JsonArray blocks = Json.array();
+		for (ChatMessage m : toolMessages) {
+			blocks.add(buildToolResultBlock(m));
+		}
+		o.put("content", blocks);
+		return o;
+	}
+
+	/** 构造单个 tool_result 内容块。 */
+	private static JsonObject buildToolResultBlock(ChatMessage m) {
+		JsonObject block = Json.object();
+		block.put("type", "tool_result");
+		block.put("tool_use_id", m.toolCallId());
+		block.put("content", m.content() != null ? m.content() : "");
+		return block;
 	}
 
 	/**
@@ -287,9 +329,15 @@ public class AnthropicClient extends AbstractAiClient implements AiClient, Model
 		} else if (part instanceof ImagePart ip) {
 			b.put("type", "image");
 			JsonObject src = Json.object();
-			src.put("type", "base64");
-			src.put("media_type", ip.mimeType() != null ? ip.mimeType() : "image/png");
-			src.put("data", ip.base64() != null ? ip.base64() : "");
+			if (ip.url() != null) {
+				// URL 引用图片（2026 官方支持的 source.type=url）。
+				src.put("type", "url");
+				src.put("url", ip.url());
+			} else {
+				src.put("type", "base64");
+				src.put("media_type", ip.mimeType() != null ? ip.mimeType() : "image/png");
+				src.put("data", ip.base64() != null ? ip.base64() : "");
+			}
 			b.set("source", src);
 		} else if (part instanceof DocumentPart dp) {
 			b.put("type", "document");

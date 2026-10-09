@@ -58,6 +58,7 @@ import com.sure.ai.model.SttRequest;
 import com.sure.ai.model.SttResponse;
 import com.sure.ai.model.TtsRequest;
 import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.VideoPart;
 import com.sure.ai.model.VideoRequest;
 
 /**
@@ -155,6 +156,25 @@ public class QwenClientTest {
 		assertTrue(this.lastBody.get().contains("\"model\":\"qwen-plus\""));
 		assertEquals("你好", resp.firstText());
 		assertEquals(8, resp.usage().totalTokens());
+		client.close();
+	}
+
+	/** 视频输入：VideoPart.ofUrl 映射为 Qwen-VL 的 type=video_url 内容块。 */
+	@Test
+	public void testVideoInput() {
+		handle(200, "{\"id\":\"qv\",\"model\":\"qwen-vl-max\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"视频摘要\"},\"finish_reason\":\"stop\"}],"
+			+ "\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":4,\"total_tokens\":14}}");
+		QwenClient client = newClient();
+		client.chat(ChatRequest.builder().model("qwen-vl-max")
+			.messages(ChatMessage.user(List.of(
+				com.sure.ai.model.TextPart.of("描述这个视频"),
+				VideoPart.ofUrl("https://example.com/demo.mp4"))))
+			.build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"type\":\"video_url\""));
+		assertTrue(body.contains("\"video_url\""));
+		assertTrue(body.contains("https://example.com/demo.mp4"));
 		client.close();
 	}
 

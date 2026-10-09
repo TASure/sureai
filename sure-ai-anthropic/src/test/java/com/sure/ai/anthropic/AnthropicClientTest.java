@@ -396,4 +396,59 @@ public class AnthropicClientTest {
 		assertEquals("claude-sonnet-4-6", models.get(1).id());
 		client.close();
 	}
+
+	/** 多模态：ImagePart.ofUrl 映射为 source.type=url（2026 官方支持 URL 引用）。 */
+	@Test
+	public void testMultimodalImageUrlSource() {
+		handle(200, "{\"id\":\"msg_u\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"text\",\"text\":\"seen\"}],\"stop_reason\":\"end_turn\","
+			+ "\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}");
+		AnthropicClient client = newClient();
+		List<MessagePart> parts = List.of(TextPart.of("describe"),
+			ImagePart.ofUrl("https://example.com/cat.jpg"));
+		client.chat(ChatRequest.builder().model("m").messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"type\":\"image\""));
+		assertTrue(body.contains("\"type\":\"url\""));
+		assertTrue(body.contains("\"url\":\"https://example.com/cat.jpg\""));
+		client.close();
+	}
+
+	/** 并行工具调用回传：连续多条 ChatMessage.tool() 合并为单条 user 消息的多个 tool_result 块。 */
+	@Test
+	public void testParallelToolResultsCoalesced() {
+		handle(200, "{\"id\":\"msg_r\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stop_reason\":\"end_turn\","
+			+ "\"usage\":{\"input_tokens\":5,\"output_tokens\":3}}");
+		AnthropicClient client = newClient();
+		List<ToolCall> calls = List.of(
+			ToolCall.of("toolu_1", "get_weather", "{\"city\":\"SF\"}"),
+			ToolCall.of("toolu_2", "get_time", "{}"));
+		client.chat(ChatRequest.builder().model("m")
+			.messages(ChatMessage.user("?"),
+				ChatMessage.assistant(calls),
+				ChatMessage.tool("toolu_1", "{\"weather\":\"sunny\"}"),
+				ChatMessage.tool("toolu_2", "{\"time\":\"10:00\"}"))
+			.build());
+		String body = this.lastBody.get();
+		// 初始 user("?") + 合并后的单条工具结果 user 消息 = 2 条 user（合并前应为 3 条）。
+		assertEquals(2, countOccurrences(body, "\"role\":\"user\""));
+		assertTrue(body.contains("\"tool_use_id\":\"toolu_1\""));
+		assertTrue(body.contains("\"tool_use_id\":\"toolu_2\""));
+		assertTrue(body.contains("\"type\":\"tool_result\""));
+		// 两个 tool_result 块合并在同一条 user 消息里。
+		assertEquals(2, countOccurrences(body, "\"type\":\"tool_result\""));
+		client.close();
+	}
+
+	/** 统计子串出现次数。 */
+	private static int countOccurrences(String haystack, String needle) {
+		int count = 0;
+		int idx = 0;
+		while ((idx = haystack.indexOf(needle, idx)) != -1) {
+			count++;
+			idx += needle.length();
+		}
+		return count;
+	}
 }
