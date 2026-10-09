@@ -114,43 +114,42 @@ ChatResponse r2 = client.chat(ChatRequest.builder().model("gpt-4o")
 - 容量仅对 `LruCacheStore` 有意义；外部存储（Redis）由服务端策略决定淘汰；
 - 过期条目采用**惰性删除**：仅在 `get` 访问到时检查并清理，不开启后台线程，零额外开销。
 
-## 适配 Redis（示例）
+## Redis 外部缓存（RedisCacheStore）
 
-core 不依赖 Redis 客户端。按需引入 Lettuce/Jedis，实现 `CacheStore` 即可接入：
+sureai 在 `sure-ai-rag` 模块内置了 `RedisCacheStore`（包 `com.sure.ai.rag.store.cache`），
+实现 `CacheStore` SPI，**不引入 Lettuce/Jedis 等第三方 Redis 客户端**——基于 JDK `Socket`
+复用 v1.8.0 抽取的共享 RESP2 编解码（`com.sure.ai.rag.store.resp.RespCodec`）。
 
 ```java
-// 需自行引入 Lettuce 依赖（io.lettuce:lettuce-core），core 不传递
-public final class RedisCacheStore implements CacheStore {
-    private final StatefulRedisConnection<String, String> conn;
-    private final String prefix;
+import com.sure.ai.rag.store.cache.RedisCacheStore;
 
-    public RedisCacheStore(StatefulRedisConnection<String, String> conn, String prefix) {
-        this.conn = conn;
-        this.prefix = prefix == null ? "sureai:chat:" : prefix;
-    }
-
-    @Override
-    public ChatResponse get(String key) {
-        String raw = conn.sync().get(prefix + key);
-        return raw == null ? null : ChatResponse.of /* 自行反序列化 */(raw);
-    }
-
-    @Override
-    public void put(String key, ChatResponse resp, long ttlMillis) {
-        long ttl = ttlMillis > 0 ? ttlMillis : 300_000L;
-        // 自行把 ChatResponse 序列化为 JSON（可用 core 自研 Json 工具）
-        String raw = serialize(resp);
-        conn.sync().psetex(prefix + key, ttl, raw);
-    }
-
-    @Override public void remove(String key) { conn.sync().del(prefix + key); }
-
-    @Override public void clear() { /* SCAN + DEL，或换 prefix 实现逻辑清空 */ }
-}
+AiConfig config = AiConfig.builder()
+    .apiKey(System.getenv("OPENAI_API_KEY"))
+    .cacheStore(RedisCacheStore.builder()
+        .host("127.0.0.1").port(6379)          // 默认 localhost:6379
+        .password(null)                         // 可选，设置后首连接先发 AUTH
+        .keyPrefix("sureai:cache:")             // 默认前缀
+        .defaultTtlMillis(Duration.ofMinutes(5).toMillis())  // 默认 5 分钟，与 LRU 对齐
+        .build())
+    .build();
 ```
 
-> 注意：Redis 实现需要自己把 `ChatResponse` 序列化（建议用 `ChatResponse.rawJson()`
-> 配合 core 的 JSON 工具还原，或自行 JSON 序列化），并自行管理连接生命周期。
+语义与内置 `LruCacheStore` 对齐：
+
+- **命令**：`SET key value PX ttl`（写）、`GET key`（读）、`DEL key`（删）；
+  清空用 `SCAN` 按 key 前缀迭代收集后批量 `DEL`（**不使用阻塞式 `KEYS`**）。
+- **TTL**：`put` 的 `ttlMillis<=0` 时回退到 `defaultTtlMillis`（默认 5 分钟），
+  以 Redis `PX` 毫秒落地；键过期由 Redis 服务端回收，`GET` 返回 `$-1` 即视为未命中。
+- **序列化**：值直接存 `ChatResponse.rawJson()`（OpenAI 兼容原始响应体），
+  取回时按响应侧字段（id/model/choices/message.content/reasoning_content/tool_calls/
+  usage/annotations）还原为 `ChatResponse`，与首次解析路径同构、无损。
+- **连接**：复用单条 Socket（`synchronized` 串行化），传输层失败（IO 异常或对端断连）
+  自动重连重试一次；服务端 `−ERR` 应用错误不重试、直接抛 `AiException`（fail-fast），
+  由上层决定是否降级为「不走缓存、直连模型」。
+- **线程安全**：实现自带锁，可在多客户端间共享同一实例；用完调用 `close()` 释放连接。
+
+> 注：`RedisCacheStore` 位于 `sure-ai-rag` 模块（与 `RedisVectorStore` 同模块、共享 RESP 编解码）。
+> 若工程未依赖 `sure-ai-rag`，仍可自行实现 `CacheStore` SPI（例如引入 Lettuce），SPI 本身在 `sure-ai-core`。
 
 ## 注意事项
 
