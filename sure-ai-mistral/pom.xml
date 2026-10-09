@@ -22,7 +22,7 @@
     <parent>
         <groupId>io.github.tasure</groupId>
         <artifactId>sureai</artifactId>
-        <version>2.3.0</version>
+        <version>2.4.0-SNAPSHOT</version>
     </parent>
     <artifactId>sure-ai-mistral</artifactId>
     <packaging>jar</packaging>
