@@ -26,6 +26,7 @@ Then branch into the capability you need.
 | Quick Start (5 minutes) | [quickstart.md](./quickstart.md) | [../COOKBOOK.md](../COOKBOOK.md) |
 | Platform matrix (23 platforms, baseUrl, models) | [platforms.md](./platforms.md) | [../capabilities.md](../capabilities.md) |
 | RAG pipeline | [rag.md](./rag.md) | [../rag.md](../rag.md) |
+| Document ingest (loaders / parsers, v2.6.0) | [ingest.md](./ingest.md) | [../ingest.md](../ingest.md) |
 | Agent orchestration (ReAct + production capabilities) | [agent.md](./agent.md) | [../agent.md](../agent.md), [../agent-advanced.md](../agent-advanced.md) |
 | Declarative orchestration (AiService + Advisor chain + SemanticCache) | [framework.md](./framework.md) | [../framework.md](../framework.md) |
 | AI Gateway (routing / failover / key pool / tenant quota) | [gateway.md](./gateway.md) | [../gateway.md](../gateway.md) |

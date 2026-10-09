@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - Unreleased
+
+本版本线为「文档导入器 + 向量库追平」专项：新增 `sure-ai-ingest` 文档导入模块（对标 LangChain4j 数据导入，已进 `sure-ai-all`/`sure-ai-bom` 聚合链），把「来源（本地文件 / 网络 URL）→ 纯文本 + 元数据」一站式收口；同时把 rag 外部向量库从 9 种追到 14 种（新增 PGVector / Typesense / Cassandra / MongoDB / Neo4j）。全部为 JDK 原生协议客户端、零第三方运行期依赖；各库鉴权与查询能力的支持子集在文档中如实标注。
+
+### Added
+- **文档导入器（`sure-ai-ingest` 新模块，`com.sure.ai.ingest`）**：
+  - **`DocumentLoader` SPI**：`List<Document> load(Path)` / `load(URI)` 以「来源」为入参，按扩展名 / Content-Type 路由到对应 `DocumentParser`；元数据常量 `META_SOURCE`(`source`) / `META_LOADED_AT`(`loaded_at`) / `META_FORMAT`(`format`) / `META_CONTENT_TYPE`(`content_type`)。加载失败抛 `IllegalStateException`，空文件 / 无文本层返回空列表（不中断批量管线）。
+  - **`FileSystemLoader`**：`createDefault()` / `builder().register(DocumentParser).build()`，按扩展名路由；`load(URI)` 仅支持 `file:` scheme。
+  - **`URLLoader`**：JDK `HttpClient` GET，仅 `http`/`https`；默认连接超时 10s、请求超时 30s、跟随重定向；无扩展名时按响应 `Content-Type` 兜底推断（html/pdf/markdown/text-plain）；非 2xx 抛异常；`Builder.httpClient(...)` / `requestTimeout(...)` 可覆盖。
+  - **`DocumentParser` SPI + 内置解析器**：`parse(byte[], source, metadata)` + `extensions()`。内置 `PlainTextParser`（`.txt/.md/.markdown`，UTF-8；Markdown 按纯文本直读、不剥标记，交由 rag `MarkdownTextSplitter` 结构化切分）、`HtmlTextParser`（`.html/.htm/.xhtml`，正则剥 `<script>/<style>` 块 + 标签 + 实体解码，仅适用简单静态 HTML）、`PdfTextParser`（`.pdf`，**纯 JDK 手写有限文本层提取**——扫描 `stream...endstream`、`Inflater` 解压 FlateDecode、收集 `Tj`/`TJ` 字面串与十六进制串；**不引 PDFBox**）。
+  - **PDF 支持子集与限制（如实标注）**：仅标准单字节字体、顺序排布的文本操作符；不做字体编码 / ToUnicode CMap / CID 映射（非 ASCII 可能乱码）、不处理扫描件 / 加密 PDF、不还原多栏 / 旋转阅读顺序、不解析 xref/trailer（全流扫描宽容策略）；损坏 PDF 按「无文本层」返回空列表而非报错。
+  - **可选 Office 模块 `sure-ai-ingest-poi`（`com.sure.ai.ingest.poi`）**：`PoiParsers.docx()/xlsx()/pptx()/all()` 工厂；**Apache POI 5.5.1 以 `provided` 引入、不向下游传递、不进 `sure-ai-all` 运行期聚合链**（仅进 `sure-ai-bom` 版本管理），使用方须自行显式声明 `org.apache.poi:poi-ooxml` 依赖。产出统一复用 `com.sure.ai.rag.model.Document`，可直接进入 `RagPipeline.ingest(...)`。
+  - 配套文档：新建 `docs/ingest.md` + 英文精简镜像 `docs/en/ingest.md`、`docs/COOKBOOK.md` 新增场景 18、`docs/capabilities.md` 增补注记、README 中英文特性区与模块树补 `sure-ai-ingest` / `sure-ai-ingest-poi`。
+- **向量库 9 → 14（`sure-ai-rag` `com.sure.ai.rag.store.*`，均 JDK 原生协议、零官方驱动）**：
+  - **`PgVectorStore`（`store.pgvector`）**：JDK `Socket` 实现 PG 前端/后端协议最小子集（StartupMessage + 认证 + Simple Query `'Q'`）。认证仅 `trust` / 明文密码（`md5`/`scram-sha-256` 抛明确异常）；**不支持参数化查询**，SQL 字面量单引号翻倍转义内联；每次操作短连接。建表约定 `(id text PK, text, metadata jsonb, embedding vector(d))`，检索 `embedding <=> '[...]'` 余弦距离还原 `1-distance`。Builder：`host/port/database/user/password/table/dimension/autoCreate/timeout`。来源：[PG Message Formats](https://www.postgresql.org/docs/current/protocol-message-formats.html)、[pgvector](https://github.com/pgvector/pgvector)。
+  - **`TypesenseVectorStore`（`store.typesense`）**：JDK `HttpClient` 走 REST，鉴权 `X-TYPESENSE-API-KEY`；检索 `GET /collections/{coll}/documents/search?q=*&vector_query=vec:([...],k:n)`，`vector_distance` 还原 `1-distance`。Builder：`baseUrl/apiKey/collectionName/vectorField/textField/dimension/autoCreateCollection/httpClient/timeout`。来源：[Typesense Vector Search](https://typesense.org/docs/0.24.0/api/vector-search.html)。
+  - **`CassandraVectorStore`（`store.cassandra`）**：JDK `Socket` 实现 [CQL 二进制协议 v4](https://cassandra.apache.org/doc/latest/cassandra/_attachments/native_protocol_v4.html) 最小子集（9 字节大端帧 + STARTUP/AUTHENTICATE/QUERY/RESULT）。认证仅无认证 / SASL PLAIN（多轮 SCRAM 抛异常）；**不支持 PREPARE/EXECUTE 绑定变量**；短连接。建表 `vector<float,d>` + SAI（cosine），检索 `embedding ANN OF [...]` + `similarity_cosine`。Builder：`host/port/keyspace/table/user/password/dimension/autoCreate/timeout`。
+  - **`MongoDbVectorStore`（`store.mongodb`）**：JDK `Socket` 实现 [OP_MSG（opcode 2011）](https://www.mongodb.com/docs/v8.0/reference/mongodb-wire-protocol/) + 最小 BSON 编解码（`Bson`）。**未实现 SCRAM-SHA-1/256**，需 `--noauth` 部署；仅 hello + `update(upsert)/delete/count/aggregate` 命令；向量检索用 `$vectorSearch` 聚合阶段（要求自管 7.0+ / Atlas 已建向量索引）。Builder：`host/port/database/collection/vectorIndex/dimension/autoCreate/timeout`。
+  - **`Neo4jVectorStore`（`store.neo4j`）**：JDK `HttpClient` 走官方 HTTP 事务性端点 `POST /db/{db}/tx/commit`（JSON），HTTP Basic 鉴权；向量检索 `CALL db.index.vector.queryNodes($index,$k,$embedding) YIELD node, score`。**Bolt/packstream 为后续路径，本批不实现**（协议事实如实标注）。Builder：`baseUrl/database/user/password/vectorIndex/label/dimension/autoCreateIndex/httpClient/timeout`。来源：[Neo4j Vector indexes](https://neo4j.com/docs/cypher-manual/current/indexes/semantic-indexes/vector-indexes/)。
+  - 配套新增 5 个 metadata filter 方言翻译器（`PgVectorFilterTranslator` / `TypesenseFilterTranslator` / `CassandraFilterTranslator` / `MongoDbFilterTranslator` / `Neo4jFilterTranslator`，可移植翻译器 6 → 11）。`docs/vector-stores.md` 增量 5 库小节并把总览 / 选型表 9 → 14。
+
+### Changed
+- 无破坏性变更：`sure-ai-ingest` 为新增独立模块（产出复用既有 rag `Document`）；5 个新向量库为 `VectorStore` SPI 的新增实现，未改动任何既有向量库或 `VectorStore` 接口签名；POI 为 provided 可选，不声明依赖则不影响主库运行期零第三方依赖特性。
+
+### 测试
+- 本迭代新增测试 **64** 个（ingest 模块 24 + poi 模块 5 + PGVector/Typesense 17 + Cassandra/MongoDB/Neo4j 三库 18）；全工程合计 **1461** 个测试，`mvn -B verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 零违规）。测试基线自 2.3.0 的 **1299** 演进：2.4.0 平台能力核实/Redis/Realtime/Langfuse（+53 → **1352**）→ 2.5.0 声明式编排（+45 → **1397**）→ 2.6.0 文档导入器 + 向量库追平（+64 → **1461**）。
+
 ## [2.5.0] - Unreleased
 
 本版本线为「声明式编排层」专项：在 `sure-ai-core` 对话原语之上新增 `sure-ai-framework` 模块（已进 `sure-ai-all`/`sure-ai-bom` 聚合链），把「手写 `client.chat(request)`」升级为「接口即服务 + 可装配 Advisor 链」，补齐 sureai 对标 LangChain4j `AiServices` / Spring AI Advisor 链的编排短板。模块仅依赖 core，零第三方运行期依赖。

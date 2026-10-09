@@ -34,7 +34,8 @@
 - **图像生成**：`ImageClient` 统一抽象，支持 DALL·E / 通义万相 / CogView / 文心一格 / Gemini Imagen，异步平台内部轮询屏蔽，对外同步返回
 - **视频生成**：`VideoClient` 统一抽象，支持 Sora / 通义万相 Wan / CogVideoX / Seedance / Azure Sora 2，全平台异步任务轮询屏蔽，对外同步返回
 - **语音 TTS/STT**：`AudioClient` 统一抽象（TTS 合成 + STT 转录），支持 OpenAI / CosyVoice / GLM-TTS / 豆包 / 百度 / Azure Speech，二进制音频 / URL / Base64 三种响应形态
-- **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（文档加载器：本地文件/URL；分块：递归字符/Markdown/固定大小/语义/父子；向量存储：内置 + Milvus/Chroma/Qdrant/Pinecone/Weaviate/Elasticsearch/OpenSearch/Redis 共 9 种外部适配；检索：向量 + BM25 关键词混合加权融合；Prompt 模板 + 查询改写；增强生成）。**高级检索策略（v1.8.0）**：HyDE / Multi-Query(RRF) / CRAG 纠正式 / 父子 Small-to-Big / 语义分块 / 多模态 RAG；**GraphRAG**（实体关系抽取→社区发现→逐社区摘要）；**RAG 评估**（faithfulness / context_precision / context_recall / answer_relevancy 四指标 + 阈值断言 + 轨迹回放回归）；**可移植 metadata filter**（FilterExpression 抽象 + 6 方言翻译器）。见 [docs/rag.md](docs/rag.md)、[docs/vector-stores.md](docs/vector-stores.md)、[docs/prompt-template.md](docs/prompt-template.md)
+- **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（文档加载器：本地文件/URL；分块：递归字符/Markdown/固定大小/语义/父子；向量存储：内置 + Milvus/Chroma/Qdrant/Pinecone/Weaviate/Elasticsearch/OpenSearch/Redis/PGVector/Typesense/Cassandra/MongoDB/Neo4j 共 13 种外部适配（合计 14 种）；检索：向量 + BM25 关键词混合加权融合；Prompt 模板 + 查询改写；增强生成）。**高级检索策略（v1.8.0）**：HyDE / Multi-Query(RRF) / CRAG 纠正式 / 父子 Small-to-Big / 语义分块 / 多模态 RAG；**GraphRAG**（实体关系抽取→社区发现→逐社区摘要）；**RAG 评估**（faithfulness / context_precision / context_recall / answer_relevancy 四指标 + 阈值断言 + 轨迹回放回归）；**可移植 metadata filter**（FilterExpression 抽象 + 11 方言翻译器）。见 [docs/rag.md](docs/rag.md)、[docs/vector-stores.md](docs/vector-stores.md)、[docs/prompt-template.md](docs/prompt-template.md)
+- **文档导入器（v2.6.0）**：`sure-ai-ingest` 新模块（已进 `sure-ai-all`/`sure-ai-bom`）——`DocumentLoader` SPI（`FileSystemLoader` 本地文件 / `URLLoader` 网络 URL，按扩展名/Content-Type 路由）+ `DocumentParser` 格式解析 SPI。内置 **TXT/MD/HTML/PDF** 全 JDK 支持：PDF 为纯 JDK 有限文本层提取（`Tj`/`TJ` 流扫描，**不引 PDFBox**；扫描件/加密/字体映射/多栏不处理，损坏按空返回）、HTML 为最小正则剥标签；DOCX/XLSX/PPTX 由可选模块 `sure-ai-ingest-poi`（Apache POI 5.5.1 **provided** 不传递，需自行声明依赖）。产出直接复用 rag `Document`，无缝接入 `RagPipeline.ingest`。见 [docs/ingest.md](docs/ingest.md)
 - **Agent 编排（ReAct + Plan-and-Execute）**：`sure-ai-agent` 工具注册中心 + Function Calling 参数校验 + ReAct 编排器 + PlanExecuteAgent（规划→逐步执行→汇总，三级计划解析兜底）；多 Agent 编排（TaskSplitter/AgentOrchestrator/ResultAggregator 并行执行+异常隔离）；内置工具包（HttpTool/DateTimeTool/CalculatorTool 白名单四则）；会话记忆（ConversationMemory 环形窗口，可选注入）。任意 `AiClient` 可驱动，异常/超限/超时全防护。见 [docs/agent.md](docs/agent.md)
 - **生产级 Agent（v1.7.0）**：在 ReActAgent 之上可选注入四组生产能力——检查点持久化（`CheckpointStore`/`AgentCheckpointer` 重放式恢复，run 开头/每轮迭代/结束自动落盘）、流式事件（8 类 `AgentEvent` + `StreamingAgentListener` 桥接 + SSE 写出）、HITL 审批（`ApprovalPolicy` 4 预置策略 + `ApprovalHandler` 4 预置处理器，拒绝/超时回灌模型）、长期记忆（`LongTermMemory` 跨会话召回 Top-K 注入 system + 自动沉淀，向量/文本双路降级）。全部传 null 即关闭，行为与历史版本一致。见 [docs/agent-advanced.md](docs/agent-advanced.md)
 - **声明式编排 AiService（v2.5.0）**：`sure-ai-framework` 新模块——`FrameworkUtil.create(接口.class, client)` 一行把带注解的 Java 接口经 JDK 动态代理变成 AI 服务。注解族 `@AiService`/`@SystemMessage`/`@UserMessage`/`@Tool`/`@Memory`/`@Param`（`{paramName}` 模板），返回映射 `String`/`ChatResponse`/`Stream`/`record`（结构化自动挂 json_schema）；`@Tool` 方法签名自动转 JSON Schema（直调拒绝、模型侧触发）。配套 **Advisor 链**三钩子（before 正序/around 嵌套/after 逆序）+ 四件套（`SemanticCacheAdvisor` 语义缓存短路 / `LoggingAdvisor` 日志 / `ToolCallingAdvisor` 自动工具循环 / `StructuredOutputValidationAdvisor` 校验自纠）；**`SemanticCache`** embedding 余弦阈值命中、可插拔 `CacheStore`（缺省 Lru，可接 `RedisCacheStore` 分布式共享）。仅依赖 core、零第三方运行期依赖。见 [docs/framework.md](docs/framework.md)
@@ -104,6 +105,8 @@
 聚合模块：`sure-ai-all`（一个依赖引入全部平台）、`sure-ai-bom`（版本统一管理）。
 
 编排层：`sure-ai-framework`（v2.5.0 声明式编排——`FrameworkUtil` 接口即服务 + Advisor 链四件套 + `SemanticCache` 语义缓存；仅依赖 core，已进 `sure-ai-all`/`sure-ai-bom` 聚合链，见 [docs/framework.md](docs/framework.md)）。
+
+数据导入层：`sure-ai-ingest`（v2.6.0 文档导入器——`FileSystemLoader`/`URLLoader` + `DocumentParser` SPI，内置 TXT/MD/HTML/PDF 全 JDK 支持，已进 `sure-ai-all`/`sure-ai-bom`；可选 `sure-ai-ingest-poi` 提供 DOCX/XLSX/PPTX，Apache POI 5.5.1 provided、仅进 bom 版本管理、不进运行期聚合链，见 [docs/ingest.md](docs/ingest.md)）。
 
 应用层：`sure-ai-cli`（命令行直接问答：chat / stream / rag / list / repl，一键切换全部 23 个平台，可打 fat jar 并支持 [GraalVM native-image](docs/native-image.md)；不进入 `sure-ai-all` 聚合链，见 [docs/cli.md](docs/cli.md)）。
 
@@ -451,8 +454,10 @@ ChatResponse answer = pipeline.ask("sureai 支持哪些能力？");
 ```
 
 内置进程内向量库（余弦相似度），并开箱适配 Milvus / Chroma / Qdrant / Pinecone /
-Weaviate / Elasticsearch / OpenSearch / Redis 共 8 种外部向量库（共 9 种实现）；
-亦可自行实现 `VectorStore` 接口接入 FAISS / pgvector 等。内置文档加载器（本地文件 / URL）、
+Weaviate / Elasticsearch / OpenSearch / Redis / PGVector / Typesense / Cassandra / MongoDB /
+Neo4j 共 13 种外部向量库（共 14 种实现）；亦可自行实现 `VectorStore` 接口接入 FAISS 等。
+v2.6.0 文档导入器（`sure-ai-ingest`）把本地文件 / 网络 URL 读为 rag `Document`（内置 TXT/MD/HTML/PDF，
+DOCX/XLSX/PPTX 由可选 POI 模块承载）。内置文档加载器（本地文件 / URL）、
 BM25 关键词检索与向量+关键词混合检索、Markdown / 固定大小 / 语义 / 父子分块器，
 以及 HyDE / Multi-Query / CRAG / GraphRAG / RAG 评估等高级能力。
 详见 [docs/rag.md](docs/rag.md)、[docs/vector-stores.md](docs/vector-stores.md)。

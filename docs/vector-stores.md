@@ -17,14 +17,20 @@ RagPipeline
                    ├── WeaviateVectorStore   Weaviate REST + GraphQL（/v1/graphql）
                    ├── ElasticsearchVectorStore  Elasticsearch REST（余弦 kNN）
                    ├── OpenSearchVectorStore     OpenSearch REST（cosinesimil kNN）
-                   └── RedisVectorStore     Redis Stack / RediSearch（RESP over JDK Socket）
+                   ├── RedisVectorStore     Redis Stack / RediSearch（RESP over JDK Socket）
+                   ├── PgVectorStore       PostgreSQL + pgvector（前端/后端协议 over JDK Socket，v2.6.0）
+                   ├── TypesenseVectorStore  Typesense REST（X-TYPESENSE-API-KEY，v2.6.0）
+                   ├── CassandraVectorStore   Cassandra 5.x SAI（CQL 二进制协议 v4 over Socket，v2.6.0）
+                   ├── MongoDbVectorStore    MongoDB 7.0+/Atlas（OP_MSG + 最小 BSON over Socket，v2.6.0）
+                   └── Neo4jVectorStore     Neo4j 向量索引（HTTP tx/commit JSON，v2.6.0）
 ```
 
 - `VectorStore`：`add / addAll / delete / clear / size / similaritySearch`，v1.8.0 起新增
   带 `FilterExpression` 的 default 重载方法（向后兼容，见下文「元数据过滤」）。
 - 运行期仅依赖 sure-core + sure-ai-core；外部向量库实现只用 JDK
-  `java.net.http.HttpClient`（Redis 用 JDK `java.net.Socket` 走 RESP），
-  **不引入任何 Milvus/Chroma/Qdrant/Pinecone 等官方客户端库**。
+  `java.net.http.HttpClient`（Redis / PGVector / Cassandra / MongoDB 用 JDK
+  `java.net.Socket` 手写各原生协议最小子集），**不引入任何 Milvus/Chroma/Qdrant/
+  Pinecone/PostgreSQL/DataStax/MongoDB-driver/Neo4j-driver 等官方客户端库**。
 - 外部向量库需自行部署；客户端只负责按协议序列化请求、解析响应，并把各家的
   “距离”统一映射为“相似度得分”（越大越相似）。
 
@@ -41,10 +47,17 @@ RagPipeline
 | `ElasticsearchVectorStore` | HTTP REST | `ApiKey <credential>`（可选） | `/{index}/_search`（knn） | ✅ ES Query DSL | cosineSimilarity 原样 |
 | `OpenSearchVectorStore` | HTTP REST | `ApiKey <credential>`（可选） | `/{index}/_search`（knn） | ✅ OpenSearch Query DSL | cosinesimil 距离→相似度 |
 | `RedisVectorStore` | **RESP over TCP（JDK Socket，非 HTTP）** | `AUTH <password>`（可选） | `FT.CREATE` / `FT.SEARCH ... KNN` | ✅ RediSearch filter 语法 | 余弦距离 `1 - distance` |
+| `PgVectorStore`（v2.6.0） | **PG 前端/后端协议 over TCP（JDK Socket）** | `trust` / 明文密码（不支持 md5/SCRAM） | Simple Query `'Q'`（无参数化） | ✅ `PgVectorFilterTranslator`（`metadata->>'k'`） | 余弦距离 `<=>` → `1 - distance` |
+| `TypesenseVectorStore`（v2.6.0） | HTTP REST | `X-TYPESENSE-API-KEY` 头 | `/collections/{coll}/documents/search` | ✅ `TypesenseFilterTranslator`（`filter_by`） | `1 - vector_distance` |
+| `CassandraVectorStore`（v2.6.0） | **CQL 二进制协议 v4 over TCP（JDK Socket）** | 无认证 / SASL PLAIN（不支持多轮 SCRAM） | `QUERY`（无 PREPARE 绑定变量） | ✅ `CassandraFilterTranslator`（`metadata['k']`，仅 Eq/In/And/Or） | `similarity_cosine` 原样 [-1,1] |
+| `MongoDbVectorStore`（v2.6.0） | **OP_MSG + 最小 BSON over TCP（JDK Socket）** | 未实现 SCRAM（需 `--noauth`） | `aggregate`（`$vectorSearch`） | ✅ `MongoDbFilterTranslator`（BSON 谓词，作 `$vectorSearch.filter`） | `vectorSearchScore` |
+| `Neo4jVectorStore`（v2.6.0） | HTTP 事务性 API（`tx/commit` JSON） | HTTP Basic `base64(user:password)` | `POST /db/{db}/tx/commit` | ✅ `Neo4jFilterTranslator`（`WHERE n.prop` 后过滤） | 向量索引 cosine 得分 |
 
 > 协议说明：Redis 无通用 HTTP 向量检索接口，向量检索依赖 RediSearch 模块
 > （`FT.CREATE`/`FT.SEARCH`）。本实现用 JDK `java.net.Socket` 手写最小 RESP2 客户端
-> （`*n\r\n$len\r\narg\r\n` 编解码），向量以小端 float32 blob 传入——这与其余 8 个库的
+> （`*n\r\n$len\r\narg\r\n` 编解码），向量以小端 float32 blob 传入。v2.6.0 起，
+> `PgVectorStore`（PG 前端/后端协议）、`CassandraVectorStore`（CQL v4）、
+> `MongoDbVectorStore`（OP_MSG+BSON）同为 Socket 原生协议客户端——这与其余库的
 > HTTP REST 不同，但 Socket 为 JDK 自带，仍满足「零新运行期依赖」红线。
 
 ## 距离 → 相似度映射
@@ -225,9 +238,10 @@ VectorStore store = OpenSearchVectorStore.builder()
 
 ## RedisVectorStore（RESP over TCP，非 HTTP）
 
-基于 Redis Stack（RediSearch）的向量检索。**与其余 8 个库不同**：Redis 无通用 HTTP 向量
+基于 Redis Stack（RediSearch）的向量检索。Redis 无通用 HTTP 向量
 检索接口，本实现用 JDK `java.net.Socket` 手写最小 RESP2 客户端，向量以小端 float32 blob
 传入 `FT.SEARCH ...=>[KNN]`。这是协议事实，不是遗漏——Socket 为 JDK 自带，零新依赖。
+v2.6.0 起 PgVector / Cassandra / MongoDB 同为 Socket 原生协议客户端（见后文），Redis 是其中最早的一个。
 
 ```java
 import com.sure.ai.rag.store.RedisVectorStore;
@@ -252,6 +266,182 @@ VectorStore store = RedisVectorStore.builder()
 写入 `HSET doc:id vec <blob> text <txt> ...`；检索
 `FT.SEARCH idx "(filter)=>[KNN k @vec $blob]" PARAMS 2 blob <blob> SORTBY __vec_score`。
 COSINE 下 `__vec_score` 为余弦距离（0 相同、2 相反），适配层还原为 `cosine = 1 - distance`。
+
+## PgVectorStore（v2.6.0，PG 原生协议 over Socket）
+
+基于 PostgreSQL + [`pgvector`](https://github.com/pgvector/pgvector) 扩展。**零 pgjdbc**：
+用 JDK `Socket` 实现 PG 前端/后端协议最小子集（StartupMessage + 认证 + Simple Query）。
+
+**配置项**
+
+| 项 | 说明 | 默认 |
+| --- | --- | --- |
+| `host` / `port` | PG 地址 | `localhost` / `5432` |
+| `database` | 数据库名（必填） | — |
+| `user` / `password` | 登录名 / 明文密码 | — |
+| `table` | 表名（必填） | — |
+| `dimension` | 向量维度（`autoCreate=true` 时必填） | — |
+| `autoCreate` | 构造时 best-effort 建扩展与表 | `false` |
+| `timeout` | 连接/读取超时 | 10s |
+
+```java
+import com.sure.ai.rag.store.pgvector.PgVectorStore;
+
+VectorStore store = PgVectorStore.builder()
+        .host("localhost")
+        .port(5432)
+        .database("vectordb")
+        .user("postgres")
+        .password("secret")
+        .table("docs")
+        .dimension(1024)
+        .autoCreate(true)            // 构造期 CREATE EXTENSION IF NOT EXISTS vector + CREATE TABLE
+        .build();
+```
+
+**建表约定**：`(id text PRIMARY KEY, text text, metadata jsonb, embedding vector(d))`。
+检索 `ORDER BY embedding <=> '[...]' LIMIT n`（余弦距离 `<=>` ∈ [0,2]，还原 `cosine = 1 - distance`）；
+写入 `INSERT ... ON CONFLICT (id) DO UPDATE`；计数 `SELECT COUNT(*)`（`size()` 可用）。
+
+> **能力与限制（如实标注）**：
+> - 认证仅支持 `AuthenticationCleartextPassword`（明文）与 `AuthenticationOk`（无密码）。
+>   服务端若要求 `md5` 或 `scram-sha-256`（SASL）会抛明确异常——请在 `pg_hba.conf`
+>   配置 `trust` 或 `password`（明文）认证。
+> - 仅实现 Simple Query 协议（`'Q'`），**不支持参数化查询**（Prepared Statement / Bind 未实现）；
+>   SQL 字面量经单引号翻倍转义（`'`→`''`）内联拼接，依赖 `standard_conforming_strings=on`。
+> - 每次操作新建**短连接**（即连即认证、即执行、即关闭），无共享连接并发问题。
+>
+> 协议来源：[Message Formats](https://www.postgresql.org/docs/current/protocol-message-formats.html)、
+> [Message Flow](https://www.postgresql.org/docs/current/protocol-flow.html)。
+
+## TypesenseVectorStore（v2.6.0，HTTP REST）
+
+基于 Typesense REST API（端口默认 `8108`）。仅依赖 JDK `HttpClient`，不引入官方客户端。
+鉴权走 `X-TYPESENSE-API-KEY` 请求头；向量搜索用 `vector_query=vec:([...],k:n)`（`q=*` 通配），
+响应 `hits[].vector_distance` 为余弦距离（0 最相似），还原 `cosine = 1 - vector_distance`。
+
+```java
+import com.sure.ai.rag.store.typesense.TypesenseVectorStore;
+
+VectorStore store = TypesenseVectorStore.builder()
+        .baseUrl("http://localhost:8108")
+        .apiKey("xyz...")                    // 非空时发 X-TYPESENSE-API-KEY
+        .collectionName("docs")
+        .vectorField("vector")               // 默认 vector
+        .textField("text")                   // 默认 text
+        .dimension(1024)
+        .autoCreateCollection(true)          // 默认 false
+        .build();
+```
+
+**端点**：建集合 `POST /collections`；写入 `POST /collections/{coll}/documents?action=upsert`；
+检索 `GET /collections/{coll}/documents/search?q=*&vector_query=...&filter_by=...`；
+删除 `DELETE /collections/{coll}/documents/{id}`；计数 `GET /collections/{coll}`（`num_doc`）。
+
+> 集合默认不自动创建；置 `autoCreateCollection(true)` 时按 `num_dim` 建 `float[]` 向量字段。
+> 语法来源：[Vector Search](https://typesense.org/docs/0.24.0/api/vector-search.html)、
+> [Collections](https://typesense.org/docs/30.0/api/collections.html)。
+
+## CassandraVectorStore（v2.6.0，CQL 二进制协议 v4 over Socket）
+
+基于 Apache Cassandra 5.x（`vector<float,N>` + SAI）。**零 DataStax 驱动**：用 JDK `Socket`
+实现 [CQL Binary Protocol v4](https://cassandra.apache.org/doc/latest/cassandra/_attachments/native_protocol_v4.html)
+最小子集（9 字节大端帧 + STARTUP/AUTHENTICATE/QUERY/RESULT），短连接即连即走。
+
+```java
+import com.sure.ai.rag.store.cassandra.CassandraVectorStore;
+
+VectorStore store = CassandraVectorStore.builder()
+        .host("localhost")
+        .port(9042)                          // 默认 9042
+        .keyspace("vectords")
+        .table("docs")
+        .user("cassandra")                  // 无认证模式可不设
+        .password("cassandra")
+        .dimension(1024)
+        .autoCreate(true)                   // 默认 false；true 时 best-effort 建 KEYSPACE/TABLE/SAI
+        .build();
+```
+
+**建表约定**：`(id text PRIMARY KEY, text text, metadata map<text,text>, embedding vector<float,d>)`，
+向量 ANN 索引为 SAI（`StorageAttachedIndex`，cosine）。检索
+`WHERE embedding ANN OF [...] ORDER BY similarity_cosine(embedding,[...]) LIMIT n`，由
+`similarity_cosine` 直接返回余弦相似度（[-1,1]）。
+
+> **能力与限制（如实标注）**：
+> - 认证仅支持无认证（`AllowAllAuthenticator`，回 READY）或 `PasswordAuthenticator` 的
+>   SASL PLAIN（初始响应 `\0user\0password`）。若 AUTH_RESPONSE 后再发 AUTH_CHALLENGE
+>   （多轮 SCRAM/DSE）会抛明确异常——多轮握手超出最小子集范围。
+> - 仅实现无绑定变量的 `QUERY`（consistency ONE），**不支持 PREPARE/EXECUTE**，字面量经转义内联拼接。
+> - 过滤仅 `Eq/In/And/Or`，且需 `metadata` 列建有 SAI。
+>
+> 来源：[Native Protocol v4](https://cassandra.apache.org/doc/latest/cassandra/_attachments/native_protocol_v4.html)、
+> [Working with Vector Search](https://cassandra.apache.org/doc/latest/cassandra/vector-search/vector-search-working-with.html)。
+
+## MongoDbVectorStore（v2.6.0，OP_MSG + 最小 BSON over Socket）
+
+基于 MongoDB（自管 7.0+ / Atlas 向量搜索）。**零官方驱动**：用 JDK `Socket` 实现
+[OP_MSG（opcode 2011）](https://www.mongodb.com/docs/v8.0/reference/mongodb-wire-protocol/)
+与最小 BSON 编解码（`Bson`）。
+
+```java
+import com.sure.ai.rag.store.mongodb.MongoDbVectorStore;
+
+VectorStore store = MongoDbVectorStore.builder()
+        .host("localhost")
+        .port(27017)                         // 默认 27017
+        .database("vectordb")
+        .collection("docs")
+        .vectorIndex("docs-vector-idx")      // 已建好的向量搜索索引名（必填）
+        .dimension(1024)
+        .autoCreate(true)                   // 默认 false
+        .build();
+```
+
+**文档约定**：`{_id, text, metadata:{...}, embedding:[double...]}`。向量检索用 `$vectorSearch`
+聚合阶段（`queryVector/path/index/limit/numCandidates/filter`）+ `$project` 的
+`{$meta:"vectorSearchScore"}`。
+
+> **能力与限制（如实标注）**：
+> - **未实现 SCRAM-SHA-1/256**（`saslStart/saslContinue` 挑战-响应握手）。请以无认证模式
+>   （`--noauth`，或 localhost 例外）部署；若服务端开启 `--auth`，写/聚合命令返回
+>   `unauthorized(code=13)`，本实现据此抛明确异常。
+> - 仅实现 hello 握手 + `update(upsert)` / `delete` / `count` / `aggregate` 的 OP_MSG。
+> - `$vectorSearch` 要求集合已建有向量搜索索引（自管 7.0+ 或 Atlas）。
+>
+> 来源：[Wire Protocol](https://www.mongodb.com/docs/v8.0/reference/mongodb-wire-protocol/)、
+> [BSON Spec](https://bsonspec.org/spec)、
+> [$vectorSearch](https://www.mongodb.com/docs/atlas/atlas-vector-search/vector-search-stage/)。
+
+## Neo4jVectorStore（v2.6.0，HTTP 事务性 API）
+
+基于 Neo4j 向量索引。用官方且长期支持的 **HTTP 事务性端点** `POST /db/{db}/tx/commit`
+（JSON over HTTP，JDK `HttpClient`），鉴权为 HTTP Basic `base64(user:password)`。
+
+```java
+import com.sure.ai.rag.store.neo4j.Neo4jVectorStore;
+
+VectorStore store = Neo4jVectorStore.builder()
+        .baseUrl("http://localhost:7474")   // 默认 7474
+        .database("neo4j")                  // 默认 neo4j
+        .user("neo4j")
+        .password("secret")
+        .vectorIndex("docs-vector-index")   // 向量索引名（必填）
+        .label("Doc")                       // 节点 label，默认 Doc
+        .dimension(1024)
+        .autoCreateIndex(true)             // 默认 false
+        .build();
+```
+
+向量检索：`CALL db.index.vector.queryNodes($index,$k,$embedding) YIELD node, score`，
+随后 `RETURN node.id/text/metadata, score`；得分即余弦相似度（由向量索引 cosine 配置决定）。
+过滤经 `Neo4jFilterTranslator` 翻译为 `WHERE n.prop ...`（后过滤）。
+
+> **协议路径说明**：Neo4j 原生二进制协议为 Bolt（packstream 编解码 + 版本握手 + 分块帧），
+> 手写工作量与出错风险较高，本批改用 HTTP `tx/commit`（与 Typesense 同型，零第三方依赖）；
+> Bolt/packstream 作为后续路径评估，不在 v2.6.0 实现。
+> 来源：[HTTP API: Query](https://neo4j.com/docs/http-api/current/query/)、
+> [Vector indexes](https://neo4j.com/docs/cypher-manual/current/indexes/semantic-indexes/vector-indexes/)。
 
 ## 元数据过滤（Metadata Filter）
 
@@ -285,7 +475,7 @@ List<SimilaritySearchResult> hits2 =
         store.similaritySearch(queryVec, 4, 0.5, filter);
 ```
 
-六种方言翻译器（均实现 `FilterTranslator<T>`，`translate(filter)` 返回库原生结构；
+十一种方言翻译器（均实现 `FilterTranslator<T>`，`translate(filter)` 返回库原生结构；
 入参 `null` 表示不过滤、返回 `null`）：
 
 | 翻译器 | 目标结构 |
@@ -296,6 +486,11 @@ List<SimilaritySearchResult> hits2 =
 | `ElasticsearchFilterTranslator` | ES Query DSL（JsonObject） |
 | `OpenSearchFilterTranslator` | OpenSearch Query DSL（JsonObject） |
 | `RedisFilterTranslator` | RediSearch filter 字符串（构造时传入 `numericFields`） |
+| `PgVectorFilterTranslator`（v2.6.0） | `metadata->>'field' ...` SQL WHERE 片段 |
+| `TypesenseFilterTranslator`（v2.6.0） | Typesense `filter_by` 表达式 |
+| `CassandraFilterTranslator`（v2.6.0） | `metadata['k']=v` CQL WHERE（仅 Eq/In/And/Or） |
+| `MongoDbFilterTranslator`（v2.6.0） | BSON 谓词（作 `$vectorSearch.filter`） |
+| `Neo4jFilterTranslator`（v2.6.0） | `WHERE n.prop ...` Cypher 后过滤 |
 
 ```java
 QdrantFilterTranslator translator = new QdrantFilterTranslator();
@@ -323,7 +518,11 @@ RagPipeline pipeline = RagPipeline.builder()
 
 ## pgvector 适配（参考实现）
 
-sure-ai-rag 运行期**不依赖**任何 JDBC 驱动。如需接入 PostgreSQL +
+> **v2.6.0 起已内置** `com.sure.ai.rag.store.pgvector.PgVectorStore`（零 pgjdbc，见上文
+> 「PgVectorStore」小节）。以下 JDBC 参考实现保留给希望自己管理连接池 / 使用完整 PG 驱动的
+> 场景——sure-ai-rag 运行期**不依赖**任何 JDBC 驱动；接入内置实现时无需自行引入驱动。
+
+sure-ai-rag 运行期**不依赖**任何 JDBC 驱动。如需用自有 PG 驱动 + 连接池接入 PostgreSQL +
 [pgvector](https://github.com/pgvector/pgvector)，请在你的应用工程里自行引入
 `org.postgresql:postgresql` 驱动，并实现 `VectorStore` 接口（以下为可直接复制的参考代码）：
 
@@ -499,7 +698,9 @@ public class PgVectorStore implements VectorStore {
 ## 注意事项
 
 - **自行部署**：Milvus / Chroma / Qdrant / Pinecone / Weaviate / Elasticsearch / OpenSearch /
-  Redis（RediSearch）/ pgvector 均需独立部署与运维，客户端只做协议适配。
+  Redis（RediSearch）/ PostgreSQL+pgvector / Typesense / Cassandra / MongoDB / Neo4j
+  共 13 种外部库均需独立部署与运维，客户端只做协议适配（另有内置 `InMemoryVectorStore`，
+  合计 14 种）。
 - **网络超时**：默认 10s，生产环境按 P99 延迟调整；外部库不可用时操作会抛
   `AiException`（包装 IOException / 非 2xx 响应；Redis 为 Socket 异常）。
 - **批量大小**：REST insert 单次建议控制在数百至数千条，过大请自行分批。

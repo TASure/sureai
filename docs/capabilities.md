@@ -143,3 +143,21 @@ grok does not support IMAGE capability
 - **SemanticCache**：embedding 余弦阈值命中，可插拔 `CacheStore`。
 
 编排能力与平台无关——同一套接口与 Advisor 链换平台 client 即可复用。详见 [framework.md](framework.md)。
+
+## 文档导入与向量库适配（v2.6.0，非平台 guard 维）
+
+与 v2.5.0 编排层同理，v2.6.0 的「文档导入器」与「5 个新向量库」都是**平台无关的应用侧能力**，
+不挂在任何平台 Client 的 guard 表面上，因而不在上面的 `Capability` 矩阵内：
+
+- **文档导入器（`sure-ai-ingest`）**：`DocumentLoader` SPI（`FileSystemLoader` 本地 /
+  `URLLoader` 网络）+ `DocumentParser` 格式解析 SPI；内置 TXT/MD/HTML/PDF 为纯 JDK 实现
+  （PDF 为有限文本层提取、不引 PDFBox；HTML 为最小正则剥标签），DOCX/XLSX/PPTX 由可选
+  `sure-ai-ingest-poi`（Apache POI 5.5.1 provided）承载。产出复用 rag `Document`。详见 [ingest.md](ingest.md)。
+- **向量库 9 → 14**：新增 `PgVectorStore`（PG 前端/后端协议）、`TypesenseVectorStore`（REST）、
+  `CassandraVectorStore`（CQL v4）、`MongoDbVectorStore`（OP_MSG+BSON）、`Neo4jVectorStore`
+  （HTTP tx/commit），均为 JDK 原生协议客户端、零官方驱动；各家鉴权与查询能力的支持子集
+  （如 PG 仅 trust/明文、Cassandra 仅无认证/SASL PLAIN、MongoDB 未实现 SCRAM、Neo4j 走 HTTP 而非 Bolt）
+  在 [vector-stores.md](vector-stores.md) 逐库如实标注。配套新增 5 个 metadata filter 方言翻译器
+  （6 → 11）。
+
+这些能力与「某平台是否支持某请求能力」正交：导入与向量存储换实现不影响平台 guard 行为。

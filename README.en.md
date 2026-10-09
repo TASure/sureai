@@ -36,7 +36,8 @@
 - **Image Generation**: unified `ImageClient` abstraction supporting DALL·E / Wanx / CogView / ERNIE-ViLG / Gemini Imagen; async platforms handle polling internally, exposing a synchronous API
 - **Video Generation**: unified `VideoClient` abstraction supporting Sora / Wan / CogVideoX / Seedance / Azure Sora 2; all platforms use async task polling internally, exposing a synchronous API
 - **Speech TTS/STT**: unified `AudioClient` abstraction (TTS synthesis + STT transcription) supporting OpenAI / CosyVoice / GLM-TTS / Doubao / Baidu / Azure Speech; binary audio / URL / Base64 response formats
-- **RAG**: end-to-end retrieval-augmented generation pipeline (`sure-ai-rag`) — document loaders (local file / URL), recursive / Markdown / fixed-size / semantic / parent-child splitters, vector stores (in-memory + 8 external adapters: Milvus/Chroma/Qdrant/Pinecone/Weaviate/Elasticsearch/OpenSearch/Redis), vector + BM25 keyword hybrid retrieval, prompt templates + query rewriting. **Advanced retrieval (v1.8.0)**: HyDE / Multi-Query (RRF) / CRAG corrective / parent-child small-to-big / semantic chunking / multimodal RAG; **GraphRAG** (entity-relation extraction → community detection → per-community summaries); **RAG evaluation** (faithfulness / context_precision / context_recall / answer_relevancy + threshold assertions + trace replay regression); **portable metadata filter** (FilterExpression abstraction + 6 dialect translators). See [docs/rag.md](docs/rag.md), [docs/vector-stores.md](docs/vector-stores.md), [docs/prompt-template.md](docs/prompt-template.md)
+- **RAG**: end-to-end retrieval-augmented generation pipeline (`sure-ai-rag`) — document loaders (local file / URL), recursive / Markdown / fixed-size / semantic / parent-child splitters, vector stores (in-memory + 13 external adapters: Milvus/Chroma/Qdrant/Pinecone/Weaviate/Elasticsearch/OpenSearch/Redis/PGVector/Typesense/Cassandra/MongoDB/Neo4j, 14 total), vector + BM25 keyword hybrid retrieval, prompt templates + query rewriting. **Advanced retrieval (v1.8.0)**: HyDE / Multi-Query (RRF) / CRAG corrective / parent-child small-to-big / semantic chunking / multimodal RAG; **GraphRAG** (entity-relation extraction → community detection → per-community summaries); **RAG evaluation** (faithfulness / context_precision / context_recall / answer_relevancy + threshold assertions + trace replay regression); **portable metadata filter** (FilterExpression abstraction + 11 dialect translators). See [docs/rag.md](docs/rag.md), [docs/vector-stores.md](docs/vector-stores.md), [docs/prompt-template.md](docs/prompt-template.md)
+- **Document ingest (v2.6.0)**: new `sure-ai-ingest` module (in `sure-ai-all` / `sure-ai-bom`) — a `DocumentLoader` SPI (`FileSystemLoader` for local files / `URLLoader` for URLs, routed by extension / Content-Type) plus a `DocumentParser` format SPI. Built-in **TXT/MD/HTML/PDF** are pure-JDK: PDF is a finite text-layer extractor (`Tj`/`TJ` stream scanning, **no PDFBox**; scanned/encrypted PDFs, font mapping and multi-column layout are out of scope, corrupt PDFs yield an empty list), HTML is a minimal regex tag-stripper; DOCX/XLSX/PPTX live in the optional `sure-ai-ingest-poi` module (Apache POI 5.5.1 is **provided**/non-transitive — declare `poi-ooxml` yourself). Output reuses the rag `Document` and flows straight into `RagPipeline.ingest`. See [docs/ingest.md](docs/ingest.md), [docs/en/ingest.md](docs/en/ingest.md)
 - **Agent orchestration (ReAct + Plan-and-Execute)**: `sure-ai-agent` — tool registry + Function Calling argument validation + ReAct orchestrator + PlanExecuteAgent (plan → step-by-step execution → synthesis, 3-level plan parsing fallback); multi-agent orchestration (TaskSplitter/AgentOrchestrator/ResultAggregator parallel execution + exception isolation); built-in tools (HttpTool/DateTimeTool/CalculatorTool whitelist arithmetic); conversation memory (ConversationMemory ring buffer, optional injection). Drivable by any `AiClient`, with exception / max-iteration / timeout guards. See [docs/agent.md](docs/agent.md)
 - **Production-grade agents (v1.7.0)**: four optional production capabilities layered on ReActAgent — checkpoint persistence (`CheckpointStore`/`AgentCheckpointer` replay-based recovery, auto-save at run start / each iteration / end); streaming events (8 `AgentEvent` types + `StreamingAgentListener` bridge + SSE writer); HITL approval (`ApprovalPolicy` with 4 built-in strategies + `ApprovalHandler` with 4 built-in handlers, rejection/timeout fed back to the model); long-term memory (`LongTermMemory` recalls Top-K into system before run and auto-extracts after, vector/text dual-path fallback). Pass `null` to disable any of them; behavior matches historical versions when off. See [docs/agent-advanced.md](docs/agent-advanced.md)
 - **Declarative orchestration AiService (v2.5.0)**: new `sure-ai-framework` module — `FrameworkUtil.create(YourService.class, client)` turns an annotated Java interface into an AI service via a JDK dynamic proxy. Annotation family `@AiService`/`@SystemMessage`/`@UserMessage`/`@Tool`/`@Memory`/`@Param` (`{paramName}` templates); return mapping to `String`/`ChatResponse`/`Stream`/`record` (structured output auto-attaches json_schema); `@Tool` method signatures auto-compile to JSON Schema (direct calls rejected, model-side triggered). Ships an **Advisor chain** with three hooks (`before` forward / `around` nested / `after` reverse) plus four built-ins (`SemanticCacheAdvisor` short-circuit / `LoggingAdvisor` / `ToolCallingAdvisor` auto tool loop / `StructuredOutputValidationAdvisor` self-correct retry); and **`SemanticCache`** embedding cosine-threshold hits over a pluggable `CacheStore` (default Lru, swappable to `RedisCacheStore` for shared caching). Depends on core only, zero third-party runtime deps. See [docs/framework.md](docs/framework.md)
@@ -106,6 +107,8 @@ Per-platform docs: [AWS Bedrock](docs/bedrock.md) · [Cohere](docs/cohere.md) ·
 Aggregation modules: `sure-ai-all` (one dependency for all platforms), `sure-ai-bom` (version management).
 
 Orchestration layer: `sure-ai-framework` (v2.5.0 declarative orchestration — `FrameworkUtil` interface-as-service + the four-piece Advisor chain + `SemanticCache`; depends on core only, included in the `sure-ai-all` / `sure-ai-bom` aggregate chains, see [docs/framework.md](docs/framework.md)).
+
+Data ingest layer: `sure-ai-ingest` (v2.6.0 document importer — `FileSystemLoader`/`URLLoader` + `DocumentParser` SPI, built-in TXT/MD/HTML/PDF on pure JDK; included in `sure-ai-all` / `sure-ai-bom`. The optional `sure-ai-ingest-poi` adds DOCX/XLSX/PPTX with Apache POI 5.5.1 provided/non-transitive — BOM-managed only, not in the runtime aggregate chain; see [docs/ingest.md](docs/ingest.md)).
 
 Application layer: `sure-ai-cli` (command-line Q&A: chat / stream / rag / list / repl, one-key switch across all 23 platforms; buildable as a fat jar and a [GraalVM native-image](docs/native-image.md) executable; not part of the `sure-ai-all` aggregate chain, see [docs/cli.md](docs/cli.md)).
 
@@ -453,14 +456,16 @@ pipeline.ingest("sureai-intro", "sureai is a zero-dependency Java LLM toolkit ..
 ChatResponse answer = pipeline.ask("What capabilities does sureai support?");
 ```
 
-An in-memory vector store (cosine similarity) is included out of the box, along with 8 external
-adapters: Milvus / Chroma / Qdrant / Pinecone / Weaviate / Elasticsearch / OpenSearch / Redis
-(9 implementations total); implement the `VectorStore` interface to plug in FAISS / pgvector.
-Built-in document loaders (local file / URL), BM25 keyword retrieval and weighted
-vector+keyword hybrid retrieval, Markdown / fixed-size / semantic / parent-child splitters,
+An in-memory vector store (cosine similarity) is included out of the box, along with 13 external
+adapters: Milvus / Chroma / Qdrant / Pinecone / Weaviate / Elasticsearch / OpenSearch / Redis /
+PGVector / Typesense / Cassandra / MongoDB / Neo4j (14 implementations total); implement the
+`VectorStore` interface to plug in FAISS or another store. The v2.6.0 document ingest module
+(`sure-ai-ingest`) turns local files / URLs into rag `Document`s (TXT/MD/HTML/PDF built in;
+DOCX/XLSX/PPTX via the optional POI module). Built-in document loaders (local file / URL), BM25 keyword
+retrieval and weighted vector+keyword hybrid retrieval, Markdown / fixed-size / semantic / parent-child splitters,
 plus advanced capabilities: HyDE / Multi-Query / CRAG / GraphRAG / RAG evaluation and a
 portable metadata filter abstraction. See [docs/rag.md](docs/rag.md),
-[docs/vector-stores.md](docs/vector-stores.md).
+[docs/ingest.md](docs/ingest.md), [docs/vector-stores.md](docs/vector-stores.md).
 
 ## Performance Benchmarks
 
@@ -520,6 +525,8 @@ sureai enforces strict module-level isolation:
 ```
 sure-ai-core          ← common models/interfaces/HTTP/JSON (depended on by all platforms)
 sure-ai-rag           ← RAG pipeline (depends on core; platform-agnostic)
+sure-ai-ingest        ← document importer: FileSystemLoader/URLLoader + DocumentParser SPI (TXT/MD/HTML/PDF pure JDK; depends on core+rag; platform-agnostic)
+sure-ai-ingest-poi    ← optional DOCX/XLSX/PPTX parsers (Apache POI 5.5.1 provided, non-transitive)
 sure-ai-agent         ← Agent ReAct multi-tool loop (depends on core; platform-agnostic)
 sure-ai-framework     ← declarative orchestration: AiService interface-as-service + Advisor chain + SemanticCache (depends on core; platform-agnostic)
 sure-ai-micrometer    ← observability Micrometer bridge (depends on core; micrometer-core is provided, not transitive)

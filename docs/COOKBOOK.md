@@ -764,6 +764,95 @@ String out = ai.summarize("法务", "合同正文……");
 
 ---
 
+## 场景 18：文档导入 + 向量入库 + 检索（v2.6.0）
+
+**目标**：用 v2.6.0 的文档导入器把本地 Markdown / PDF 读成 `Document`，切块、向量化入库，
+再基于检索问答——覆盖 `FileSystemLoader` → `TextSplitter` → `RagPipeline.ingest` → 检索一条完整链路。
+
+```java
+import java.net.URI;
+import java.nio.file.Path;
+import java.util.List;
+
+import com.sure.ai.ingest.FileSystemLoader;
+import com.sure.ai.ingest.URLLoader;
+import com.sure.ai.ingest.poi.PoiParsers;
+import com.sure.ai.client.AiConfig;
+import com.sure.ai.openai.OpenAiClient;
+import com.sure.ai.openai.OpenAiModels;
+import com.sure.ai.rag.RagUtil;
+import com.sure.ai.rag.model.Document;
+import com.sure.ai.rag.pipeline.RagPipeline;
+import com.sure.ai.rag.splitter.MarkdownTextSplitter;
+
+OpenAiClient client = new OpenAiClient(
+        AiConfig.builder().apiKey(System.getenv("SURE_AI_OPENAI_API_KEY")).build());
+
+// 1) 导入：本地文件 → 带元数据的 Document（format=md/pdf，source=路径）
+FileSystemLoader loader = FileSystemLoader.createDefault();   // 内置 TXT/MD/HTML/PDF
+List<Document> files = loader.load(Path.of("docs/guide.md"));
+
+// 2) 管线：对话与向量化复用同一 client；Markdown 源用 MarkdownTextSplitter 结构化切分
+RagPipeline pipeline = RagPipeline.builder()
+        .chatClient(client)
+        .chatModel(OpenAiModels.GPT_4O_MINI)
+        .embeddingClient(client)
+        .embeddingModel(OpenAiModels.TEXT_EMBEDDING_3_SMALL)
+        .splitter(new MarkdownTextSplitter(800, 100))
+        // .vectorStore(PgVectorStore.builder().table("docs").dimension(1024).build()) // 换外部库
+        .build();
+
+// 3) 入库：按 doc.id()#i 切块命名，原文元数据随分块一并写入
+for (Document f : files) {
+    int chunks = pipeline.ingest(f);
+    System.out.println(f.id() + " → " + chunks + " 块");
+}
+
+// 4) 检索：召回 topK 相关块（不含得分），或 retrieveWithScores(...) 含相似度
+List<Document> hits = pipeline.retrieve("如何接入外部向量库？", 4);
+System.out.println("命中 " + hits.size() + " 块");
+
+client.close();
+```
+
+接入网络文档 / Office 文档的变体：
+
+```java
+// 网页 / 在线 PDF：URLLoader（无扩展名时按 Content-Type 兜底）
+List<Document> pages = URLLoader.createDefault()
+        .load(URI.create("https://example.com/spec.pdf"));
+
+// DOCX/XLSX/PPTX：可选 POI 模块（poi-ooxml 5.5.1 provided，需自行声明依赖）
+FileSystemLoader office = FileSystemLoader.builder()
+        .register(PoiParsers.docx())
+        .register(PoiParsers.xlsx())
+        .register(PoiParsers.pptx())
+        .build();
+List<Document> reports = office.load(Path.of("docs/report.docx"));
+```
+
+**关键点**：
+- **导入器只解析、不切块**：`FileSystemLoader.load(Path)` / `URLLoader.load(URI)` 返回
+  `List<com.sure.ai.rag.model.Document>`，metadata 含 `source`/`loaded_at`/`format`（URL 另含 `content_type`）。
+- **格式路由**：默认内置 TXT/MD/HTML/PDF；按扩展名（URL 无后缀时按 Content-Type）自动选解析器；
+  不支持的格式抛 `IllegalStateException`，空文件 / 无文本层 PDF 返回空列表（不中断批量）。
+- **PDF 为有限文本层提取**：纯 JDK 手写、不引 PDFBox，仅覆盖标准单字节字体的 `Tj`/`TJ`；
+  扫描件 / 加密 / 非 ASCII 字体映射 / 多栏阅读顺序均不处理（损坏 PDF 返回空而非报错）。
+- **入库两条重载**：`pipeline.ingest(Document)` 保留文档元数据（按 `id#i` 命名分块）；
+  `pipeline.ingest(sourceId, text)` 为纯文本快速入库。分块器经 `RagPipeline.builder().splitter(...)` 覆盖。
+- **检索入口**：管线级 `retrieve(query, topK)` / `retrieveWithScores(query, topK)`；
+  `VectorStore.similaritySearch(...)` 是库级别低层接口。换外部向量库（PGVector/Typesense/
+  Cassandra/MongoDB/Neo4j 等 14 种）只需改 `.vectorStore(...)`，导入与切块代码不变。
+
+**离线可跑性**：导入器 / 分块 / `InMemoryVectorStore` 本地可单测（解析逻辑纯 JDK，零真实网络）；
+真实向量化与问答需可用 OpenAI（或兼容平台）client（**需 API key**）。
+
+**进阶**：导入器定位、各格式限制与 `DocumentParser` 扩展点见 [docs/ingest.md](ingest.md)；
+14 种向量库协议子集与鉴权限制见 [docs/vector-stores.md](vector-stores.md)；RAG 全链路见
+[docs/rag.md](rag.md)。
+
+---
+
 ## 附：示例运行器
 
 `sure-ai-examples` 模块内置 `ExamplesRunner`，离线即可跑（无 Key 自动走 Fake 分支）：
