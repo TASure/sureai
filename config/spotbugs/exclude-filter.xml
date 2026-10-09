@@ -347,4 +347,14 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- 语义缓存 Builder 暂存共享组件引用（EI_EXPOSE_REP2）：
+         SemanticCache.Builder 为一次性装配器，embedder/store 本就是调用方提供的可插拔组件
+         （EmbeddingClient 为平台向量客户端、CacheStore 为有状态缓存后端，缺省 LruCacheStore、
+         外部可传 RedisCacheStore），语义即按引用共享，与 FrameworkUtil.Builder /
+         RagPipeline.Builder 同类惯例；调用方负责其生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.framework.cache.Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>
