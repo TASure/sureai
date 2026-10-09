@@ -58,7 +58,7 @@ public final class RealtimeOptions {
 	/** 重连退避封顶（ms）。 */
 	private final long reconnectMaxDelayMillis;
 
-	/** 心跳间隔（ms），<=0 关闭。 */
+	/** 心跳间隔（ms），{@code <=0} 关闭。 */
 	private final long heartbeatIntervalMillis;
 
 	/** 心跳超时（ms）。 */
@@ -128,7 +128,7 @@ public final class RealtimeOptions {
 	}
 
 	/**
-	 * 心跳间隔（ms），<=0 表示关闭。
+	 * 心跳间隔（ms），{@code <=0} 表示关闭。
 	 *
 	 * @return 心跳间隔
 	 */
@@ -227,7 +227,7 @@ public final class RealtimeOptions {
 		}
 
 		/**
-		 * 设置心跳间隔，<=0 关闭心跳。
+		 * 设置心跳间隔，{@code <=0} 关闭心跳。
 		 *
 		 * @param heartbeatIntervalMillis 间隔
 		 * @return this
