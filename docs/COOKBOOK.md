@@ -679,6 +679,91 @@ AiConfig config = AiConfig.builder()
 
 ---
 
+## 场景 17：声明式 AiService + Advisor 链装配（v2.5.0）
+
+**目标**：用一个带注解的 Java 接口当 AI 服务（接口即服务），并把「语义缓存 → 日志 → 工具循环 → 结构化校验」四件套按序装配到一条 Advisor 链上。
+
+```java
+import java.util.List;
+
+import com.sure.ai.client.AiClient;
+import com.sure.ai.framework.FrameworkUtil;
+import com.sure.ai.framework.advisor.Advisor;
+import com.sure.ai.framework.advisor.LoggingAdvisor;
+import com.sure.ai.framework.advisor.SemanticCacheAdvisor;
+import com.sure.ai.framework.advisor.ToolCallingAdvisor;
+import com.sure.ai.framework.advisor.StructuredOutputValidationAdvisor;
+import com.sure.ai.framework.annotation.AiService;
+import com.sure.ai.framework.annotation.Tool;
+import com.sure.ai.framework.annotation.UserMessage;
+import com.sure.ai.framework.cache.SemanticCache;
+
+// 结构化输出目标 record
+record Product(String name, int stock) {}
+
+@AiService(model = "gpt-4o-mini")
+interface Catalog {
+
+    @UserMessage("{q}")
+    Product lookup(String q);
+
+    @Tool(description = "查库存")
+    default int stockOf(String item) {
+        return queryStockDb(item);   // 你的真实库存查询
+    }
+}
+
+// 1) 语义缓存：embedding 相似度阈值命中（embedder 为任意 core EmbeddingClient）
+SemanticCache cache = SemanticCache.builder()
+        .embedder(embeddingClient)
+        .threshold(0.85)                 // 默认 0.85，[0,1]
+        .build();
+
+// 2) Advisor 链顺序：缓存短路 → 日志 → 工具循环 → 结构化自纠
+List<Advisor> advisors = List.of(
+        new SemanticCacheAdvisor(cache),
+        new LoggingAdvisor(),
+        new ToolCallingAdvisor(),                 // 默认 maxIterations=5
+        new StructuredOutputValidationAdvisor());  // 默认 maxRetries=2
+
+// 3) 一行装配
+Catalog ai = FrameworkUtil.builder(Catalog.class, client)
+        .advisors(advisors)
+        .build();
+
+// 4) 调用：模型可自动调 stockOf；输出不合规会自纠重写；问过的同义问题走缓存
+Product p = ai.lookup("查一下《深入理解计算机系统》的库存");
+System.out.println(p.name() + " 库存=" + p.stock());
+```
+
+最小版（不要 Advisor、不要工具）也能跑：
+
+```java
+@AiService(model = "gpt-4o-mini")
+interface Assistant {
+    @SystemMessage("你是一个{role}助手")
+    @UserMessage("请总结：{text}")
+    String summarize(String role, String text);
+}
+
+Assistant ai = FrameworkUtil.create(Assistant.class, client);
+String out = ai.summarize("法务", "合同正文……");
+```
+
+**关键点**：
+- **接口即服务**：`@AiService`（接口级模型/温度）+ `@SystemMessage`/`@UserMessage`（`{paramName}` 模板占位符）+ `@Tool`（方法签名自动转 JSON Schema 挂 `ChatRequest.tools`）；`FrameworkUtil.create(Class, client)` 一行生成 JDK 动态代理。
+- **返回映射**：`String` 阻塞文本 / `ChatResponse` 原始响应 / `Stream<ChatStreamChunk>` 流式（不经过 Advisor 链）/ `record` 结构化（自动挂 `responseFormat=json_schema`）；`void` 与不支持的返回类型在创建代理期即报错。
+- **工具直调拒绝、模型侧触发**：业务代码直接调 `@Tool` 方法会抛 `IllegalStateException`；模型返回 `tool_calls` 后由 `ToolCallingAdvisor` 闭环（执行→回填→再问模型），内置 `ReflectionToolExecutor` 反射执行。
+- **Advisor 三钩子**：`before` 正序 / `around` 嵌套（可多次 `proceed` 实现工具循环与校验重试）/ `after` 逆序 finally；顺序即执行顺序，推荐「缓存→日志→工具→校验」。
+- **SemanticCache**：`SemanticCache.builder().embedder(...)`（必填）+ `threshold/maxEntries/defaultTtlMillis/store/model`；内存向量索引顺序扫描 + 可插拔 `CacheStore` 载荷后端（缺省 `LruCacheStore`，传 rag 的 `RedisCacheStore` 即分布式共享）。
+- **记忆**：`@Memory` + `builder.memory(new InMemoryChatMemory(20))` 自动注入历史并回写阻塞轮（流式不回写）。
+
+**离线可跑性**：Advisor 链与代理逻辑本地可单测（注入假 `AiClient` / 假 `SemanticCache`，零真实网络）；真实对话与语义相似度需可用平台 client + embedding client（**需 API key**）。
+
+**进阶**：注解族、Advisor 四件套构造参数、语义缓存原理与 Redis 组合见 [docs/framework.md](framework.md)；精确缓存 vs Redis 选型见 [docs/cache.md](cache.md)；结构化输出底层见 [docs/structured-output.md](structured-output.md)。
+
+---
+
 ## 附：示例运行器
 
 `sure-ai-examples` 模块内置 `ExamplesRunner`，离线即可跑（无 Key 自动走 Fake 分支）：

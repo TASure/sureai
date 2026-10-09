@@ -27,6 +27,7 @@ Then branch into the capability you need.
 | Platform matrix (23 platforms, baseUrl, models) | [platforms.md](./platforms.md) | [../capabilities.md](../capabilities.md) |
 | RAG pipeline | [rag.md](./rag.md) | [../rag.md](../rag.md) |
 | Agent orchestration (ReAct + production capabilities) | [agent.md](./agent.md) | [../agent.md](../agent.md), [../agent-advanced.md](../agent-advanced.md) |
+| Declarative orchestration (AiService + Advisor chain + SemanticCache) | [framework.md](./framework.md) | [../framework.md](../framework.md) |
 | AI Gateway (routing / failover / key pool / tenant quota) | [gateway.md](./gateway.md) | [../gateway.md](../gateway.md) |
 | MCP Server (expose sureai as a Model Context Protocol server) | [mcp-server.md](./mcp-server.md) | [../mcp-server.md](../mcp-server.md) |
 | Command-line tool | [cli.md](./cli.md) | [../cli.md](../cli.md) |

@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - Unreleased
+
+本版本线为「声明式编排层」专项：在 `sure-ai-core` 对话原语之上新增 `sure-ai-framework` 模块（已进 `sure-ai-all`/`sure-ai-bom` 聚合链），把「手写 `client.chat(request)`」升级为「接口即服务 + 可装配 Advisor 链」，补齐 sureai 对标 LangChain4j `AiServices` / Spring AI Advisor 链的编排短板。模块仅依赖 core，零第三方运行期依赖。
+
+### Added
+- **AiService 声明式接口（`sure-ai-framework` 新模块，`com.sure.ai.framework`）**：
+  - **`FrameworkUtil` 静态入口**：`create(Class<T>, AiClient)` 一行创建代理、`create(Class<T>, AiClient, String model)` 显式模型、`builder(Class<T>, AiClient)` 流式 Builder（`.model(x)` 覆盖 `@AiService.model()`、`.temperature(x)`、`.memory(ChatMemory)`、`.advisors(List<Advisor>)`、`.build()`）；底层为 JDK 动态代理 `FrameworkProxy`。
+  - **注解族**（`com.sure.ai.framework.annotation`）：`@AiService(model, temperature=-1)`（接口级默认模型/温度）、`@SystemMessage(value)`、`@UserMessage(value="")`、`@Tool(name="", description="")`、`@Memory`（接口/方法级开关）、`@Param(value)`；`{paramName}` 模板占位符按形参名（或 `@Param`）渲染。
+  - **返回类型映射**：`String`（阻塞文本 `firstText()`）/ `ChatResponse`（原始响应）/ `Stream<ChatStreamChunk>`（流式，不经过 Advisor 链）/ `record`（结构化：自动挂 `responseFormat=json_schema` 并反序列化）；`void` 与不支持类型在创建代理期即 fail-fast。
+  - **`@Tool` schema 注册与直调拒绝**：接口 `@Tool` 方法签名自动转 `ToolSpec`（方法名/参数名 → JSON Schema）挂 `ChatRequest.tools`；业务代码直调 `@Tool` 方法抛 `IllegalStateException`（工具方法由模型侧调用）。
+  - **会话记忆**：`ChatMemory` SPI（`add`/`history`/`clear`/`size`）+ 内置 `InMemoryChatMemory`（环形窗口，默认 20 条，FIFO 淘汰、`synchronized` 可共享）；`@Memory` 开启历史注入与阻塞轮回写（流式不回写）。
+- **SemanticCache 语义缓存（`com.sure.ai.framework.cache`）**：
+  - **原理**：把 query 文本经 `EmbeddingClient` 编码为向量，与内存索引条目逐条算**余弦相似度**，≥ 阈值（默认 `0.85`）且未过期即命中——让同义改写复用同一条 `ChatResponse`，区别于 core 的精确 `ChatCacheKey`。
+  - **双层存储模型**：内存向量索引（query + 向量 + 过期时间戳，顺序线性扫描）+ 可插拔 core `CacheStore` 载荷后端（缺省进程内 `LruCacheStore`，传 rag 的 `RedisCacheStore` 即分布式共享）；条目以 `sha256(query)` 为 entryId。
+  - **Builder**：`SemanticCache.builder().embedder(...)`（必填）+ `.threshold(0~1)` / `.store(CacheStore)` / `.maxEntries(1000)`（超 LRU 淘汰）/ `.defaultTtlMillis(600_000)`（10 分钟）/ `.model(String)`；`get/put/remove/clear`，过期条目惰性剔除。
+- **Advisor 链（`com.sure.ai.framework.advisor`）**：
+  - **三钩子语义**：`before(AdvisorContext)` **正序**执行、`around(AdvisorChain, AdvisorContext)` **嵌套**包裹终端（可零次 `proceed` 短路 / 一次改写 / 多次触发多轮）、`after(AdvisorContext)` **逆序** finally 语义；`AdvisorContext` 暴露可变消息列表 / `toolExecutor()` / `expectedType()` / `response()` / `attribute(...)`，终端经 `rebuildRequest()` 重建。`proceed` 视图不可重排，工具循环/校验重试反复调用不会重跑外层 before/after。
+  - **四件套**：`SemanticCacheAdvisor`（命中即短路不调模型、miss 回填，推荐最外层）/ `LoggingAdvisor`（JUL 记录请求概要/耗时/响应摘要，不落全文）/ `ToolCallingAdvisor`（自动工具循环：`tool_calls`→反射执行→回填→再问模型，默认 `maxIterations=5`，单工具失败收敛为错误文本回灌）/ `StructuredOutputValidationAdvisor`（record 返回时校验 JSON 形状，不合规把错误原因作为修正指令回灌重写，默认 `maxRetries=2`）。
+  - **`ToolExecutor` SPI + `ReflectionToolExecutor`**：按工具名找 `@Tool` 方法、按形参名（`@Param` 优先）绑定 JSON 参数（String/基本类型及包装），`default` 方法在代理实例上 `invokeDefault`；任何异常收敛为错误文本不向外抛。四件套均无状态、可并发共享。推荐装配顺序：语义缓存 → 日志 → 工具循环 → 结构化校验。
+  - 配套文档：`docs/framework.md` + 英文镜像 `docs/en/framework.md`、`docs/COOKBOOK.md` 新增场景 17、`docs/capabilities.md` 增补编排能力注记、README 中英文特性区与模块树补 `sure-ai-framework`。
+
+### Changed
+- 无破坏性变更：`sure-ai-framework` 为新增独立模块，未触碰任何既有模块公开 API；未装配 Advisor 链时每次调用等价于直接 `client.chat`，行为与历史版本一致。
+
+### 测试
+- 本迭代新增测试 **45** 个（AiService 声明式代理 14 + SemanticCache 语义缓存 13 + Advisor 链四件套 18）；全工程合计 **1397** 个测试，`mvn -B verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 零违规）。测试基线自 2.3.0 的 **1299** 演进：2.4.0 平台能力核实/Redis/Realtime/Langfuse（+53 → **1352**）→ 2.5.0 声明式编排（+45 → **1397**）。
+
 ## [2.4.0] - Unreleased
 
 本版本线为「实时韧性、外部缓存与 LLM 观测」专项：在保持对外 API 完全向后兼容（新回调全部 `default`、新能力默认开启但可关闭）的前提下，收口 Realtime 连接韧性、新增零依赖 Redis 外部缓存，并直连 Langfuse 原生 Ingestion 导出；同时对多模态输入面按 2026 年官方文档逐项联网核实与补全。

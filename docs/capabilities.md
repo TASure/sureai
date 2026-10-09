@@ -133,3 +133,13 @@ grok does not support IMAGE capability
 ## 演进约定
 
 后续新增平台时，应在其 Client 中覆写 `capabilities()`，**只声明真实可用的能力**，而非一律继承全量兜底；这样未支持的能力会在发请求前被 `guard()` 清晰拦截，而不是把含糊的 4xx 抛给用户。
+
+## 编排能力（v2.5.0，非平台 guard 维）
+
+本文的 `Capability` 枚举矩阵描述的是「某平台 Client 是否支持某**请求能力**」（CHAT / EMBED / IMAGE …），由 `guard()` 在发请求前快速失败。它与 **v2.5.0 新增的声明式编排层**是两回事——后者是 core 之上的应用侧编排能力，**不挂在任何平台 Client 的 guard 表面上**，因而不在本矩阵内：
+
+- **AiService 接口即服务**（`sure-ai-framework`）：注解族 + JDK 动态代理把接口映射为对话服务，任意 `AiClient` 均可驱动；
+- **Advisor 链**：`before`/`around`/`after` 三钩子横切，四件套（语义缓存短路 / 日志 / 工具循环 / 结构化自纠）；
+- **SemanticCache**：embedding 余弦阈值命中，可插拔 `CacheStore`。
+
+编排能力与平台无关——同一套接口与 Advisor 链换平台 client 即可复用。详见 [framework.md](framework.md)。

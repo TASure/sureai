@@ -37,6 +37,7 @@
 - **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（文档加载器：本地文件/URL；分块：递归字符/Markdown/固定大小/语义/父子；向量存储：内置 + Milvus/Chroma/Qdrant/Pinecone/Weaviate/Elasticsearch/OpenSearch/Redis 共 9 种外部适配；检索：向量 + BM25 关键词混合加权融合；Prompt 模板 + 查询改写；增强生成）。**高级检索策略（v1.8.0）**：HyDE / Multi-Query(RRF) / CRAG 纠正式 / 父子 Small-to-Big / 语义分块 / 多模态 RAG；**GraphRAG**（实体关系抽取→社区发现→逐社区摘要）；**RAG 评估**（faithfulness / context_precision / context_recall / answer_relevancy 四指标 + 阈值断言 + 轨迹回放回归）；**可移植 metadata filter**（FilterExpression 抽象 + 6 方言翻译器）。见 [docs/rag.md](docs/rag.md)、[docs/vector-stores.md](docs/vector-stores.md)、[docs/prompt-template.md](docs/prompt-template.md)
 - **Agent 编排（ReAct + Plan-and-Execute）**：`sure-ai-agent` 工具注册中心 + Function Calling 参数校验 + ReAct 编排器 + PlanExecuteAgent（规划→逐步执行→汇总，三级计划解析兜底）；多 Agent 编排（TaskSplitter/AgentOrchestrator/ResultAggregator 并行执行+异常隔离）；内置工具包（HttpTool/DateTimeTool/CalculatorTool 白名单四则）；会话记忆（ConversationMemory 环形窗口，可选注入）。任意 `AiClient` 可驱动，异常/超限/超时全防护。见 [docs/agent.md](docs/agent.md)
 - **生产级 Agent（v1.7.0）**：在 ReActAgent 之上可选注入四组生产能力——检查点持久化（`CheckpointStore`/`AgentCheckpointer` 重放式恢复，run 开头/每轮迭代/结束自动落盘）、流式事件（8 类 `AgentEvent` + `StreamingAgentListener` 桥接 + SSE 写出）、HITL 审批（`ApprovalPolicy` 4 预置策略 + `ApprovalHandler` 4 预置处理器，拒绝/超时回灌模型）、长期记忆（`LongTermMemory` 跨会话召回 Top-K 注入 system + 自动沉淀，向量/文本双路降级）。全部传 null 即关闭，行为与历史版本一致。见 [docs/agent-advanced.md](docs/agent-advanced.md)
+- **声明式编排 AiService（v2.5.0）**：`sure-ai-framework` 新模块——`FrameworkUtil.create(接口.class, client)` 一行把带注解的 Java 接口经 JDK 动态代理变成 AI 服务。注解族 `@AiService`/`@SystemMessage`/`@UserMessage`/`@Tool`/`@Memory`/`@Param`（`{paramName}` 模板），返回映射 `String`/`ChatResponse`/`Stream`/`record`（结构化自动挂 json_schema）；`@Tool` 方法签名自动转 JSON Schema（直调拒绝、模型侧触发）。配套 **Advisor 链**三钩子（before 正序/around 嵌套/after 逆序）+ 四件套（`SemanticCacheAdvisor` 语义缓存短路 / `LoggingAdvisor` 日志 / `ToolCallingAdvisor` 自动工具循环 / `StructuredOutputValidationAdvisor` 校验自纠）；**`SemanticCache`** embedding 余弦阈值命中、可插拔 `CacheStore`（缺省 Lru，可接 `RedisCacheStore` 分布式共享）。仅依赖 core、零第三方运行期依赖。见 [docs/framework.md](docs/framework.md)
 - **MCP 客户端**：`sure-ai-mcp` Model Context Protocol JSON-RPC 2.0 客户端，stdio（ProcessBuilder 子进程）/ Streamable HTTP（JDK HttpClient + SSE 聚合）双传输，initialize 握手 + tools/resources/prompts 能力 API；**McpTool 适配器**把 MCP server 工具批量注册进 `ToolRegistry`，与 ReActAgent 无缝组合。见 [docs/mcp.md](docs/mcp.md)
 - **MCP Server**：`sure-ai-mcp-server` 把 sureai 多平台 `AiClient`/`EmbeddingClient`/`ImageClient` 反向暴露为标准 MCP Server，纯 JDK 协议引擎 + stdio/Streamable HTTP 双传输，注册式工具模型保证核心零平台依赖，兼容有状态 2025-06-18 并实验性适配无状态 2026-07-28。见 [docs/mcp-server.md](docs/mcp-server.md)
 - **AI Gateway**：`sure-ai-gateway` 多供应商统一网关，`GatewayClient` 实现 `AiClient` 对调用方透明；6 种路由策略（Explicit/Capability/RoundRobin/Weighted/LowestLatency/LowestCost，可组合）+ 自动故障转移（4xx 不转移/5xx 超时转移，不健康摘除冷却）+ 密钥池轮转（401/429 自动换 key）+ 租户配额预算。见 [docs/gateway.md](docs/gateway.md)
@@ -101,6 +102,8 @@
 各平台专项文档：[AWS Bedrock](docs/bedrock.md) · [Cohere](docs/cohere.md) · [Grok](docs/grok.md) · [Mistral](docs/mistral.md) · [llama.cpp](docs/llamacpp.md)；其余平台（OpenAI / Azure / Anthropic / Gemini / DeepSeek / 通义千问 / 智谱 / Moonshot / 豆包 / 百度 / Ollama 及 v1.9.0 新增的 MiniMax / StepFun / Baichuan / Lingyi / SiliconFlow / Hunyuan / Spark）的逐平台文档见 `docs/platforms/`；各平台支持的能力清单见 [docs/capabilities.md](docs/capabilities.md)。
 
 聚合模块：`sure-ai-all`（一个依赖引入全部平台）、`sure-ai-bom`（版本统一管理）。
+
+编排层：`sure-ai-framework`（v2.5.0 声明式编排——`FrameworkUtil` 接口即服务 + Advisor 链四件套 + `SemanticCache` 语义缓存；仅依赖 core，已进 `sure-ai-all`/`sure-ai-bom` 聚合链，见 [docs/framework.md](docs/framework.md)）。
 
 应用层：`sure-ai-cli`（命令行直接问答：chat / stream / rag / list / repl，一键切换全部 23 个平台，可打 fat jar 并支持 [GraalVM native-image](docs/native-image.md)；不进入 `sure-ai-all` 聚合链，见 [docs/cli.md](docs/cli.md)）。
 
@@ -513,6 +516,7 @@ sureai 采用严格的模块级隔离架构：
 sure-ai-core          ← 公共模型/接口/HTTP/JSON（所有平台依赖此模块）
 sure-ai-rag           ← RAG 检索增强生成（依赖 core，与平台解耦）
 sure-ai-agent         ← Agent 编排 ReAct 多工具循环（依赖 core，与平台解耦）
+sure-ai-framework     ← 声明式编排 AiService 接口即服务 + Advisor 链 + SemanticCache（依赖 core，与平台解耦）
 sure-ai-micrometer    ← 可观测性 Micrometer 桥接（依赖 core，micrometer-core provided 不传递）
 sure-ai-otel          ← 可观测性 OpenTelemetry GenAI 桥接（依赖 core，otel-api provided 不传递）
 sure-ai-quarkus-extension(-deployment) ← Quarkus 自动装配扩展（双模块；core/平台零 Quarkus 依赖）
