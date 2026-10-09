@@ -58,6 +58,8 @@
     <modules>
         <module>sure-ai-core</module>
         <module>sure-ai-rag</module>
+        <module>sure-ai-ingest</module>
+        <module>sure-ai-ingest-poi</module>
         <module>sure-ai-agent</module>
         <module>sure-ai-framework</module>
         <module>sure-ai-mcp</module>
@@ -105,6 +107,8 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <junit.version>4.13.2</junit.version>
         <sure.core.version>0.2.0</sure.core.version>
+        <!-- Apache POI 版本：仅 sure-ai-ingest-poi 以 provided 引入，不进运行期链 -->
+        <poi.version>5.5.1</poi.version>
         <!-- JaCoCo 行覆盖率门禁下限（sure-ai-core 在自身 pom 覆盖为 0.70） -->
         <jacoco.line.min>0.60</jacoco.line.min>
         <!-- SpotBugs 静态扫描：默认开启，无源码模块在自身 pom 覆盖为 true -->
@@ -124,6 +128,16 @@
             <dependency>
                 <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-rag</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-ingest</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-ingest-poi</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -297,6 +311,14 @@
                 <groupId>io.github.tasure</groupId>
                 <artifactId>sure-core</artifactId>
                 <version>${sure.core.version}</version>
+            </dependency>
+
+            <!-- Apache POI：仅 sure-ai-ingest-poi 以 provided 使用，此处统一版本；
+                 不传递给下游，使用者需自行显式声明 POI 依赖 -->
+            <dependency>
+                <groupId>org.apache.poi</groupId>
+                <artifactId>poi-ooxml</artifactId>
+                <version>${poi.version}</version>
             </dependency>
 
             <!-- 测试依赖 -->

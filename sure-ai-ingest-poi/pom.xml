@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (c) 2026 sureai contributors
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.tasure</groupId>
+        <artifactId>sureai</artifactId>
+        <version>2.6.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>sure-ai-ingest-poi</artifactId>
+    <packaging>jar</packaging>
+    <name>sureai-ingest-poi</name>
+    <description>可选文档导入扩展：基于 Apache POI 解析 DOCX/XLSX/PPTX 为 RAG 文档。
+        Apache POI 以 provided 引入，不向使用者传递、不进 sure-ai-all 运行期聚合链；
+        使用方需自行在工程中显式声明 org.apache.poi:poi-ooxml 依赖。</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-ingest</artifactId>
+        </dependency>
+        <!-- Apache POI 仅 provided：不传递给下游，保持主库运行期零第三方依赖特性。
+             测试期 provided 依赖在 test classpath 可见，可直接构造内存文档解析。 -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>

@@ -51,6 +51,17 @@
             </dependency>
             <dependency>
                 <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-ingest</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- 可选模块：POI provided，不进 sure-ai-all 运行期聚合链 -->
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-ingest-poi</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-agent</artifactId>
                 <version>${project.version}</version>
             </dependency>
