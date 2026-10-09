@@ -78,6 +78,15 @@ and `...output_tokens`. Passing `null` (or `MeterProvider.noop()`) degrades to a
 with zero overhead, and the module classes are not even loaded unless the OTel SDK is
 present at runtime.
 
+### Native Langfuse export (v2.4.0)
+
+Besides the OTel bridge, the `com.sure.ai.otel.langfuse` subpackage talks straight to the
+Langfuse Ingestion API with zero deps: `LangfuseExporters.metricsCollectorFromEnv()`
+reports each chat call as one `trace` + one `generation` (latency / model / token usage),
+using HTTP Basic `base64(publicKey:secretKey)` against `/api/public/ingestion`. Missing
+keys degrade to a no-op. Full env-var table and event mapping (Chinese):
+[docs/observability.md](../observability.md#langfuse-原生导出v240).
+
 ## Next steps
 
 - [Trust & supply chain](./trust.md) · [Gateway](./gateway.md) · [Quick Start](./quickstart.md)

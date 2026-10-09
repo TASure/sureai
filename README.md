@@ -43,11 +43,12 @@
 - **成本计量**：`sure-ai-core com.sure.ai.cost` 价格目录（18 个内置模型）+ 单次成本计算（含缓存 token）+ 按租户/模型/时间窗汇总，线程安全内存实现。见 [docs/cost.md](docs/cost.md)
 - **OpenAI 兼容代理**：`sure-ai-proxy` 独立 HTTP 服务（LiteLLM proxy 模式，基于 JDK HttpServer 零新依赖），/v1/chat/completions（非流+SSE 流）、/v1/models、/v1/embeddings；虚拟密钥鉴权；ProxyConfig（properties 配置）。见 [docs/proxy.md](docs/proxy.md)
 - **可观测性（重试回调/指标/限流）**：`RetryListener` 重试事件回调 + `MetricsCollector` 指标埋点（内置零依赖 `AiMetrics`）+ 客户端 QPS 限流（sure-core 令牌桶），`sure-ai-micrometer` 可选 Micrometer/Prometheus 桥接，未挂载零开销。见 [docs/observability.md](docs/observability.md)
-- **响应缓存**：`ChatCacheKey` 请求归一化 SHA-256 + `CacheStore` SPI + 内置 `LruCacheStore`（LRU+TTL，纯 JDK），默认关闭零开销，命中不触发网络/指标/重试，Redis 适配见文档示例。见 [docs/cache.md](docs/cache.md)
+- **响应缓存**：`ChatCacheKey` 请求归一化 SHA-256 + `CacheStore` SPI + 内置 `LruCacheStore`（LRU+TTL，纯 JDK），默认关闭零开销，命中不触发网络/指标/重试；**`RedisCacheStore`（v2.4.0）**基于共享 RESP2 编解码（零 Lettuce/Jedis 依赖）的外部 Redis 缓存，支持多实例共享、`SCAN` 非阻塞清空，LruCacheStore vs RedisCacheStore 选型见文档。见 [docs/cache.md](docs/cache.md)
 - **Spring Boot Starter**：`sure-ai-spring-boot-starter` 自动配置（`sure.ai.<platform>.api-key` 等属性绑定 + `@ConditionalOnProperty` 条件装配 + `@Autowired` 注入），仅 Spring Boot 工程使用，core/平台模块零 Spring 依赖。见 [docs/spring-boot.md](docs/spring-boot.md)
 - **Quarkus 扩展（v1.9.0）**：`sure-ai-quarkus-extension`（runtime + deployment 双模块）按 `sure.ai.<platform>.api-key` 条件把对应 `XxxClient` 注册为 Arc 合成 `@Singleton` Bean，注入即用；与 Spring Starter 配置同构，core/平台模块零 Quarkus 依赖。见 [docs/quarkus-extension.md](docs/quarkus-extension.md)
 - **全链路异步 / 虚拟线程（v1.9.0）**：`AiClient` 新增 `chatAsync`/`chatStreamAsync` default 方法族，`AsyncClients` 一行把任意同步 Client 包装为 `AsyncAiClient`/`AsyncEmbeddingClient`/`AsyncImageClient`/`AsyncVideoClient`/`AsyncAudioClient`，统一跑在 JDK 21 虚拟线程上（`AsyncExecutors.virtualThreadExecutor()`），`CompletableFuture` 可取消、异常原样透传。见 [docs/async.md](docs/async.md)
 - **OpenTelemetry GenAI 桥接（v1.9.0）**：`sure-ai-otel` 把 `MetricsCollector`/`RetryListener`/`AgentEventSink` 桥接为 OTel GenAI 语义约定指标（`gen_ai.client.operation.duration` / `input_tokens` / `output_tokens`），仅依赖 OTel API（provided），SDK/导出器由使用方自备；传 null MeterProvider 即空操作无感降级。见 [docs/observability.md](docs/observability.md#opentelemetry-genai-桥接可选模块)
+- **Langfuse 原生导出（v2.4.0）**：`sure-ai-otel` 的 `langfuse` 子包零依赖直连 Langfuse Ingestion API——`LangfuseExporters.metricsCollectorFromEnv()` 一行把一次聊天调用上报为 `trace` + `generation`（耗时/model/token 用量，重试挂为 event），HTTP Basic `base64(pk:sk)` 认证，密钥缺失即空操作无感降级。见 [docs/observability.md](docs/observability.md#langfuse-原生导出v240)
 - **命令行工具（v2.0.0）**：`sure-ai-cli` 零依赖终端直接问答——`chat` / `stream` / `rag`（本地文档）/ `list` / `repl` 五子命令，一键切换全部 23 个平台；可打 fat jar，亦可 GraalVM native-image 编译为单文件可执行。不写一行 Java 即可体验全库。见 [docs/cli.md](docs/cli.md)
 - **Maven 工程脚手架（v2.0.0）**：`sure-ai-archetype` 一条 `mvn archetype:generate` 生成带 BOM import、单平台 Client 调用、README 与 .gitignore 的 Hello World 工程，platform 属性可切换 23 平台。见 [docs/COOKBOOK.md](docs/COOKBOOK.md)
 - **GraalVM native-image AOT 加固（v2.0.0）**：全库补齐 `META-INF/native-image/**` 反射 / 资源 / 编译参数元数据（reflect-config 共 42 条：core 30 + agent 8 + mcp-server 4），fat jar 自动内联，native 编译免手写配置；`NativeImageMetadataTest` 守卫 core model 包不遗漏。见 [docs/native-image.md](docs/native-image.md)
@@ -55,11 +56,11 @@
 - **熔断器**：`CircuitBreaker` 三态状态机（CLOSED→OPEN→HALF_OPEN），滑动窗口失败计数+OPEN超时+HALF_OPEN探测，`AiConfig.circuitBreaker` 可选注入，默认关闭零开销，与重试/限流嵌套协作。见 [docs/circuit-breaker.md](docs/circuit-breaker.md)
 - **Rerank 重排序**：`RerankClient` 统一抽象，通义千问 qwen3-rerank 接入，二阶段精排可无缝接入 RAG 检索链路
 - **结构化输出**：`response_format` 统一抽象（json_object / JSON Schema），`JsonMapper` 零依赖强类型 record 反序列化，8 平台适配
-- **多模态图像理解**：`MessagePart` 内容块架构（文本 + 图片），OpenAI 兼容 / Gemini / Anthropic / 百度 图片输入归一
+- **多模态图像理解**：`MessagePart` 内容块架构（文本 + 图片），OpenAI 兼容 / Gemini / Anthropic / 百度 图片输入归一；**`VideoPart` 视频输入（v2.4.0，官方文档联网核实）**——Gemini `fileData`/`inlineData`、通义千问 `video_url`，Anthropic 已核实不支持视频输入。见 [docs/multimodal.md](docs/multimodal.md)
 - **PDF 文档输入**：`DocumentPart` 内容块，5 平台 PDF 文档理解适配
 - **Prompt 缓存**：Anthropic `cache_control` / Gemini `cachedContent` / OpenAI 自动缓存，降低长上下文重复前缀成本
 - **Batches 批处理**：`BatchClient` 统一抽象，OpenAI / Azure / 智谱 / Anthropic 异步批量推理，内置轮询
-- **Realtime 实时语音**：`RealtimeClient` 全双工 WebSocket 抽象，OpenAI / Gemini / 通义千问 / 智谱 / 豆包 5 平台接入，连接器可注入便于 mock
+- **Realtime 实时语音**：`RealtimeClient` 全双工 WebSocket 抽象，OpenAI / Gemini / 通义千问 / 智谱 / 豆包 5 平台接入，连接器可注入便于 mock；**连接韧性（v2.4.0）**——`RealtimeOptions` 自动重连（指数退避、可配上限/可关闭）、周期心跳 ping + 空闲判死、8 个生命周期回调、VAD（speech started/stopped）与中断（barge-in）事件标准化，Gemini 重连后自动重发 `setup`。见 [docs/realtime.md](docs/realtime.md)
 - **思考模式**：`reasoningEffort` / `thinkingConfig` 统一抽象 + 思维链 `reasoningContent` 解析，OpenAI / Azure / Gemini / Anthropic / 通义千问 5 平台适配
 - **Grounding 联网**：`grounding` 统一开关，工具式（web_search / googleSearch）与布尔式（enable_search）双范式，OpenAI / Azure / Gemini / 通义千问 / 智谱 / 豆包 6 平台接入，引用来源解析
 - **微调**：`FineTuneClient` 统一抽象（上传训练文件 + 创建/查询任务），OpenAI / Azure / 百度千帆 3 平台接入

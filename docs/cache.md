@@ -151,6 +151,29 @@ AiConfig config = AiConfig.builder()
 > 注：`RedisCacheStore` 位于 `sure-ai-rag` 模块（与 `RedisVectorStore` 同模块、共享 RESP 编解码）。
 > 若工程未依赖 `sure-ai-rag`，仍可自行实现 `CacheStore` SPI（例如引入 Lettuce），SPI 本身在 `sure-ai-core`。
 
+## 选型：LruCacheStore vs RedisCacheStore
+
+两者实现同一 `CacheStore` SPI、缓存键算法与命中语义完全一致，区别在**存储位置与生命周期**：
+
+| 维度 | `LruCacheStore`（内置） | `RedisCacheStore`（外部，v2.4.0） |
+|---|---|---|
+| 存储位置 | 进程内堆（`LinkedHashMap`） | 独立 Redis 实例 |
+| 依赖 | 零第三方（纯 JDK） | 需可用 Redis；SDK 端零 Redis 客户端（JDK Socket + 共享 `RespCodec`） |
+| 缓存生命周期 | 随进程退出即销毁 | 跨进程 / 跨实例共享，重启不丢 |
+| 容量与淘汰 | 固定容量（默认 1024），LRU 惰性淘汰 | 由 Redis 服务端按内存策略与 TTL 回收 |
+| TTL 落地 | 读时惰性检查 | `SET ... PX ttl` 由服务端到期回收 |
+| 多实例共享 | ❌ 每个 JVM 各持一份缓存 | ✅ 多实例命中同一份外部缓存 |
+| 网络开销 | 无（内存） | 每次 get/put 一次往返（默认 10s 超时） |
+| 失败语义 | 纯内存，几乎不失败 | Redis 不可达 / `−ERR` 抛 `AiException`（fail-fast），由上层决定是否降级直连模型 |
+| 模块 | `sure-ai-core` | `sure-ai-rag`（`com.sure.ai.rag.store.cache`） |
+
+**选型建议：**
+
+- **单机 / 调试 / 低并发**：用内置 `LruCacheStore`。零外部依赖、零网络、开箱即用。
+- **多实例部署 / 希望缓存跨进程复用 / 进程重启后仍命中**：用 `RedisCacheStore`。
+- **Redis 不可用不能拖垮主流程**：在 `AiConfig` 外层包一层 try/catch，或自行实现一个「Redis 异常即降级直连模型」的 `CacheStore` 装饰器——`RedisCacheStore` 本身刻意 fail-fast、不在缓存层吞错。
+- 两者可混用：不同 `AiClient` 配置不同 `CacheStore`（例如批量任务走 LRU、在线多实例网关走 Redis）。
+
 ## 注意事项
 
 - **流式不缓存**：`chatStream` 与 `stream=true` 的 `chat` 每次都请求实时结果；

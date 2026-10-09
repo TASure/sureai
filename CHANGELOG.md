@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - Unreleased
+
+本版本线为「实时韧性、外部缓存与 LLM 观测」专项：在保持对外 API 完全向后兼容（新回调全部 `default`、新能力默认开启但可关闭）的前提下，收口 Realtime 连接韧性、新增零依赖 Redis 外部缓存，并直连 Langfuse 原生 Ingestion 导出；同时对多模态输入面按 2026 年官方文档逐项联网核实与补全。
+
+### Added
+- **平台多模态输入面联网核实与补全（2026-10 官方文档依据）**：
+  - **`VideoPart` 视频理解输入**（新增 sealed 内容块）：`VideoPart.ofUrl(url)` / `VideoPart.ofBase64(base64, mimeType)`；Gemini 序列化为 `fileData`/`inlineData`（依据 [ai.google.dev/gemini-api/docs/video-understanding](https://ai.google.dev/gemini-api/docs/video-understanding)），通义千问 Qwen-VL 序列化为 `{"type":"video_url","video_url":{"url":resolvedUrl()}}`（依据 [help.aliyun.com Qwen OpenAI 兼容](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)），Anthropic 经官方文档核实**不支持视频输入**（依据 [platform.claude.com vision](https://platform.claude.com/docs/en/build-with-claude/vision)）。
+  - **Anthropic 图像/文档 `source.type=url` 来源**补齐；**并行工具结果合并**——模型单轮并行产出的多个 `tool_use` 结果合并为单条 user 消息内的多个 `tool_result` 块，符合 Anthropic Message API 语义。
+  - **Gemini 函数调用往返**：`functionCall`（模型侧）与 `functionResponse`（回灌侧）双向序列化对齐 Live/Chat 协议。
+  - 本批未改动任何平台的**生成**能力声明（受 guard 的 IMAGE/VIDEO 仍指生成接口）；`docs/capabilities.md` 增补澄清注记，明确「生成 vs 输入」分野并交叉引用 [docs/multimodal.md](docs/multimodal.md)。
+- **Redis 外部缓存 `RedisCacheStore`（sure-ai-rag `com.sure.ai.rag.store.cache`）**：实现 core 的 `CacheStore` SPI，**零 Lettuce/Jedis 依赖**——复用 v2.4.0 从 `RedisVectorStore` 抽取的共享 RESP2 编解码（`com.sure.ai.rag.store.resp.RespCodec`），底层为 JDK `Socket`。语义与内置 `LruCacheStore` 对齐：`GET` 读、`SET key value PX ttl` 写、`DEL` 删、`SCAN`（`COUNT 200`，**不用阻塞式 `KEYS`**）按前缀清空；值存 `ChatResponse.rawJson()` 并按响应侧字段无损还原。单 Socket 串行化，IO 失败自动重连重试一次，应用错误（`−ERR`）fail-fast 抛 `AiException`；默认 `localhost:6379`、前缀 `sureai:cache:`、TTL 5 分钟、超时 10s（builder：`host/port/password/keyPrefix/defaultTtlMillis/timeout`）。`docs/cache.md` 增补「LruCacheStore vs RedisCacheStore 选型」。
+- **Realtime 连接韧性（sure-ai-core `com.sure.ai.client.realtime`）**：
+  - **`RealtimeOptions`**：自动重连（默认开，最多 5 次）、指数退避 `min(base*2^(n-1), max)`（默认 1s 起步、30s 封顶）、周期心跳 ping（默认 30s）+ 空闲超时判死（默认 10s 无入站帧）；不可变值对象 + builder，经 `AbstractRealtimeClient` 4 参构造器注入，平台现有 3 参构造器沿用 `defaults()`（行为兼容）。
+  - **8 个生命周期/VAD 回调**（全部 `default` 空实现，向后兼容）：`onConnected` / `onDisconnected` / `onReconnecting` / `onReconnected` / `onReconnectFailed` / `onSpeechStart` / `onSpeechStop` / `onInterrupted`。
+  - **事件标准化**：VAD（`input_audio_buffer.speech_started/stopped`）与中断（OpenAI 系 `conversation.interrupted`/`response.output_audio.interrupted`、Gemini `serverContent.interrupted==true`）归一到统一回调；**Gemini 每次新 WS 会话（含重连成功后）自动重发 `setup`**（Live 协议要求建连先发 `{"setup":{...}}`）。
+  - 重连/心跳任务经包内可注入 `RealtimeTaskScheduler` 调度，`heartbeatTick()`/`lastActivityNanos` 对测试包可见，全链路零真实网络可测。`docs/realtime.md` 增补「事件速查表（JSON 事件名 × 平台）」与完整重连/心跳配置示例。
+- **Langfuse 原生导出（sure-ai-otel `com.sure.ai.otel.langfuse`，零依赖、无感降级）**：
+  - **`LangfuseExporters` 静态门面**（对齐 `OtelSupport` 范式）：`metricsCollectorFromEnv()` / `metricsCollector(LangfuseConfig)`，返回标准 `MetricsCollector`，挂到 `AiConfig.metricsCollector(...)`。
+  - **`LangfuseConfig`**：`of(endpoint, publicKey, secretKey, environment)` / `fromEnv()` / `disabled()`；环境变量官方名优先、sureai 前缀兜底（`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`/`LANGFUSE_HOST`/`LANGFUSE_ENVIRONMENT`），默认基址 `https://cloud.langfuse.com`。
+  - **事件映射**：一次逻辑调用 = 一个 `trace-create` + 一个 `generation-create`，终态写 `generation-update`（成功 `level=DEFAULT`、失败 `level=ERROR`，含 `endTime`/`model`/`usage{input,output,total}`），重试追加为 `event-create`（name=`retry`）；同一调用组装成一个 `batch` 单次 POST 到 `/api/public/ingestion`。
+  - **认证**：HTTP Basic `base64(publicKey:secretKey)`（对齐 Langfuse Ingestion 约定）。**无感降级**：密钥任一缺失即 `isEnabled()==false` 全空操作、零网络；发送失败仅记 warning 并吞咽，绝不影响主流程。可运行示例 `LangfuseObservationDemo`，`docs/observability.md` 新增「Langfuse 原生导出」小节、`docs/COOKBOOK.md` 新增场景 16。
+
+### Changed
+- 无破坏性变更：8 个新 Realtime 回调均为 `default` 空实现；`RealtimeOptions` 默认值对现有行为友好；Langfuse/Redis 均为可选挂载，未配置时行为与 2.3.0 逐字节一致。
+
+### 测试
+- 本迭代新增测试 **53** 个（平台能力核实 6 + `RedisCacheStore` 10 + Realtime 韧性/事件标准化 19 + Langfuse 导出 18）；全工程合计 **1352** 个测试，`mvn -B verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 零违规）。测试基线自 2.3.0 的 1299 演进：能力核实与补全（6）→ RedisCacheStore（10）→ Realtime 韧性（19）→ Langfuse（18），合计 +53。
+
 ## [2.3.0] - Unreleased
 
 本版本线为「核心性能与协议完备」专项：在保持对外 API 完全向后兼容的前提下，收口 MCP 2026-07-28 无状态扩展面、ReAct Agent 单轮并行工具调用，并对 core 的 JSON / SSE 热点路径做性能优化。

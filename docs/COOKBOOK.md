@@ -627,6 +627,58 @@ for (MultimodalDocument md : retriever.retrieveMultimodal("架构核心是什么
 
 ---
 
+## 场景 16：Langfuse 原生观测接入（LangfuseExporters）
+
+**目标**：把每次聊天调用以 trace + generation 直接上报到 Langfuse（LLM 观测平台），零依赖、无需自备 OTel SDK 或 Langfuse 官方 SDK。
+
+```java
+import com.sure.ai.client.AiConfig;
+import com.sure.ai.deepseek.DeepSeekClient;
+import com.sure.ai.deepseek.DeepSeekModels;
+import com.sure.ai.otel.langfuse.LangfuseExporters;
+
+// 前置：
+//   export LANGFUSE_PUBLIC_KEY=pk-lf-...
+//   export LANGFUSE_SECRET_KEY=sk-lf-...
+//   export SURE_AI_DEEPSEEK_API_KEY=sk-xxx
+// （可选 LANGFUSE_HOST=自托管地址，默认 https://cloud.langfuse.com）
+
+// 关键一行：从环境变量构建 Langfuse 导出器并挂到 client
+AiConfig config = AiConfig.builder()
+        .apiKey(System.getenv("SURE_AI_DEEPSEEK_API_KEY"))
+        .metricsCollector(LangfuseExporters.metricsCollectorFromEnv())
+        .build();
+
+DeepSeekClient client = new DeepSeekClient(config);
+var resp = client.chat(DeepSeekModels.DEEPSEEK_CHAT, "用一句话回答：1+1等于几？");
+System.out.println(resp.firstText());
+client.close();
+```
+
+显式配置（自托管实例或指定环境标签）：
+
+```java
+import com.sure.ai.otel.langfuse.LangfuseConfig;
+import com.sure.ai.otel.langfuse.LangfuseExporters;
+
+AiConfig config = AiConfig.builder()
+        .apiKey(key)
+        .metricsCollector(LangfuseExporters.metricsCollector(
+                LangfuseConfig.of("https://cloud.langfuse.com", "pk-lf-...", "sk-lf-...", "production")))
+        .build();
+```
+
+**关键点**：
+- `LangfuseExporters.metricsCollectorFromEnv()` / `metricsCollector(LangfuseConfig)` 返回标准 `MetricsCollector`，挂到 `AiConfig.metricsCollector(...)` 即可；一次逻辑调用 = 一个 `trace` + 一个 `generation`（含耗时、model、token 用量），重试追加为 `event-create`。
+- 认证为 HTTP Basic `base64(pk:sk)`，POST 到 `/api/public/ingestion`；环境变量官方名优先、sureai 前缀（`SURE_AI_LANGFUSE_*`）兜底。
+- **无感降级**：`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` 任一缺失时导出器为空操作，不发起任何网络请求、不影响正常对话；发送失败仅记 warning、绝不抛出。
+
+**离线可跑性**：导出器本身本地可测（未配密钥即空操作、不报错）；真实上报需可用 Langfuse 项目密钥。
+
+**进阶**：环境变量表、事件映射表与认证说明见 [docs/observability.md](observability.md) 的「Langfuse 原生导出（v2.4.0）」小节；OTel GenAI 指标桥接见场景 13，内置零依赖 `AiMetrics` 见场景 6。
+
+---
+
 ## 附：示例运行器
 
 `sure-ai-examples` 模块内置 `ExamplesRunner`，离线即可跑（无 Key 自动走 Fake 分支）：

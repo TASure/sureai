@@ -214,6 +214,82 @@ publisher.subscribe(OtelSupport.agentEventSink());
 </dependency>
 ```
 
+## Langfuse 原生导出（v2.4.0）
+
+除 OTel 桥接外，`sure-ai-otel` 的 `com.sure.ai.otel.langfuse` 子包提供**直连 Langfuse Ingestion API**
+的零依赖导出器：把一次逻辑 LLM 调用映射为一个 `trace` + 一个 `generation` 观察，**不依赖
+OpenTelemetry SDK 或 Langfuse 官方 SDK**，用 JDK `HttpClient` 直接 POST 到 Langfuse。
+
+### 接入（两种方式）
+
+```java
+import com.sure.ai.client.AiConfig;
+import com.sure.ai.otel.langfuse.LangfuseConfig;
+import com.sure.ai.otel.langfuse.LangfuseExporters;
+
+// 方式一：读环境变量（LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY，可选 LANGFUSE_HOST）
+AiConfig config = AiConfig.builder()
+    .apiKey(key)
+    .metricsCollector(LangfuseExporters.metricsCollectorFromEnv())
+    .build();
+
+// 方式二：显式配置（自托管实例 / 指定环境标签）
+AiConfig config2 = AiConfig.builder()
+    .apiKey(key)
+    .metricsCollector(LangfuseExporters.metricsCollector(
+        LangfuseConfig.of("https://cloud.langfuse.com",   // 基址，空则用默认
+            "pk-lf-...", "sk-lf-...", "production")))    // environment 可传 null
+    .build();
+```
+
+静态门面 `LangfuseExporters`（对齐 `OtelSupport` 范式）：
+
+| 方法 | 返回 | 说明 |
+|------|------|------|
+| `metricsCollectorFromEnv()` | `MetricsCollector` | 从环境变量构建；未配齐密钥时返回空操作 |
+| `metricsCollector(LangfuseConfig)` | `MetricsCollector` | 以显式配置构建；`null` 或禁用态返回空操作 |
+
+`LangfuseConfig` 不可变配置：`of(endpoint, publicKey, secretKey, environment)` / `fromEnv()` /
+`disabled()`；`isEnabled()`、`endpoint()`、`publicKey()`、`secretKey()`、`environment()`、
+`ingestionUrl()`（= 基址 + `/api/public/ingestion`）。
+
+### 环境变量
+
+| 环境变量 | 兜底（sureai 前缀） | 必填 | 说明 |
+|---|---|---|---|
+| `LANGFUSE_PUBLIC_KEY` | `SURE_AI_LANGFUSE_PUBLIC_KEY` | ✅ | 项目公钥 `pk-lf-...` |
+| `LANGFUSE_SECRET_KEY` | `SURE_AI_LANGFUSE_SECRET_KEY` | ✅ | 项目私钥 `sk-lf-...` |
+| `LANGFUSE_HOST` | `SURE_AI_LANGFUSE_ENDPOINT` | ❌ | 实例基址，默认 `https://cloud.langfuse.com` |
+| `LANGFUSE_ENVIRONMENT` | （无兜底） | ❌ | 环境标签（如 `production`） |
+
+### 认证与事件映射
+
+- **认证**：HTTP Basic Auth，`Authorization: Basic base64(publicKey:secretKey)`（对齐 Langfuse
+  Ingestion API 约定），由 `LangfuseConfig.basicAuthorization()` 生成。
+- **一次调用 = 一个 trace + 一个 generation**（`LangfuseMetricsCollector implements MetricsCollector`）：
+
+| MetricsCollector 回调 | Langfuse Ingestion 事件 |
+|---|---|
+| `onRequestStart` | 新建 `trace-create` + `generation-create`（含 `startTime`） |
+| `onTokenUsage` | 暂存 model 与 prompt/completion/total tokens |
+| `onRetry` | 追加 `event-create`（name=`retry`，metadata 含 attempt/httpStatus） |
+| `onRequestSuccess` | 追加 `generation-update`（`level=DEFAULT`、`endTime`、`model`、`usage`），整批 POST |
+| `onRequestFailure` | 追加 `generation-update`（`level=ERROR`、`statusMessage`），整批 POST |
+
+同一逻辑调用的所有事件组装为一个 `batch` 数组、单次 POST 到 `/api/public/ingestion`；
+start 与终态由重试模板保证成对，中间态用 `ThreadLocal` 串联，终态一定 `remove()` 防止线程池复用泄漏。
+
+### 无感降级
+
+- `publicKey` / `secretKey` 任一为空 → `LangfuseConfig.isEnabled()==false`，导出器全部空操作，
+  主流程零感知、零网络。
+- 发送失败由 `LangfuseIngestionClient` 记录 warning 并吞咽，`LangfuseMetricsCollector` 自身任何
+  异常也向上不外抛——观测通道故障绝不影响模型主调用。
+
+> 可运行示例：`sure-ai-examples` 的 `com.sure.ai.examples.LangfuseObservationDemo`
+> （用 `DeepSeekClient` 演示，未配 Langfuse 密钥时自动跳过）。接入场景见
+> [docs/COOKBOOK.md](COOKBOOK.md) 场景 16。
+
 ## 完整配置示例
 
 ```java
