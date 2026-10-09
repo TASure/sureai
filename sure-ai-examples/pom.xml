@@ -43,5 +43,11 @@
             <version>${project.version}</version>
             <type>pom</type>
         </dependency>
+        <!-- Langfuse 原生导出示例（otel 模块不进 all 聚合，这里显式引入；其导出类不依赖 OTel 运行期） -->
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-otel</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 </project>
