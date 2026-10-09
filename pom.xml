@@ -59,6 +59,7 @@
         <module>sure-ai-core</module>
         <module>sure-ai-rag</module>
         <module>sure-ai-agent</module>
+        <module>sure-ai-framework</module>
         <module>sure-ai-mcp</module>
         <module>sure-ai-mcp-server</module>
         <module>sure-ai-gateway</module>
@@ -128,6 +129,11 @@
             <dependency>
                 <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-agent</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-framework</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

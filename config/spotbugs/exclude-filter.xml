@@ -338,4 +338,13 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- 声明式编排层 Builder 暂存共享组件引用（EI_EXPOSE_REP2）：
+         FrameworkUtil.Builder 为一次性装配器，client/memory 本就是调用方提供的组件
+         （AiClient 为平台客户端、ChatMemory 为有状态会话记忆），语义即按引用共享，
+         与 RagPipeline.Builder / ChatRequest.Builder 同类惯例；调用方负责其生命周期。 -->
+    <Match>
+        <Class name="~com.sure.ai.framework.FrameworkUtil\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>
