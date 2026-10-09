@@ -30,6 +30,11 @@ import java.util.stream.Stream;
 
 import com.sure.ai.client.AiClient;
 import com.sure.ai.exception.AiException;
+import com.sure.ai.framework.advisor.Advisor;
+import com.sure.ai.framework.advisor.AdvisorChain;
+import com.sure.ai.framework.advisor.AdvisorContext;
+import com.sure.ai.framework.advisor.ReflectionToolExecutor;
+import com.sure.ai.framework.advisor.ToolExecutor;
 import com.sure.ai.framework.annotation.AiService;
 import com.sure.ai.framework.annotation.Memory;
 import com.sure.ai.framework.annotation.Param;
@@ -87,10 +92,16 @@ final class FrameworkProxy implements InvocationHandler {
 
 	private final boolean typeMemory;
 
+	/** 编排 Advisor 链（按注册顺序）。 */
+	private final List<Advisor> advisors;
+
+	/** 工具执行器（无 @Tool 方法时为 null）。 */
+	private ToolExecutor toolExecutor;
+
 	/** 对话方法 → 返回类别。 */
 	private final Map<Method, ReturnKind> chatMethods = new LinkedHashMap<>();
 
-	/** 接口上所有 @Tool 方法（直接调用时拒绝）。 */
+	/** 接口上所有 @Tool 方法（直接调用时拒绝；模型侧由 ToolCallingAdvisor 反射执行）。 */
 	private final List<Method> toolMethods = new ArrayList<>();
 
 	/** 预计算的工具声明列表（挂到 ChatRequest.tools）。 */
@@ -104,16 +115,29 @@ final class FrameworkProxy implements InvocationHandler {
 	 * @param model       显式模型名（可空）
 	 * @param temperature  温度（可空）
 	 * @param memory      会话记忆（可空）
+	 * @param advisors    编排 Advisor 链（可空/空列表）
 	 */
 	private FrameworkProxy(Class<?> serviceClass, AiClient client, String model,
-			Double temperature, ChatMemory memory) {
+			Double temperature, ChatMemory memory, List<Advisor> advisors) {
 		this.serviceClass = serviceClass;
 		this.client = client;
 		this.temperature = resolveTemperature(temperature, serviceClass);
 		this.memory = memory;
 		this.typeMemory = serviceClass.isAnnotationPresent(Memory.class);
 		this.model = resolveModel(model, serviceClass);
+		this.advisors = advisors == null ? List.of() : List.copyOf(advisors);
 		parseMethods();
+	}
+
+	/**
+	 * 构造完成后绑定代理实例并惰性建工具执行器。
+	 *
+	 * @param proxy 动态代理
+	 */
+	private void bindProxy(Object proxy) {
+		if (!this.toolMethods.isEmpty()) {
+			this.toolExecutor = new ReflectionToolExecutor(proxy, this.toolMethods);
+		}
 	}
 
 	/**
@@ -124,18 +148,22 @@ final class FrameworkProxy implements InvocationHandler {
 	 * @param model        显式模型名（可空）
 	 * @param temperature  温度（可空）
 	 * @param memory       会话记忆（可空）
+	 * @param advisors     编排 Advisor 链（可空）
 	 * @param <T>          服务类型
 	 * @return 代理实例
 	 */
 	@SuppressWarnings("unchecked")
 	static <T> T newProxy(Class<T> serviceClass, AiClient client, String model,
-			Double temperature, ChatMemory memory) {
+			Double temperature, ChatMemory memory, List<Advisor> advisors) {
 		if (!serviceClass.isInterface()) {
 			throw new AiException("serviceClass 必须是接口: " + serviceClass.getName());
 		}
-		FrameworkProxy handler = new FrameworkProxy(serviceClass, client, model, temperature, memory);
-		return (T) Proxy.newProxyInstance(serviceClass.getClassLoader(), new Class<?>[] {serviceClass},
-			handler);
+		FrameworkProxy handler = new FrameworkProxy(serviceClass, client, model, temperature,
+			memory, advisors);
+		T proxy = (T) Proxy.newProxyInstance(serviceClass.getClassLoader(),
+			new Class<?>[] {serviceClass}, handler);
+		handler.bindProxy(proxy);
+		return proxy;
 	}
 
 	@Override
@@ -283,31 +311,44 @@ final class FrameworkProxy implements InvocationHandler {
 			rb.tools(this.toolSpecs);
 		}
 
+		// 流式不经过 Advisor 链（链面向阻塞 chat）。
+		if (kind == ReturnKind.STREAM) {
+			List<ChatStreamChunk> chunks = new ArrayList<>();
+			this.client.chatStream(rb.stream(true).build(), chunks::add);
+			return chunks.stream();
+		}
+
+		if (kind == ReturnKind.STRUCTURED) {
+			attachJsonSchema(rb, method.getName(), method.getReturnType());
+		}
+		ChatRequest request = rb.build();
+		Class<?> expectedType = kind == ReturnKind.STRUCTURED ? method.getReturnType() : null;
+		ChatResponse resp = invokeWithChain(request, expectedType);
+
 		return switch (kind) {
 			case TEXT -> {
-				ChatResponse resp = this.client.chat(rb.build());
 				String text = resp.firstText();
 				afterRound(memEnabled, userContent, text);
 				yield text;
 			}
 			case RAW -> {
-				ChatResponse resp = this.client.chat(rb.build());
 				afterRound(memEnabled, userContent, resp.firstText());
 				yield resp;
 			}
 			case STRUCTURED -> {
-				attachJsonSchema(rb, method.getName(), method.getReturnType());
-				ChatResponse resp = this.client.chat(rb.build());
 				Object result = parseStructured(resp.firstText(), method.getReturnType());
 				afterRound(memEnabled, userContent, resp.firstText());
 				yield result;
 			}
-			case STREAM -> {
-				List<ChatStreamChunk> chunks = new ArrayList<>();
-				this.client.chatStream(rb.stream(true).build(), chunks::add);
-				yield chunks.stream();
-			}
+			case STREAM -> throw new IllegalStateException("stream 已提前分流");
 		};
+	}
+
+	/** 把一次阻塞对话调用放进 Advisor 链执行；无 advisor 时等价于直接 client.chat。 */
+	private ChatResponse invokeWithChain(ChatRequest request, Class<?> expectedType) {
+		AdvisorContext ctx = new AdvisorContext(request, this.toolExecutor, expectedType);
+		AdvisorChain chain = new AdvisorChain(this.advisors, c -> this.client.chat(c.rebuildRequest()));
+		return chain.execute(ctx);
 	}
 
 	/** 结构化输出：在请求上挂载 json_schema 响应格式约束。 */

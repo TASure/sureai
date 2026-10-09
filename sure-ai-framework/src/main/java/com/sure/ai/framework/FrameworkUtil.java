@@ -16,7 +16,10 @@
 
 package com.sure.ai.framework;
 
+import java.util.List;
+
 import com.sure.ai.client.AiClient;
+import com.sure.ai.framework.advisor.Advisor;
 import com.sure.ai.framework.memory.ChatMemory;
 import com.sure.tool.lang.Assert;
 
@@ -100,6 +103,8 @@ public final class FrameworkUtil {
 
 		private ChatMemory memory;
 
+		private List<Advisor> advisors = List.of();
+
 		/**
 		 * 由静态入口构造。
 		 *
@@ -147,13 +152,27 @@ public final class FrameworkUtil {
 		}
 
 		/**
+		 * 注入有序 Advisor 链（顺序即执行顺序：before 正序、around 嵌套、after 逆序）。
+		 *
+		 * <p>推荐顺序：语义缓存 → 日志 → 工具循环 → 结构化校验。不传时每次调用等价于直接
+		 * {@code client.chat}，行为与历史版本一致。</p>
+		 *
+		 * @param advisors Advisor 列表
+		 * @return this
+		 */
+		public Builder<T> advisors(List<Advisor> advisors) {
+			this.advisors = advisors == null ? List.of() : List.copyOf(advisors);
+			return this;
+		}
+
+		/**
 		 * 解析配置并生成 JDK 动态代理。
 		 *
 		 * @return 代理实例
 		 */
 		public T build() {
 			return FrameworkProxy.newProxy(this.serviceClass, this.client, this.model,
-				this.temperature, this.memory);
+				this.temperature, this.memory, this.advisors);
 		}
 	}
 }

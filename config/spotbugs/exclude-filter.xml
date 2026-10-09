@@ -357,4 +357,22 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- AdvisorContext 暴露可变消息列表（EI_EXPOSE_REP）：
+         messages() 设计上即供链上 advisor（工具循环回填 tool 结果、校验 advisor 追加修正指令）
+         就地读写同一份对话历史，终端再据此重建请求；返回不可变视图会让工具循环无法工作，
+         与 ChatMemory.history() 返回可变列表同类编排惯例。上下文每次调用新建、不跨线程共享。 -->
+    <Match>
+        <Class name="com.sure.ai.framework.advisor.AdvisorContext"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+
+    <!-- SemanticCacheAdvisor 持有调用方注入的共享 SemanticCache（EI_EXPOSE_REP2）：
+         缓存是调用方构建（embedder/threshold/store 均由其配置）并可能跨代理共享的有状态组件，
+         advisor 仅 get/put，不拥有其生命周期，与 ReActAgent.registry / AiConfig.CacheStore
+         同类按引用共享惯例；调用方负责缓存后端与 TTL。 -->
+    <Match>
+        <Class name="com.sure.ai.framework.advisor.SemanticCacheAdvisor"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>
