@@ -50,6 +50,7 @@ public class GeminiRealtimeClientTest {
 		byte[] audio;
 		String error;
 		String eventType;
+		int interrupted;
 
 		@Override
 		public void onTranscript(String text) {
@@ -73,6 +74,11 @@ public class GeminiRealtimeClientTest {
 		@Override
 		public void onEvent(String type, String rawJson) {
 			this.eventType = type;
+		}
+
+		@Override
+		public void onInterrupted() {
+			this.interrupted++;
 		}
 	}
 
@@ -261,6 +267,38 @@ public class GeminiRealtimeClientTest {
 	@Test
 	public void testName() {
 		assertEquals("gemini-realtime", this.client.name());
+	}
+
+	/** serverContent.interrupted=true → onInterrupted（barge-in，2.4.0 标准化）。 */
+	@Test
+	public void testInterrupted() {
+		this.client.connect();
+		deliver("{\"serverContent\":{\"interrupted\":true}}");
+		assertEquals(1, this.collector.interrupted);
+	}
+
+	/** 自动重连成功后会话级 hook 重发 setup（每个新 WS 会话必需）。 */
+	@Test
+	public void testReconnectResendsSetup() {
+		ProbeGemini c = new ProbeGemini(AiConfig.of("gemini-key"), "gemini-2.0-flash-exp",
+			this.connector, this.collector);
+		c.connect();
+		assertEquals(1, this.connector.socket.sent.size()); // 首次 setup
+		c.triggerReconnectSession();
+		assertEquals(2, this.connector.socket.sent.size()); // 重连后重发 setup
+		assertTrue(this.connector.socket.sent.get(1).contains("\"setup\""));
+	}
+
+	/** 探针：暴露 protected 会话级 hook。 */
+	static final class ProbeGemini extends GeminiRealtimeClient {
+
+		ProbeGemini(AiConfig cfg, String model, RealtimeConnector conn, RealtimeEventListener l) {
+			super(cfg, model, conn, l);
+		}
+
+		void triggerReconnectSession() {
+			onReconnectedSession();
+		}
 	}
 
 	/** 投递文本帧。 */

@@ -52,6 +52,9 @@ public class AzureRealtimeClientTest {
 		byte[] audio;
 		String error;
 		String eventType;
+		int speechStart;
+		int speechStop;
+		int interrupted;
 
 		@Override
 		public void onTranscript(String text) {
@@ -75,6 +78,21 @@ public class AzureRealtimeClientTest {
 		@Override
 		public void onEvent(String type, String rawJson) {
 			this.eventType = type;
+		}
+
+		@Override
+		public void onSpeechStart() {
+			this.speechStart++;
+		}
+
+		@Override
+		public void onSpeechStop() {
+			this.speechStop++;
+		}
+
+		@Override
+		public void onInterrupted() {
+			this.interrupted++;
 		}
 	}
 
@@ -235,6 +253,30 @@ public class AzureRealtimeClientTest {
 		this.client.connect();
 		deliver("{\"type\":\"session.updated\",\"foo\":1}");
 		assertEquals("session.updated", this.collector.eventType);
+	}
+
+	/** VAD speech_started → onSpeechStart（与 OpenAI 协议对齐）。 */
+	@Test
+	public void testVadSpeechStart() {
+		this.client.connect();
+		deliver("{\"type\":\"input_audio_buffer.speech_started\"}");
+		assertEquals(1, this.collector.speechStart);
+	}
+
+	/** VAD speech_stopped → onSpeechStop。 */
+	@Test
+	public void testVadSpeechStop() {
+		this.client.connect();
+		deliver("{\"type\":\"input_audio_buffer.speech_stopped\"}");
+		assertEquals(1, this.collector.speechStop);
+	}
+
+	/** conversation.interrupted → onInterrupted。 */
+	@Test
+	public void testInterrupted() {
+		this.client.connect();
+		deliver("{\"type\":\"conversation.interrupted\"}");
+		assertEquals(1, this.collector.interrupted);
 	}
 
 	/** 投递一帧下行消息。 */

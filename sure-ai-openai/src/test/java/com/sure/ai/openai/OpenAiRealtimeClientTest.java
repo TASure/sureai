@@ -51,6 +51,9 @@ public class OpenAiRealtimeClientTest {
 		String error;
 		String eventType;
 		String eventRaw;
+		int speechStart;
+		int speechStop;
+		int interrupted;
 
 		@Override
 		public void onTranscript(String text) {
@@ -75,6 +78,21 @@ public class OpenAiRealtimeClientTest {
 		public void onEvent(String type, String rawJson) {
 			this.eventType = type;
 			this.eventRaw = rawJson;
+		}
+
+		@Override
+		public void onSpeechStart() {
+			this.speechStart++;
+		}
+
+		@Override
+		public void onSpeechStop() {
+			this.speechStop++;
+		}
+
+		@Override
+		public void onInterrupted() {
+			this.interrupted++;
 		}
 	}
 
@@ -255,7 +273,31 @@ public class OpenAiRealtimeClientTest {
 		assertEquals("openai-realtime", this.client.name());
 	}
 
-	/** 向 InternalListener 投递文本帧。 */
+	/** VAD speech_started → onSpeechStart（2.4.0 标准化）。 */
+	@Test
+	public void testVadSpeechStart() {
+		this.client.connect();
+		deliver("{\"type\":\"input_audio_buffer.speech_started\"}");
+		assertEquals(1, this.collector.speechStart);
+	}
+
+	/** VAD speech_stopped → onSpeechStop。 */
+	@Test
+	public void testVadSpeechStop() {
+		this.client.connect();
+		deliver("{\"type\":\"input_audio_buffer.speech_stopped\"}");
+		assertEquals(1, this.collector.speechStop);
+	}
+
+	/** conversation.interrupted → onInterrupted。 */
+	@Test
+	public void testInterrupted() {
+		this.client.connect();
+		deliver("{\"type\":\"conversation.interrupted\"}");
+		assertEquals(1, this.collector.interrupted);
+	}
+
+	/** 投递文本帧。 */
 	private void deliver(String json) {
 		CompletionStage<?> cs = this.connector.listener.onText(this.connector.socket, json, true);
 		assertTrue(cs == null);

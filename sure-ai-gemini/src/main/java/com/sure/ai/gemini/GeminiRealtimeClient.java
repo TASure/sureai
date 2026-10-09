@@ -100,13 +100,26 @@ public class GeminiRealtimeClient extends AbstractRealtimeClient {
 	public void connect() {
 		super.connect();
 		if (!this.setupSent) {
-			JsonObject setup = Json.object();
-			JsonObject setupObj = Json.object();
-			setupObj.put("model", "models/" + this.model);
-			setup.set("setup", setupObj);
-			super.sendText(setup.toString());
+			sendSetup();
 			this.setupSent = true;
 		}
+	}
+
+	/**
+	 * 自动重连成功后的新会话需重发 {@code setup}（Gemini Live 每个 WS 会话建连后必须先发）。
+	 */
+	@Override
+	protected void onReconnectedSession() {
+		sendSetup();
+	}
+
+	/** 向当前连接发送 setup 帧。 */
+	private void sendSetup() {
+		JsonObject setup = Json.object();
+		JsonObject setupObj = Json.object();
+		setupObj.put("model", "models/" + this.model);
+		setup.set("setup", setupObj);
+		super.sendText(setup.toString());
 	}
 
 	@Override
@@ -126,6 +139,12 @@ public class GeminiRealtimeClient extends AbstractRealtimeClient {
 		JsonObject o = Json.parse(message).getAsJsonObject();
 		if (o.has("serverContent")) {
 			JsonObject serverContent = o.getJsonObject("serverContent");
+			// 2.4.0 标准化：Gemini barge-in 以 serverContent.interrupted=true 表示模型输出被打断
+			if (serverContent.has("interrupted") && !serverContent.get("interrupted").isNull()
+					&& serverContent.get("interrupted").isBoolean()
+					&& serverContent.get("interrupted").getAsBoolean()) {
+				this.eventListener.onInterrupted();
+			}
 			JsonObject modelTurn = serverContent.has("modelTurn")
 				? serverContent.getJsonObject("modelTurn") : null;
 			if (modelTurn != null && modelTurn.has("parts")) {
