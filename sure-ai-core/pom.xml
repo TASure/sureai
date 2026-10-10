@@ -33,8 +33,8 @@
     <description>sureai 公共底座：自研零依赖 JSON、SSE 解析、OpenAI 兼容协议引擎、通用模型类与异常体系。所有平台模块仅依赖本模块。</description>
 
     <properties>
-        <!-- core 是基础设施，覆盖率门禁提高到 0.70 -->
-        <jacoco.line.min>0.70</jacoco.line.min>
+        <!-- core 是基础设施，覆盖率门禁 0.98（与全模块一致） -->
+        <jacoco.line.min>0.98</jacoco.line.min>
     </properties>
 
     <dependencies>

@@ -109,8 +109,8 @@
         <sure.core.version>0.2.0</sure.core.version>
         <!-- Apache POI 版本：仅 sure-ai-ingest-poi 以 provided 引入，不进运行期链 -->
         <poi.version>5.5.1</poi.version>
-        <!-- JaCoCo 行覆盖率门禁下限（sure-ai-core 在自身 pom 覆盖为 0.70） -->
-        <jacoco.line.min>0.60</jacoco.line.min>
+        <!-- JaCoCo 行覆盖率门禁下限：全模块 ≥98%（sure-ai-core 亦 0.98） -->
+        <jacoco.line.min>0.98</jacoco.line.min>
         <!-- SpotBugs 静态扫描：默认开启，无源码模块在自身 pom 覆盖为 true -->
         <spotbugs.skip>false</spotbugs.skip>
         <!-- 字节码目标：sureai 仅支持 JDK21+ -->
