@@ -18,6 +18,7 @@ package com.sure.ai.agent.react;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.time.Duration;
@@ -224,5 +225,38 @@ public class ReActAgentEdgeTest {
 		ReActAgent agent = new ReActAgent(client, baseRequest(), new ToolRegistry(),
 				null, 5, Duration.ofSeconds(30));
 		assertEquals("直接答案", agent.run("任务"));
+	}
+
+	@Test
+	public void testMaxIterationsExceededThrows() {
+		// 模型每轮都返回 tool_calls，maxIterations=2 → 抛 AiException
+		ToolRegistry registry = new ToolRegistry();
+		registry.register(com.sure.ai.model.ToolFunction.of("lookup", "查", "{}"),
+				args -> "结果");
+		FakeAiClient client = new FakeAiClient()
+			.withToolCalls(List.of(ToolCall.of("c1", "lookup", "{}")))
+			.withToolCalls(List.of(ToolCall.of("c1", "lookup", "{}")));
+		ReActAgent agent = new ReActAgent(client, baseRequest(), registry,
+				null, 2, Duration.ofSeconds(30));
+		com.sure.ai.exception.AiException ex = assertThrows(
+				com.sure.ai.exception.AiException.class, () -> agent.run("任务"));
+		assertTrue(ex.getMessage().contains("max iterations"));
+	}
+
+	@Test
+	public void testToolHandlerErrorTriggersSafeExecuteOnError() {
+		// handler 抛 Error（非 Exception）→ 穿透 executeTool 的 Exception catch
+		// → safeExecute 的 catch(Throwable) → listener.onError
+		ToolRegistry registry = new ToolRegistry();
+		registry.register(com.sure.ai.model.ToolFunction.of("err", "错", "{}"),
+				args -> {
+					throw new AssertionError("native-error");
+				});
+		FakeAiClient client = new FakeAiClient()
+			.withToolCalls(List.of(ToolCall.of("c1", "err", "{}")))
+			.withText("最终答案");
+		ReActAgent agent = new ReActAgent(client, baseRequest(), registry,
+				null, 5, Duration.ofSeconds(30));
+		assertEquals("最终答案", agent.run("任务"));
 	}
 }

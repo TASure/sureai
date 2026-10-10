@@ -388,4 +388,42 @@ public class PlanExecuteAgentEdgeTest {
 				new ToolRegistry(), null, 10, Duration.ofSeconds(30));
 		assertEquals("综合", agent.run("任务"));
 	}
+
+	@Test
+	public void testToolHandlerExceptionIsRecovered() {
+		// 工具 handler 抛 RuntimeException → executeTool 内 catch 收敛为错误文本
+		ToolRegistry registry = new ToolRegistry();
+		registry.register(com.sure.ai.model.ToolFunction.of("boom", "炸", "{}"),
+				args -> {
+					throw new IllegalStateException("handler-boom");
+				});
+		ScriptedAiClient client = new ScriptedAiClient()
+			.withText(ONE_STEP)
+			.withToolCalls(List.of(call("c1", "boom", "{}")))
+			.withText("最终答案");
+		PlanExecuteAgent agent = new PlanExecuteAgent(client, baseRequest(), registry,
+				null, 10, Duration.ofSeconds(30));
+		assertEquals("最终答案", agent.run("任务"));
+		ChatRequest after = client.requests().get(2);
+		assertTrue(after.messages().stream().anyMatch(m -> m.content() != null
+			&& m.content().contains("工具执行异常")));
+	}
+
+	@Test
+	public void testToolHandlerErrorTriggersSafeExecuteOnError() {
+		// handler 抛 Error（非 Exception）→ 穿透 executeTool 的 Exception catch
+		// → safeExecute 的 catch(Throwable) → listener.onError
+		ToolRegistry registry = new ToolRegistry();
+		registry.register(com.sure.ai.model.ToolFunction.of("err", "错", "{}"),
+				args -> {
+					throw new AssertionError("native-error");
+				});
+		ScriptedAiClient client = new ScriptedAiClient()
+			.withText(ONE_STEP)
+			.withToolCalls(List.of(call("c1", "err", "{}")))
+			.withText("最终答案");
+		PlanExecuteAgent agent = new PlanExecuteAgent(client, baseRequest(), registry,
+				null, 10, Duration.ofSeconds(30));
+		assertEquals("最终答案", agent.run("任务"));
+	}
 }

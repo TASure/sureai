@@ -157,6 +157,42 @@ public class OrchestratorEdgeTest {
 	}
 
 	@Test
+	public void testUnwrapInterruptedDeterministic() {
+		// 预置中断标志 → future.get() 立即抛 InterruptedException → unwrap 走中断分支
+		try (AgentOrchestrator orch = AgentOrchestrator.builder(sub -> {
+			try {
+				Thread.sleep(5000);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+			return new ReActAgent(new EchoClient(), baseRequest(), new ToolRegistry());
+		}).build()) {
+			boolean wasInterrupted = Thread.interrupted();
+			Thread.currentThread().interrupt();
+			try {
+				String result = orch.execute(List.of("slow"));
+				assertTrue(result, result.contains("interrupted"));
+			} finally {
+				if (wasInterrupted) {
+					Thread.currentThread().interrupt();
+				}
+			}
+		}
+	}
+
+	@Test
+	public void testAgentFactoryErrorUnwrapsExecutionException() {
+		// agentFactory 抛 Error（非 Exception）→ 穿透 safeRun → future 异常完成
+		// → unwrap 走 ExecutionException 分支
+		try (AgentOrchestrator orch = AgentOrchestrator.builder(sub -> {
+			throw new AssertionError("boom-error");
+		}).build()) {
+			String result = orch.execute(List.of("task"));
+			assertTrue(result, result.contains("boom-error"));
+		}
+	}
+
+	@Test
 	public void testEvenCountSplitterSkipsOversizeChunks() {		// count=5 但文本很短 → 只有前若干段，越界 chunk 被跳过
 		SimpleTaskSplitter splitter = new SimpleTaskSplitter(SimpleTaskSplitter.SplitStrategy.EVEN_COUNT, 5);
 		List<String> parts = splitter.split("abc");
