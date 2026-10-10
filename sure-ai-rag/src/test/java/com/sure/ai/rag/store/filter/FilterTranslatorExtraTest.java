@@ -37,7 +37,20 @@ public class FilterTranslatorExtraTest {
 				FilterExpression.class.getClassLoader(),
 				new Class<?>[] { FilterExpression.class },
 				(proxy, method, args) -> {
-					throw new UnsupportedOperationException("未知条件: " + method.getName());
+					String name = method.getName();
+					if ("getClass".equals(name)) {
+						return com.sure.ai.rag.store.filter.FilterExpression.class;
+					}
+					if ("equals".equals(name)) {
+						return proxy == args[0];
+					}
+					if ("hashCode".equals(name)) {
+						return System.identityHashCode(proxy);
+					}
+					if ("toString".equals(name)) {
+						return "UnknownFilterExpression";
+					}
+					throw new UnsupportedOperationException("未知条件: " + name);
 				});
 	}
 
