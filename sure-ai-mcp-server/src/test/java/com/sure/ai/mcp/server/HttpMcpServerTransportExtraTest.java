@@ -118,6 +118,18 @@ public class HttpMcpServerTransportExtraTest {
 		assertTrue("不应 400, 实际 " + resp.statusCode(), resp.statusCode() != 400);
 	}
 
+	/** 携带 Mcp-Method 头但 body 是 JSON 数组（非对象）时放行。 */
+	@Test
+	public void headerCheckWithArrayBodyPassesThrough() throws Exception {
+		HttpRequest r = HttpRequest.newBuilder(java.net.URI.create(this.http.endpoint()))
+			.header("Content-Type", "application/json")
+			.header("Mcp-Method", "tools/list")
+			.POST(HttpRequest.BodyPublishers.ofString("[1,2]", StandardCharsets.UTF_8))
+			.build();
+		HttpResponse<String> resp = send(r);
+		assertTrue("不应 400, 实际 " + resp.statusCode(), resp.statusCode() != 400);
+	}
+
 	/** Mcp-Name 头存在但 body 无 params 时不 mismatch（expected 为 null）。 */
 	@Test
 	public void headerNameWithoutParamsPassesThrough() throws Exception {

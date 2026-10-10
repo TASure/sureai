@@ -149,12 +149,13 @@ public class StreamableHttpMcpTransportExtraTest {
 		t.close();
 	}
 
-	/** SSE 事件数据为对象但无 id/result/error 时被忽略。 */
+	/** SSE 事件数据为对象但无 id/result/error，以及有 id 无 result 的服务端请求帧，均被忽略。 */
 	@Test
 	public void sseEventWithoutIdOrResultIgnoredThenMatch() {
 		this.server.createContext("/mcp", ex -> {
 			ex.getRequestBody().readAllBytes();
 			String sse = "event: message\ndata: {\"method\":\"some/event\"}\n\n"
+				+ "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/ping\"}\n\n"
 				+ "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":8,\"result\":{\"v\":1}}\n\n";
 			ex.getResponseHeaders().set("Content-Type", "text/event-stream");
 			byte[] body = sse.getBytes(StandardCharsets.UTF_8);

@@ -85,14 +85,36 @@ public class LineFrameMcpTransportExtraTest {
 		t.close();
 	}
 
+	/** 启动后台 fake server：先写 ignored 行，再读客户端请求后回匹配响应。 */
+	private static void startFakeServer(TestPair p, String ignoredLine, long expectId, String resultBody) {
+		Thread s = new Thread(() -> {
+			try {
+				if (ignoredLine != null) {
+					p.serverWrite.write((ignoredLine + "\n").getBytes(StandardCharsets.UTF_8));
+					p.serverWrite.flush();
+				}
+				java.io.BufferedReader br = new java.io.BufferedReader(
+					new java.io.InputStreamReader(p.serverRead, StandardCharsets.UTF_8));
+				String req = br.readLine();
+				JsonObject o = Json.parse(req).getAsJsonObject();
+				long id = o.optLong("id", expectId);
+				String resp = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":" + resultBody + "}";
+				p.serverWrite.write((resp + "\n").getBytes(StandardCharsets.UTF_8));
+				p.serverWrite.flush();
+			} catch (Exception ex) {
+				throw new RuntimeException(ex);
+			}
+		});
+		s.setDaemon(true);
+		s.start();
+	}
+
 	/** 对端先写空行再写真实响应：空行被跳过。 */
 	@Test
 	public void emptyLineSkipped() throws Exception {
 		TestPair p = pair();
+		startFakeServer(p, "", 5L, "{\"v\":1}");
 		TestTransport t = new TestTransport(p.clientRead, p.clientWrite, Duration.ofSeconds(5));
-		p.serverWrite.write("\n".getBytes(StandardCharsets.UTF_8));
-		p.serverWrite.write("{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":{\"v\":1}}\n".getBytes(StandardCharsets.UTF_8));
-		p.serverWrite.flush();
 		McpResponse r = t.sendRequest(new McpRequest(5L, "ping", null));
 		assertEquals(1, r.result().getAsJsonObject().getInt("v"));
 		t.close();
@@ -102,10 +124,8 @@ public class LineFrameMcpTransportExtraTest {
 	@Test
 	public void nonObjectLineIgnored() throws Exception {
 		TestPair p = pair();
+		startFakeServer(p, "[1,2,3]", 6L, "{\"v\":2}");
 		TestTransport t = new TestTransport(p.clientRead, p.clientWrite, Duration.ofSeconds(5));
-		p.serverWrite.write("[1,2,3]\n".getBytes(StandardCharsets.UTF_8));
-		p.serverWrite.write("{\"jsonrpc\":\"2.0\",\"id\":6,\"result\":{\"v\":2}}\n".getBytes(StandardCharsets.UTF_8));
-		p.serverWrite.flush();
 		McpResponse r = t.sendRequest(new McpRequest(6L, "ping", null));
 		assertEquals(2, r.result().getAsJsonObject().getInt("v"));
 		t.close();
@@ -115,10 +135,8 @@ public class LineFrameMcpTransportExtraTest {
 	@Test
 	public void serverInitiatedFrameIgnored() throws Exception {
 		TestPair p = pair();
+		startFakeServer(p, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"some/server/event\"}", 7L, "{\"v\":3}");
 		TestTransport t = new TestTransport(p.clientRead, p.clientWrite, Duration.ofSeconds(5));
-		p.serverWrite.write("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"some/server/event\"}\n".getBytes(StandardCharsets.UTF_8));
-		p.serverWrite.write("{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{\"v\":3}}\n".getBytes(StandardCharsets.UTF_8));
-		p.serverWrite.flush();
 		McpResponse r = t.sendRequest(new McpRequest(7L, "ping", null));
 		assertEquals(3, r.result().getAsJsonObject().getInt("v"));
 		t.close();

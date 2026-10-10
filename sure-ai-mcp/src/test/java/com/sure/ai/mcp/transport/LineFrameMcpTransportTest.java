@@ -101,12 +101,27 @@ public class LineFrameMcpTransportTest {
 		PipedInputStream clientRead = new PipedInputStream(serverWrite);
 		PipedOutputStream clientWrite = new PipedOutputStream(serverRead);
 
-		TestTransport t = new TestTransport(clientRead, clientWrite, Duration.ofSeconds(5));
-		// 对端先写垃圾行，再写真实响应
-		serverWrite.write("not json\n".getBytes(StandardCharsets.UTF_8));
-		serverWrite.write("{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{\"v\":1}}\n".getBytes(StandardCharsets.UTF_8));
-		serverWrite.flush();
+		// 后台 fake server：先写垃圾行，再读客户端请求后回匹配响应
+		Thread fakeServer = new Thread(() -> {
+			try {
+				serverWrite.write("not json\n".getBytes(StandardCharsets.UTF_8));
+				serverWrite.flush();
+				java.io.BufferedReader br = new java.io.BufferedReader(
+					new java.io.InputStreamReader(serverRead, StandardCharsets.UTF_8));
+				String line = br.readLine();
+				JsonObject req = Json.parse(line).getAsJsonObject();
+				long id = req.optLong("id", 9L);
+				String resp = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"v\":1}}";
+				serverWrite.write((resp + "\n").getBytes(StandardCharsets.UTF_8));
+				serverWrite.flush();
+			} catch (Exception ex) {
+				throw new RuntimeException(ex);
+			}
+		});
+		fakeServer.setDaemon(true);
+		fakeServer.start();
 
+		TestTransport t = new TestTransport(clientRead, clientWrite, Duration.ofSeconds(5));
 		McpResponse r = t.sendRequest(new McpRequest(9L, "ping", null));
 		assertEquals(1, r.result().getAsJsonObject().getInt("v"));
 		t.close();

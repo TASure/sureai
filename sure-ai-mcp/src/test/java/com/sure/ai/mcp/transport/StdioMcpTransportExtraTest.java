@@ -17,12 +17,16 @@
 package com.sure.ai.mcp.transport;
 
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.Test;
 
@@ -77,5 +81,61 @@ public class StdioMcpTransportExtraTest {
 			.build();
 		assertNotNull(t);
 		t.close();
+	}
+
+	/**
+	 * 用 fake Process 确定性覆盖 drainStderr 的 IOException catch 分支，
+	 * 以及 doClose 中 waitFor 超时后 destroyForcibly 强杀路径。
+	 */
+	@Test
+	public void closeWithFakeProcessCoversDrainAndForceKill() {
+		Process fake = new Process() {
+			@Override
+			public OutputStream getOutputStream() {
+				return OutputStream.nullOutputStream();
+			}
+
+			@Override
+			public InputStream getInputStream() {
+				return InputStream.nullInputStream();
+			}
+
+			@Override
+			public InputStream getErrorStream() {
+				return new InputStream() {
+					@Override
+					public int read() throws IOException {
+						throw new IOException("stderr 已关闭");
+					}
+				};
+			}
+
+			@Override
+			public int waitFor() {
+				return 0;
+			}
+
+			@Override
+			public boolean waitFor(long timeout, TimeUnit unit) {
+				return false;
+			}
+
+			@Override
+			public int exitValue() {
+				return 0;
+			}
+
+			@Override
+			public void destroy() {
+			}
+
+			@Override
+			public boolean isAlive() {
+				return true;
+			}
+		};
+		StdioMcpTransport t = new StdioMcpTransport(fake, Duration.ofSeconds(5));
+		t.close();
+		assertTrue("close 后进程应标记为已销毁", !t.isOpen());
 	}
 }
