@@ -188,6 +188,22 @@ public class OllamaClientExtraTest {
 		assertEquals("Hello", sb.toString());
 	}
 
+	/** 非 2xx 且错误体读取抛 IOException（声明长度与实际不符）→ 回退空体并 mapError。 */
+	@Test
+	public void testStreamNon2xxErrorBodyReadFails() {
+		this.server.createContext("/", ex -> {
+			ex.getResponseHeaders().set("Content-Type", "application/json");
+			ex.sendResponseHeaders(500, 200L);
+			try (OutputStream os = ex.getResponseBody()) {
+				os.write("{\"error\":\"partial\"}".getBytes(StandardCharsets.UTF_8));
+			}
+		});
+		OllamaClient client = newClient();
+		assertThrows(com.sure.ai.exception.AiApiException.class, () -> client.chatStream(
+			ChatRequest.builder().model("m").messages(ChatMessage.user("hi")).build(), c -> { }));
+		client.close();
+	}
+
 	/** 200 响应报文长度与声明不符，读取流抛 IOException → AiException(NDJSON read failed)。 */
 	@Test
 	public void testStreamTruncatedRead() {

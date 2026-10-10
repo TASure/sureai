@@ -153,7 +153,7 @@ public class OpenAiBatchClientExtraTest {
 		Thread caller = Thread.currentThread();
 		Thread watcher = new Thread(() -> {
 			try {
-				Thread.sleep(150L);
+				Thread.sleep(800L);
 				caller.interrupt();
 			}
 			catch (InterruptedException ignored) {
