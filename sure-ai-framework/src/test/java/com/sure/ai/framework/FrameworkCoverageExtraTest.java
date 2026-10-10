@@ -682,6 +682,30 @@ public class FrameworkCoverageExtraTest {
 		assertEquals("hello world", svc.greet("world"));
 	}
 
+	/** 空向量 embedder 返回空数组时 get 直接返回 null。 */
+	@Test
+	public void defaultCacheEmptyVectorReturnsNull() {
+		com.sure.ai.client.EmbeddingClient embedder = req ->
+			com.sure.ai.model.EmbeddingResponse.of("e", List.of(new float[]{}), null);
+		SemanticCache cache = SemanticCache.builder().embedder(embedder).build();
+		assertNull(cache.get("anything"));
+	}
+
+	/** void 返回类型的接口方法在创建期即抛异常。 */
+	@Test
+	public void frameworkProxyVoidReturnTypeThrows() {
+		FakeAiClient client = new FakeAiClient().withText("x");
+		assertThrows(com.sure.ai.exception.AiException.class,
+			() -> FrameworkUtil.create(VoidService.class, client));
+	}
+
+	/** 带 void 方法的接口（用于触发 void 返回类型校验）。 */
+	@AiService(model = "void-model")
+	public interface VoidService {
+		@UserMessage("q")
+		void chat(String q);
+	}
+
 	/** 基础服务接口。 */
 	@AiService(model = "test-model")
 	public interface Greeter {
