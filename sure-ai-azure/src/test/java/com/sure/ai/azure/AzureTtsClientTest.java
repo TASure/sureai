@@ -140,4 +140,121 @@ public class AzureTtsClientTest {
 	public void testName() {
 		assertEquals("azure-tts", newClient().name());
 	}
+
+	/** 网络不可达 → IOException 映射 AiTimeoutException。 */
+	@Test
+	public void testNetworkError() {
+		AiConfig dead = AiConfig.builder().apiKey("k").baseUrl("http://127.0.0.1:1").build();
+		AzureTtsClient client = new AzureTtsClient(dead);
+		assertThrows(com.sure.ai.exception.AiTimeoutException.class, () -> client.synthesize(
+			TtsRequest.of("azure-tts", "x", AzureModels.TTS_VOICE_XIAOXIAO)));
+		client.close();
+	}
+
+	/** baseUrl 未配置 → resolve 抛 AiException。 */
+	@Test
+	public void testBaseUrlBlank() {
+		AiConfig cfg = AiConfig.builder().apiKey("k").build();
+		AzureTtsClient client = new AzureTtsClient(cfg);
+		assertThrows(AiException.class, () -> client.synthesize(
+			TtsRequest.of("azure-tts", "x", AzureModels.TTS_VOICE_XIAOXIAO)));
+		client.close();
+	}
+
+	/** baseUrl 以斜杠结尾：resolve 去重斜杠分支。 */
+	@Test
+	public void testBaseUrlTrailingSlash() {
+		AzureTtsClient client = new AzureTtsClient(AiConfig.builder().apiKey("k")
+			.baseUrl(this.baseUrl + "/").build());
+		assertTrue(client.synthesize(TtsRequest.of("azure-tts", "x",
+			AzureModels.TTS_VOICE_XIAOXIAO)).audioLength() > 0);
+		client.close();
+	}
+
+	/** 线程已中断 → send 抛 InterruptedException 映射 AiException。 */
+	@Test
+	public void testInterrupted() {
+		AzureTtsClient client = newClient();
+		Thread.currentThread().interrupt();
+		try {
+			assertThrows(AiException.class, () -> client.synthesize(
+				TtsRequest.of("azure-tts", "x", AzureModels.TTS_VOICE_XIAOXIAO)));
+		}
+		finally {
+			Thread.interrupted();
+		}
+		client.close();
+	}
+
+	/** resolve：path 不以斜杠开头 → base + "/" + path 拼接分支。 */
+	@Test
+	public void testResolveNoLeadingSlash() throws Exception {
+		AzureTtsClient client = newClient();
+		java.lang.reflect.Method m = AzureTtsClient.class.getDeclaredMethod("resolve", String.class);
+		m.setAccessible(true);
+		assertEquals(this.baseUrl + "/cog/v1", m.invoke(client, "cog/v1"));
+		client.close();
+	}
+
+	/** deriveLang：null/单段回退 zh-CN，标准 xx-YY 前缀提取。 */
+	@Test
+	public void testDeriveLang() throws Exception {
+		assertEquals("zh-CN", invokeDeriveLang(null));
+		assertEquals("zh-CN", invokeDeriveLang("xiaoxiao"));
+		assertEquals("en-US", invokeDeriveLang("en-US-JennyNeural"));
+	}
+
+	/** escapeXml：null→空，& ' " 转义。 */
+	@Test
+	public void testEscapeXml() throws Exception {
+		assertEquals("", invokeEscapeXml(null));
+		assertEquals("a&lt;b&amp;c&apos;d&quot;e&gt;f", invokeEscapeXml("a<b&c'd\"e>f"));
+	}
+
+	/** mapOutputFormat：缺省 mp3、audio-/riff- 透传、wav→riff-pcm、mp3/其它→mp3。 */
+	@Test
+	public void testMapOutputFormat() throws Exception {
+		assertEquals(AzureModels.TTS_OUTPUT_MP3, invokeMapOutputFormat(null));
+		assertEquals(AzureModels.TTS_OUTPUT_MP3, invokeMapOutputFormat("  "));
+		assertEquals("audio-16khz", invokeMapOutputFormat("audio-16khz"));
+		assertEquals("riff-pcm-16khz-16bit-mono-pcm", invokeMapOutputFormat("wav"));
+		assertEquals("riff-pcm-16khz-16bit-mono-pcm", invokeMapOutputFormat("WAVE"));
+		assertEquals(AzureModels.TTS_OUTPUT_MP3, invokeMapOutputFormat("mp3"));
+	}
+
+	/** formatOf：mp3/pcm/其它。 */
+	@Test
+	public void testFormatOf() throws Exception {
+		assertEquals("mp3", invokeFormatOf(AzureModels.TTS_OUTPUT_MP3));
+		assertEquals("pcm", invokeFormatOf("riff-pcm-16khz"));
+		assertEquals("audio", invokeFormatOf("ogg-16khz"));
+	}
+
+	/** 反射调用私有静态 deriveLang。 */
+	private static String invokeDeriveLang(String voice) throws Exception {
+		java.lang.reflect.Method m = AzureTtsClient.class.getDeclaredMethod("deriveLang", String.class);
+		m.setAccessible(true);
+		return (String) m.invoke(null, voice);
+	}
+
+	/** 反射调用私有静态 escapeXml。 */
+	private static String invokeEscapeXml(String text) throws Exception {
+		java.lang.reflect.Method m = AzureTtsClient.class.getDeclaredMethod("escapeXml", String.class);
+		m.setAccessible(true);
+		return (String) m.invoke(null, text);
+	}
+
+	/** 反射调用私有静态 mapOutputFormat。 */
+	private static String invokeMapOutputFormat(String f) throws Exception {
+		java.lang.reflect.Method m = AzureTtsClient.class.getDeclaredMethod("mapOutputFormat", String.class);
+		m.setAccessible(true);
+		return (String) m.invoke(null, f);
+	}
+
+	/** 反射调用私有静态 formatOf。 */
+	private static String invokeFormatOf(String f) throws Exception {
+		java.lang.reflect.Method m = AzureTtsClient.class.getDeclaredMethod("formatOf", String.class);
+		m.setAccessible(true);
+		return (String) m.invoke(null, f);
+	}
 }

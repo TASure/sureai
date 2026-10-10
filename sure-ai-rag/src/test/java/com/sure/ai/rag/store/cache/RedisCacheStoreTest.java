@@ -210,6 +210,63 @@ public class RedisCacheStoreTest {
 		store.close();
 	}
 
+	/** AUTH：有密码时首条命令为 AUTH，回复 +OK 后正常。 */
+	@Test
+	public void authPath() {
+		this.mock.enqueue("+OK\r\n");   // AUTH
+		this.mock.enqueue("+OK\r\n");   // SET
+		RedisCacheStore store = baseBuilder().password("secret").build();
+		store.put("k", sent(BODY), 1000L);
+		assertEquals("AUTH", this.mock.commandHistory().get(0).get(0));
+		assertEquals("secret", this.mock.commandHistory().get(0).get(1));
+		store.close();
+	}
+
+	/** GET 返回非法 JSON → decode 包装为 AiException。 */
+	@Test
+	public void decodeInvalidJsonThrows() {
+		String bad = "{not-json";
+		this.mock.enqueue("$" + bad.getBytes(StandardCharsets.UTF_8).length + "\r\n" + bad + "\r\n");
+		assertThrows(AiException.class, () -> baseBuilder().build().get("k"));
+	}
+
+	/** GET 返回带 annotations（grounding source）的响应 → 还原 GroundingSource。 */
+	@Test
+	public void decodeAnnotations() {
+		String body = "{\"id\":\"cm\",\"model\":\"m\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"hi\",\"annotations\":["
+			+ "{\"type\":\"url_citation\",\"url_citation\":{\"title\":\"T\",\"url\":\"http://x\"},"
+			+ "\"quoted_text\":\"q\"}]},"
+			+ "\"finish_reason\":\"stop\"}]}";
+		this.mock.enqueue("$" + body.getBytes(StandardCharsets.UTF_8).length + "\r\n" + body + "\r\n");
+		ChatResponse got = baseBuilder().build().get("k");
+		assertNotNull(got);
+		assertEquals(1, got.groundingSources().size());
+		assertEquals("T", got.groundingSources().get(0).title());
+	}
+
+	/** clear：SCAN 返回非数组 → 提前 break，不 DEL。 */
+	@Test
+	public void clearScanNonArrayBreaks() {
+		this.mock.enqueue("+OK\r\n");   // SCAN 返回简单串，非数组
+		baseBuilder().build().clear();
+		// 只发了 SCAN，没有 DEL
+		assertEquals(1, this.mock.commandHistory().size());
+	}
+
+	/** 构建器全量 fluent setter。 */
+	@Test
+	public void builderSetters() {
+		this.mock.enqueue("+OK\r\n");
+		RedisCacheStore store = RedisCacheStore.builder().host("127.0.0.1").port(this.mock.port())
+				.password("pw").keyPrefix("pre:").defaultTtlMillis(1234L)
+				.timeout(java.time.Duration.ofSeconds(1)).build();
+		store.put("k", sent(BODY), -1L);
+		List<String> cmd = this.mock.commandHistory().get(1);
+		assertEquals("1234", cmd.get(4));
+		store.close();
+	}
+
 	/**
 	 * 最小 RESP mock ServerSocket：accept 后循环读命令、按队列回写脚本化响应。
 	 * 支持「写完回复即关闭连接」以模拟断线。

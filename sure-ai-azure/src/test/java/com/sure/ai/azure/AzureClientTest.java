@@ -239,6 +239,21 @@ public class AzureClientTest {
 		client.close();
 	}
 
+	/** normalizeBaseUrl：无 baseUrl 且无 resource → 原样返回（baseUrl 保持 null）。 */
+	@Test
+	public void testNormalizeNoResource() {
+		AiConfig cfg = AzureClient.normalizeBaseUrl(AiConfig.builder().apiKey("k").build());
+		assertNull(cfg.baseUrl());
+	}
+
+	/** normalizeBaseUrl：baseUrl 已设置 → 原样返回。 */
+	@Test
+	public void testNormalizeBaseUrlPreserved() {
+		AiConfig cfg = AzureClient.normalizeBaseUrl(
+			AiConfig.builder().apiKey("k").baseUrl("http://mock").build());
+		assertEquals("http://mock", cfg.baseUrl());
+	}
+
 	/** Util 显式 init 后便捷 chat。 */
 	@Test
 	public void testUtilConvenience() {

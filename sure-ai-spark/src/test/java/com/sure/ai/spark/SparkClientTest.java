@@ -26,6 +26,7 @@ import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.After;
 import org.junit.Before;
@@ -233,5 +234,101 @@ public class SparkClientTest {
 		assertTrue(ex.getCause() instanceof AssertionError);
 		assertEquals("lite", SparkModels.LITE);
 		assertEquals("max", SparkModels.MAX);
+	}
+
+	/** Util 私有构造器。 */
+	@Test
+	public void testUtilPrivateConstructor() throws Exception {
+		java.lang.reflect.Constructor<SparkUtil> c = SparkUtil.class.getDeclaredConstructor();
+		c.setAccessible(true);
+		java.lang.reflect.InvocationTargetException ex = assertThrows(
+			java.lang.reflect.InvocationTargetException.class, c::newInstance);
+		assertTrue(ex.getCause() instanceof AssertionError);
+	}
+
+	/** init(String apiKey) 显式初始化。 */
+	@Test
+	public void testInitWithApiKey() {
+		SparkUtil.init("plain-key");
+		assertEquals("spark", SparkUtil.client().name());
+	}
+
+	/** Util chat(ChatRequest) 便捷方法。 */
+	@Test
+	public void testUtilChatWithRequest() {
+		handle(200, "{\"id\":\"u2\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"req-resp\"},\"finish_reason\":\"stop\"}]}");
+		SparkUtil.init(AiConfig.builder().apiKey("util-key2").baseUrl(this.baseUrl).build());
+		ChatResponse resp = SparkUtil.chat(ChatRequest.builder()
+			.model(SparkModels.PRO)
+			.messages(ChatMessage.user("hello")).build());
+		assertEquals("req-resp", resp.firstText());
+		assertEquals("Bearer util-key2", this.lastAuth.get());
+	}
+
+	/** Util chatStream 便捷方法。 */
+	@Test
+	public void testUtilChatStream() {
+		String sse = "data: {\"id\":\"s\",\"choices\":[{\"delta\":{\"content\":\"X\"},\"index\":0}]}\n\n"
+			+ "data: {\"id\":\"s\",\"choices\":[{\"delta\":{\"content\":\"Y\"},\"index\":0}]}\n\n"
+			+ "data: [DONE]\n\n";
+		handle(ex -> {
+			byte[] bytes = sse.getBytes(StandardCharsets.UTF_8);
+			ex.getResponseHeaders().set("Content-Type", "text/event-stream");
+			ex.sendResponseHeaders(200, bytes.length);
+			try (OutputStream os = ex.getResponseBody()) {
+				os.write(bytes);
+			}
+		});
+		SparkUtil.init(AiConfig.builder().apiKey("stream-key").baseUrl(this.baseUrl).build());
+		StringBuilder sb = new StringBuilder();
+		SparkUtil.chatStream(ChatRequest.builder()
+			.model(SparkModels.PRO)
+			.messages(ChatMessage.user("hi")).build(),
+			chunk -> {
+				if (chunk.deltaText() != null) {
+					sb.append(chunk.deltaText());
+				}
+			});
+		assertEquals("XY", sb.toString());
+	}
+
+	/** 从环境变量懒加载成功路径。 */
+	@Test
+	public void testLazyLoadFromEnv() throws Exception {
+		setEnv(SparkUtil.ENV_API_KEY, "env-key-123");
+		try {
+			resetUtil();
+			assertEquals("spark", SparkUtil.client().name());
+		} finally {
+			removeEnv(SparkUtil.ENV_API_KEY);
+			resetUtil();
+		}
+	}
+
+	/** 反射写入环境变量。 */
+	@SuppressWarnings("unchecked")
+	private static void setEnv(String key, String value) throws Exception {
+		Class<?> pe = Class.forName("java.lang.ProcessEnvironment");
+		Field f = pe.getDeclaredField("theUnmodifiableEnvironment");
+		f.setAccessible(true);
+		Map<String, String> unmod = (Map<String, String>) f.get(null);
+		Field m = unmod.getClass().getDeclaredField("m");
+		m.setAccessible(true);
+		Map<String, String> inner = (Map<String, String>) m.get(unmod);
+		inner.put(key, value);
+	}
+
+	/** 反射删除环境变量。 */
+	@SuppressWarnings("unchecked")
+	private static void removeEnv(String key) throws Exception {
+		Class<?> pe = Class.forName("java.lang.ProcessEnvironment");
+		Field f = pe.getDeclaredField("theUnmodifiableEnvironment");
+		f.setAccessible(true);
+		Map<String, String> unmod = (Map<String, String>) f.get(null);
+		Field m = unmod.getClass().getDeclaredField("m");
+		m.setAccessible(true);
+		Map<String, String> inner = (Map<String, String>) m.get(unmod);
+		inner.remove(key);
 	}
 }

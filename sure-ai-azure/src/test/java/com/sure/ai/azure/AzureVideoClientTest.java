@@ -16,6 +16,7 @@
 
 package com.sure.ai.azure;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -39,6 +40,7 @@ import com.sun.net.httpserver.HttpServer;
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiApiException;
+import com.sure.ai.exception.AiException;
 import com.sure.ai.exception.AiTimeoutException;
 import com.sure.ai.model.VideoRequest;
 import com.sure.ai.model.VideoResponse;
@@ -95,6 +97,10 @@ public class AzureVideoClientTest {
 				this.submitUri.set(exchange.getRequestURI().toString());
 				byte[] in = exchange.getRequestBody().readAllBytes();
 				this.submitBody.set(new String(in, StandardCharsets.UTF_8));
+				if ("noTaskId".equals(this.mode)) {
+					respond(exchange, 200, "{\"status\":\"queued\"}");
+					return;
+				}
 				respond(exchange, 200, "{\"id\":\"task_1\",\"status\":\"queued\",\"created_at\":123}");
 				return;
 			}
@@ -111,6 +117,10 @@ public class AzureVideoClientTest {
 				if ("noUrl".equals(this.mode)) {
 					respond(exchange, 200,
 						"{\"id\":\"task_1\",\"status\":\"succeeded\",\"generations\":[{\"id\":\"gen_abc\"}]}");
+					return;
+				}
+				if ("noGens".equals(this.mode)) {
+					respond(exchange, 200, "{\"id\":\"task_1\",\"status\":\"succeeded\",\"created_at\":123}");
 					return;
 				}
 				respond(exchange, 200, "{\"id\":\"task_1\",\"status\":\"succeeded\",\"created_at\":123,"
@@ -201,6 +211,112 @@ public class AzureVideoClientTest {
 	public void testNameAndDefaults() {
 		assertEquals("azure-video", newClient().name());
 		assertEquals("preview", newClient().apiVersion());
+	}
+
+	/** n/duration 缺省回退（n_variants=1、n_seconds=5）。 */
+	@Test
+	public void testDefaultsSize() {
+		AzureVideoClient.POLL_INTERVAL_MS = 10L;
+		AzureVideoClient client = newClient();
+		client.generate(VideoRequest.builder().model(AzureModels.SORA_2).prompt("x").build());
+		assertTrue(this.submitBody.get().contains("\"n_seconds\":5"));
+		assertTrue(this.submitBody.get().contains("\"n_variants\":1"));
+		client.close();
+	}
+
+	/** 提交响应无 task id → 抛 AiException。 */
+	@Test
+	public void testNoTaskId() {
+		this.mode = "noTaskId";
+		AzureVideoClient client = newClient();
+		assertThrows(AiException.class,
+			() -> client.generate(VideoRequest.of(AzureModels.SORA_2, "x")));
+		client.close();
+	}
+
+	/** succeeded 但无 generations 数组 → 空结果列表。 */
+	@Test
+	public void testNoGenerations() {
+		this.mode = "noGens";
+		AzureVideoClient client = newClient();
+		VideoResponse resp = client.generate(VideoRequest.of(AzureModels.SORA_2, "x"));
+		assertTrue(resp.data().isEmpty());
+		client.close();
+	}
+
+	/** baseUrl 以斜杠结尾：downloadUrl 拼接分支。 */
+	@Test
+	public void testBaseUrlTrailingSlash() {
+		this.mode = "noUrl";
+		AzureVideoClient client = new AzureVideoClient(AiConfig.builder().apiKey(API_KEY)
+			.baseUrl(this.baseUrl + "/").build());
+		VideoResponse resp = client.generate(VideoRequest.of(AzureModels.SORA_2, "x"));
+		assertNotNull(resp.firstUrl());
+		assertTrue(resp.firstUrl().contains("/openai/v1/video/generations/gen_abc/content/video"));
+		client.close();
+	}
+
+	/** parseSize：缺省、星号/乘号分隔、非法回退。 */
+	@Test
+	public void testParseSize() throws Exception {
+		assertArrayEquals(new int[] { 1280, 720 }, invokeParseSize(null));
+		assertArrayEquals(new int[] { 1280, 720 }, invokeParseSize("  "));
+		assertArrayEquals(new int[] { 640, 480 }, invokeParseSize("640x480"));
+		assertArrayEquals(new int[] { 640, 480 }, invokeParseSize("640*480"));
+		assertArrayEquals(new int[] { 640, 480 }, invokeParseSize("640×480"));
+		assertArrayEquals(new int[] { 1280, 720 }, invokeParseSize("abc"));
+		assertArrayEquals(new int[] { 1280, 720 }, invokeParseSize("1x2x3"));
+		assertArrayEquals(new int[] { 1280, 720 }, invokeParseSize("abxcd"));
+	}
+
+	/** n 显式设置 → n_variants 透传分支。 */
+	@Test
+	public void testExplicitN() {
+		AzureVideoClient.POLL_INTERVAL_MS = 10L;
+		AzureVideoClient client = newClient();
+		client.generate(VideoRequest.builder().model(AzureModels.SORA_2).prompt("x").n(2).build());
+		assertTrue(this.submitBody.get().contains("\"n_variants\":2"));
+		client.close();
+	}
+
+	/** normalizeBaseUrl：baseUrl 为空且无 resource → 原样返回。 */
+	@Test
+	public void testNormalizeNoResource() {
+		AiConfig cfg = AzureVideoClient.normalizeBaseUrl(
+			AiConfig.builder().apiKey("k").build());
+		assertNull(cfg.baseUrl());
+	}
+
+	/** normalizeBaseUrl：resource 推导 baseUrl。 */
+	@Test
+	public void testNormalizeFromResource() {
+		AiConfig cfg = AzureVideoClient.normalizeBaseUrl(
+			AiConfig.builder().apiKey("k").extraHeader("resource", "myres").build());
+		assertEquals("https://myres.openai.azure.com", cfg.baseUrl());
+	}
+
+	/** 反射调用私有静态 parseSize。 */
+	private static int[] invokeParseSize(String size) throws Exception {
+		java.lang.reflect.Method m = AzureVideoClient.class.getDeclaredMethod("parseSize", String.class);
+		m.setAccessible(true);
+		return (int[]) m.invoke(null, size);
+	}
+
+	/** 线程已中断：sleepQuietly 捕获 InterruptedException 并抛出 AiException。 */
+	@Test
+	public void testSleepQuietlyInterrupted() throws Exception {
+		AzureVideoClient client = newClient();
+		AzureVideoClient.POLL_INTERVAL_MS = 10000L;
+		java.lang.reflect.Method m = AzureVideoClient.class.getDeclaredMethod("sleepQuietly");
+		m.setAccessible(true);
+		Thread.currentThread().interrupt();
+		try {
+			assertThrows(java.lang.reflect.InvocationTargetException.class, () -> m.invoke(client));
+		}
+		finally {
+			Thread.interrupted();
+		}
+		client.close();
 	}
 
 	/** Util 重置方法：注入三个单例后 reset，反射断言 Holder 内部实例均置 null。 */

@@ -18,6 +18,7 @@ package com.sure.ai.azure;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.net.URI;
@@ -277,6 +278,49 @@ public class AzureRealtimeClientTest {
 		this.client.connect();
 		deliver("{\"type\":\"conversation.interrupted\"}");
 		assertEquals(1, this.collector.interrupted);
+	}
+
+	/** response.output_audio.interrupted → onInterrupted。 */
+	@Test
+	public void testOutputAudioInterrupted() {
+		this.client.connect();
+		deliver("{\"type\":\"response.output_audio.interrupted\"}");
+		assertEquals(1, this.collector.interrupted);
+	}
+
+	/** error 为字符串 → onError 携带字符串。 */
+	@Test
+	public void testErrorString() {
+		this.client.connect();
+		deliver("{\"type\":\"error\",\"error\":\"plain-text-err\"}");
+		assertEquals("plain-text-err", this.collector.error);
+	}
+
+	/** error 缺失 → onError 携带原始消息。 */
+	@Test
+	public void testErrorAbsent() {
+		this.client.connect();
+		deliver("{\"type\":\"error\",\"weird\":1}");
+		assertNotNull(this.collector.error);
+	}
+
+	/** buildUri：baseUrl 为空 → wss://localhost。 */
+	@Test
+	public void testBuildUriNoBase() {
+		AiConfig cfg = AiConfig.builder().apiKey("k").build();
+		AzureRealtimeClient c = new AzureRealtimeClient(cfg, "gpt-realtime", this.connector, this.collector);
+		c.connect();
+		assertTrue(this.connector.uri.toString().startsWith("wss://localhost"));
+	}
+
+	/** buildUri：baseUrl 以斜杠结尾 → 去除尾部斜杠。 */
+	@Test
+	public void testBuildUriTrailingSlash() {
+		AiConfig cfg = AiConfig.builder().apiKey("k").baseUrl("https://x.openai.azure.com/").build();
+		AzureRealtimeClient c = new AzureRealtimeClient(cfg, "gpt-realtime", this.connector, this.collector);
+		c.connect();
+		String uri = this.connector.uri.toString();
+		assertTrue(uri, uri.startsWith("wss://x.openai.azure.com/openai"));
 	}
 
 	/** 投递一帧下行消息。 */

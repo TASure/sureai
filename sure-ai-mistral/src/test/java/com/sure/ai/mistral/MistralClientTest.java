@@ -22,9 +22,11 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.After;
 import org.junit.Before;
@@ -247,5 +249,130 @@ public class MistralClientTest {
 		assertTrue(ex.getCause() instanceof AssertionError);
 		assertEquals("mistral-large-latest", MistralModels.MISTRAL_LARGE_LATEST);
 		assertEquals("mistral-embed", MistralModels.MISTRAL_EMBED);
+	}
+
+	/** Util 私有构造器。 */
+	@Test
+	public void testUtilPrivateConstructor() throws Exception {
+		java.lang.reflect.Constructor<MistralUtil> c = MistralUtil.class.getDeclaredConstructor();
+		c.setAccessible(true);
+		java.lang.reflect.InvocationTargetException ex = assertThrows(
+			java.lang.reflect.InvocationTargetException.class, c::newInstance);
+		assertTrue(ex.getCause() instanceof AssertionError);
+	}
+
+	/** init(String apiKey) 显式初始化。 */
+	@Test
+	public void testInitWithApiKey() {
+		MistralUtil.init("plain-key");
+		MistralClient client = MistralUtil.client();
+		assertEquals("mistral", client.name());
+		client.close();
+	}
+
+	/** Util chat(ChatRequest) 便捷方法。 */
+	@Test
+	public void testUtilChatWithRequest() {
+		handle(200, "{\"id\":\"u2\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"req-resp\"},\"finish_reason\":\"stop\"}]}");
+		MistralUtil.init(AiConfig.builder().apiKey("util-key2").baseUrl(this.baseUrl).build());
+		ChatResponse resp = MistralUtil.chat(ChatRequest.builder()
+			.model(MistralModels.MISTRAL_SMALL_LATEST)
+			.messages(ChatMessage.user("hello")).build());
+		assertEquals("req-resp", resp.firstText());
+		assertEquals("Bearer util-key2", this.lastAuth.get());
+	}
+
+	/** Util chatStream 便捷方法。 */
+	@Test
+	public void testUtilChatStream() {
+		String sse = "data: {\"id\":\"s\",\"choices\":[{\"delta\":{\"content\":\"X\"},\"index\":0}]}\n\n"
+			+ "data: {\"id\":\"s\",\"choices\":[{\"delta\":{\"content\":\"Y\"},\"index\":0}]}\n\n"
+			+ "data: [DONE]\n\n";
+		handle(ex -> {
+			byte[] bytes = sse.getBytes(StandardCharsets.UTF_8);
+			ex.getResponseHeaders().set("Content-Type", "text/event-stream");
+			ex.sendResponseHeaders(200, bytes.length);
+			try (OutputStream os = ex.getResponseBody()) {
+				os.write(bytes);
+			}
+		});
+		MistralUtil.init(AiConfig.builder().apiKey("stream-key").baseUrl(this.baseUrl).build());
+		StringBuilder sb = new StringBuilder();
+		MistralUtil.chatStream(ChatRequest.builder()
+			.model(MistralModels.MISTRAL_SMALL_LATEST)
+			.messages(ChatMessage.user("hi")).build(),
+			chunk -> {
+				if (chunk.deltaText() != null) {
+					sb.append(chunk.deltaText());
+				}
+			});
+		assertEquals("XY", sb.toString());
+	}
+
+	/** Util embed(model, text) 便捷方法。 */
+	@Test
+	public void testUtilEmbedModelText() {
+		handle(200, "{\"model\":\"mistral-embed\",\"data\":["
+			+ "{\"object\":\"embedding\",\"embedding\":[0.5,0.6],\"index\":0}],"
+			+ "\"usage\":{\"prompt_tokens\":2,\"total_tokens\":2}}");
+		MistralUtil.init(AiConfig.builder().apiKey("emb-key").baseUrl(this.baseUrl).build());
+		EmbeddingResponse resp = MistralUtil.embed(MistralModels.MISTRAL_EMBED, "test text");
+		assertEquals("mistral-embed", resp.model());
+		assertEquals(2, resp.embeddings().get(0).length);
+	}
+
+	/** Util embed(EmbeddingRequest) 便捷方法。 */
+	@Test
+	public void testUtilEmbedRequest() {
+		handle(200, "{\"model\":\"mistral-embed\",\"data\":["
+			+ "{\"object\":\"embedding\",\"embedding\":[0.7,0.8,0.9],\"index\":0}],"
+			+ "\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}");
+		MistralUtil.init(AiConfig.builder().apiKey("emb-key2").baseUrl(this.baseUrl).build());
+		EmbeddingResponse resp = MistralUtil.embed(
+			new EmbeddingRequest(MistralModels.MISTRAL_EMBED, List.of("hello")));
+		assertEquals(1, resp.embeddings().size());
+		assertEquals(3, resp.embeddings().get(0).length);
+	}
+
+	/** 从环境变量懒加载成功路径。 */
+	@Test
+	public void testLazyLoadFromEnv() throws Exception {
+		setEnv(MistralUtil.ENV_API_KEY, "env-key-123");
+		try {
+			MistralUtil.resetClient();
+			MistralClient client = MistralUtil.client();
+			assertEquals("mistral", client.name());
+			client.close();
+		} finally {
+			removeEnv(MistralUtil.ENV_API_KEY);
+			MistralUtil.resetClient();
+		}
+	}
+
+	/** 反射写入环境变量。 */
+	@SuppressWarnings("unchecked")
+	private static void setEnv(String key, String value) throws Exception {
+		Class<?> pe = Class.forName("java.lang.ProcessEnvironment");
+		Field f = pe.getDeclaredField("theUnmodifiableEnvironment");
+		f.setAccessible(true);
+		Map<String, String> unmod = (Map<String, String>) f.get(null);
+		Field m = unmod.getClass().getDeclaredField("m");
+		m.setAccessible(true);
+		Map<String, String> inner = (Map<String, String>) m.get(unmod);
+		inner.put(key, value);
+	}
+
+	/** 反射删除环境变量。 */
+	@SuppressWarnings("unchecked")
+	private static void removeEnv(String key) throws Exception {
+		Class<?> pe = Class.forName("java.lang.ProcessEnvironment");
+		Field f = pe.getDeclaredField("theUnmodifiableEnvironment");
+		f.setAccessible(true);
+		Map<String, String> unmod = (Map<String, String>) f.get(null);
+		Field m = unmod.getClass().getDeclaredField("m");
+		m.setAccessible(true);
+		Map<String, String> inner = (Map<String, String>) m.get(unmod);
+		inner.remove(key);
 	}
 }

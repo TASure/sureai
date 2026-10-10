@@ -150,6 +150,14 @@ public class BaiduClientTest {
 				this.oauthContentType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
 				byte[] tokenIn = exchange.getRequestBody().readAllBytes();
 				this.oauthBody.set(new String(tokenIn, StandardCharsets.UTF_8));
+				if ("tokenBad".equals(this.audioMode)) {
+					respond(exchange, 500, "{\"error\":\"boom\"}", "application/json");
+					return;
+				}
+				if ("tokenNoAccess".equals(this.audioMode)) {
+					respond(exchange, 200, "{\"expires_in\":2592000}", "application/json");
+					return;
+				}
 				String body = "{\"access_token\":\"" + TOKEN + "\",\"expires_in\":2592000}";
 				respond(exchange, 200, body, "application/json");
 				return;
@@ -205,6 +213,16 @@ public class BaiduClientTest {
 						"{\"err_no\":3301,\"err_msg\":\"audio quality error\"}", "application/json");
 					return;
 				}
+				if ("sttEmpty".equals(this.audioMode)) {
+					respond(exchange, 200,
+						"{\"err_no\":0,\"err_msg\":\"success.\",\"result\":[]}", "application/json");
+					return;
+				}
+				if ("sttNoResult".equals(this.audioMode)) {
+					respond(exchange, 200,
+						"{\"err_no\":0,\"err_msg\":\"success.\"}", "application/json");
+					return;
+				}
 				respond(exchange, 200,
 					"{\"err_no\":0,\"err_msg\":\"success.\",\"result\":[\"你好世界\"]}", "application/json");
 				return;
@@ -225,6 +243,10 @@ public class BaiduClientTest {
 			}
 			if (path.contains("/files/upload")) {
 				this.lastBizAuthz.set(exchange.getRequestHeaders().getFirst("Authorization"));
+				if ("uploadNoId".equals(this.audioMode)) {
+					respond(exchange, 200, "{\"fileName\":\"train.jsonl\"}", "application/json");
+					return;
+				}
 				respond(exchange, 200, "{\"fileId\":\"file-123\",\"fileName\":\"train.jsonl\"}",
 					"application/json");
 				return;
@@ -571,6 +593,252 @@ public class BaiduClientTest {
 		String fileId = client.uploadTrainingFile("train.jsonl", "{\"q\":\"a\"}".getBytes(StandardCharsets.UTF_8));
 		assertEquals("file-123", fileId);
 		assertEquals("Bearer " + TOKEN, this.lastBizAuthz.get());
+		client.close();
+	}
+
+	// ==================== 边界分支（反射覆盖私有静态方法） ====================
+
+	/** mapAue：null/blank→3、wav→6、pcm→4、缺省→3。 */
+	@Test
+	public void testMapAue() throws Exception {
+		assertEquals(3, invokeMapAue(null));
+		assertEquals(3, invokeMapAue("  "));
+		assertEquals(6, invokeMapAue("wav"));
+		assertEquals(4, invokeMapAue("pcm"));
+		assertEquals(3, invokeMapAue("mp3"));
+	}
+
+	/** formatFromAue：4→pcm、6→wav、缺省→mp3。 */
+	@Test
+	public void testFormatFromAue() throws Exception {
+		assertEquals("pcm", invokeFormatFromAue(4));
+		assertEquals("wav", invokeFormatFromAue(6));
+		assertEquals("mp3", invokeFormatFromAue(9));
+	}
+
+	/** mapSpeed：null→5、clamp 边界。 */
+	@Test
+	public void testMapSpeed() throws Exception {
+		assertEquals(5, invokeMapSpeed(null));
+		assertEquals(8, invokeMapSpeed(1.5));
+		assertEquals(15, invokeMapSpeed(10.0));
+		assertEquals(0, invokeMapSpeed(0.0));
+	}
+
+	/** parseTtsError：非 JSON → 原样 AiApiException。 */
+	@Test
+	public void testParseTtsErrorNonJson() throws Exception {
+		java.lang.reflect.Method m = BaiduClient.class.getDeclaredMethod("parseTtsError", String.class);
+		m.setAccessible(true);
+		Object ex = m.invoke(null, "not-json{{");
+		assertTrue(ex instanceof AiApiException);
+	}
+
+	/** resolveDevPid：Number/字符串/非法字符串/缺省。 */
+	@Test
+	public void testResolveDevPid() throws Exception {
+		assertEquals(1537, invokeDevPid(SttRequest.builder().model("m").audioData(new byte[] { 1 }).build()));
+		SttRequest num = SttRequest.builder().model("m").audioData(new byte[] { 1 }).extra("dev_pid", 1737).build();
+		assertEquals(1737, invokeDevPid(num));
+		SttRequest str = SttRequest.builder().model("m").audioData(new byte[] { 1 }).extra("dev_pid", "1936").build();
+		assertEquals(1936, invokeDevPid(str));
+		SttRequest bad = SttRequest.builder().model("m").audioData(new byte[] { 1 }).extra("dev_pid", "abc").build();
+		assertEquals(1537, invokeDevPid(bad));
+	}
+
+	/** mapStatus：各状态串与缺省。 */
+	@Test
+	public void testMapStatus() throws Exception {
+		assertEquals("running", invokeMapStatus("Running"));
+		assertEquals("queued", invokeMapStatus("Pending"));
+		assertEquals("succeeded", invokeMapStatus("Done"));
+		assertEquals("failed", invokeMapStatus("Failed"));
+		assertEquals("cancelled", invokeMapStatus("Cancelled"));
+		assertEquals("unknown", invokeMapStatus(""));
+		assertEquals("weird", invokeMapStatus("weird"));
+	}
+
+	private static int invokeMapAue(String f) throws Exception {
+		java.lang.reflect.Method m = BaiduClient.class.getDeclaredMethod("mapAue", String.class);
+		m.setAccessible(true);
+		return (int) m.invoke(null, f);
+	}
+
+	private static String invokeFormatFromAue(int a) throws Exception {
+		java.lang.reflect.Method m = BaiduClient.class.getDeclaredMethod("formatFromAue", int.class);
+		m.setAccessible(true);
+		return (String) m.invoke(null, a);
+	}
+
+	private static int invokeMapSpeed(Double s) throws Exception {
+		java.lang.reflect.Method m = BaiduClient.class.getDeclaredMethod("mapSpeed", Double.class);
+		m.setAccessible(true);
+		return (int) m.invoke(null, s);
+	}
+
+	private static int invokeDevPid(SttRequest r) throws Exception {
+		java.lang.reflect.Method m = BaiduClient.class.getDeclaredMethod("resolveDevPid", SttRequest.class);
+		m.setAccessible(true);
+		return (int) m.invoke(null, r);
+	}
+
+	private static String invokeMapStatus(String s) throws Exception {
+		java.lang.reflect.Method m = BaiduClient.class.getDeclaredMethod("mapStatus", String.class);
+		m.setAccessible(true);
+		return (String) m.invoke(null, s);
+	}
+
+	/** TTS：pcm 格式映射。 */
+	@Test
+	public void testTtsDefaultsAndPcm() {
+		BaiduClient client = newClient();
+		com.sure.ai.model.TtsResponse resp = client.synthesize(TtsRequest.builder()
+			.model("baidu").input("你好").voice(BaiduModels.TTS_PER_XIAOMEI).responseFormat("pcm").build());
+		assertEquals("pcm", resp.format());
+		assertTrue(resp.audioLength() > 0);
+		client.close();
+	}
+
+	/** chat：temperature/topP/max_tokens 透传。 */
+	@Test
+	public void testChatOptionalParams() {
+		BaiduClient client = newClient();
+		client.chat(ChatRequest.builder().model("ernie").messages(ChatMessage.user("hi"))
+			.temperature(0.5).topP(0.9).maxTokens(128).build());
+		String body = this.lastChatBody.get();
+		assertTrue(body.contains("\"temperature\":0.5"));
+		assertTrue(body.contains("\"top_p\":0.9"));
+		assertTrue(body.contains("\"max_output_tokens\":128"));
+		client.close();
+	}
+
+	/** 缺 secretKey：fetchToken 抛 AiException。 */
+	@Test
+	public void testMissingSecretKey() {
+		BaiduClient client = new BaiduClient(AiConfig.builder().apiKey("ak").baseUrl(this.baseUrl).build());
+		assertThrows(AiException.class, () -> client.chat(
+			ChatRequest.builder().model("ernie").messages(ChatMessage.user("hi")).build()));
+		client.close();
+	}
+
+	/** STT：result 为空数组 → 空文本。 */
+	@Test
+	public void testSttEmptyResult() {
+		this.audioMode = "sttEmpty";
+		BaiduClient client = newClient();
+		SttResponse resp = client.transcribe(SttRequest.of("baidu", new byte[] { 1, 2 }));
+		assertEquals("", resp.text());
+		client.close();
+	}
+
+	/** 微调：suffix 与 hyperparameters 透传。 */
+	@Test
+	public void testFineTuneWithHyperparams() {
+		BaiduClient client = newClient();
+		java.util.Map<String, Object> hp = new java.util.LinkedHashMap<>();
+		hp.put("epoch", 3);
+		FineTuneResponse resp = client.createFineTune(FineTuneRequest.builder()
+			.model("ernie-4.5").trainingFileId("file-123").suffix("sft-1").hyperparameters(hp).build());
+		assertTrue(this.lastChatBody.get().contains("\"modelName\":\"sft-1\""));
+		assertTrue(this.lastChatBody.get().contains("\"hyperParameters\""));
+		assertEquals("ft-1", resp.id());
+		client.close();
+	}
+
+	// ==================== 网络错误路径 ====================
+
+	/** TTS 网络不可达 → IOException 映射 AiTimeoutException。 */
+	@Test
+	public void testTtsNetworkError() {
+		BaiduClient client = new BaiduClient(AiConfig.builder().apiKey("ak")
+			.baseUrl("http://127.0.0.1:1").extraHeader(BaiduClient.SECRET_KEY_HEADER, "sk").build());
+		assertThrows(com.sure.ai.exception.AiTimeoutException.class,
+			() -> client.synthesize(TtsRequest.of("baidu", "x", BaiduModels.TTS_PER_XIAOMEI)));
+		client.close();
+	}
+
+	/** STT 网络不可达 → IOException 映射 AiTimeoutException。 */
+	@Test
+	public void testSttNetworkError() {
+		BaiduClient client = new BaiduClient(AiConfig.builder().apiKey("ak")
+			.baseUrl("http://127.0.0.1:1").extraHeader(BaiduClient.SECRET_KEY_HEADER, "sk").build());
+		assertThrows(com.sure.ai.exception.AiTimeoutException.class,
+			() -> client.transcribe(SttRequest.of("baidu", new byte[] { 1 })));
+		client.close();
+	}
+
+	/** chat 网络不可达 → AiTimeoutException。 */
+	@Test
+	public void testChatNetworkError() {
+		BaiduClient client = new BaiduClient(AiConfig.builder().apiKey("ak")
+			.baseUrl("http://127.0.0.1:1").extraHeader(BaiduClient.SECRET_KEY_HEADER, "sk").build());
+		assertThrows(com.sure.ai.exception.AiTimeoutException.class,
+			() -> client.chat(ChatRequest.builder().model("ernie").messages(ChatMessage.user("hi")).build()));
+		client.close();
+	}
+
+	/** 线程已中断 → fetchToken send 抛 InterruptedException 映射 AiException。 */
+	@Test
+	public void testFetchTokenInterrupted() {
+		BaiduClient client = newClient();
+		Thread.currentThread().interrupt();
+		try {
+			assertThrows(AiException.class, () -> client.chat(
+				ChatRequest.builder().model("ernie").messages(ChatMessage.user("hi")).build()));
+		}
+		finally {
+			Thread.interrupted();
+		}
+		client.close();
+	}
+
+	/** STT result 字段缺失 → 空文本。 */
+	@Test
+	public void testSttResultMissing() {
+		this.audioMode = "sttNoResult";
+		BaiduClient client = newClient();
+		SttResponse resp = client.transcribe(SttRequest.of("baidu", new byte[] { 1, 2 }));
+		assertEquals("", resp.text());
+		client.close();
+	}
+
+	/** token 端点 500 → AiAuthException。 */
+	@Test
+	public void testTokenBad() {
+		this.audioMode = "tokenBad";
+		BaiduClient client = newClient();
+		assertThrows(com.sure.ai.exception.AiAuthException.class,
+			() -> client.chat(ChatRequest.builder().model("ernie").messages(ChatMessage.user("hi")).build()));
+		client.close();
+	}
+
+	/** token 响应缺 access_token → AiAuthException。 */
+	@Test
+	public void testTokenNoAccess() {
+		this.audioMode = "tokenNoAccess";
+		BaiduClient client = newClient();
+		assertThrows(com.sure.ai.exception.AiAuthException.class,
+			() -> client.chat(ChatRequest.builder().model("ernie").messages(ChatMessage.user("hi")).build()));
+		client.close();
+	}
+
+	/** uploadTrainingFile 响应无 fileId → AiException。 */
+	@Test
+	public void testUploadNoFileId() {
+		this.audioMode = "uploadNoId";
+		BaiduClient client = newClient();
+		assertThrows(AiException.class,
+			() -> client.uploadTrainingFile("x.jsonl", "{}".getBytes(StandardCharsets.UTF_8)));
+		client.close();
+	}
+
+	/** message content 为 null → 空串 content 分支。 */
+	@Test
+	public void testNullContent() {
+		BaiduClient client = newClient();
+		client.chat(ChatRequest.builder().model("ernie")
+			.messages(ChatMessage.user((String) null)).build());
+		assertTrue(this.lastChatBody.get().contains("\"content\":\"\""));
 		client.close();
 	}
 }

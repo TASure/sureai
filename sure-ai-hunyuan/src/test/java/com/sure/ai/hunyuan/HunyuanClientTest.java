@@ -26,6 +26,7 @@ import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.After;
 import org.junit.Before;
@@ -250,5 +251,113 @@ public class HunyuanClientTest {
 		assertTrue(ex.getCause() instanceof AssertionError);
 		assertEquals("hunyuan-turbos-latest", HunyuanModels.HUNYUAN_TURBOS_LATEST);
 		assertEquals("hunyuan-embedding", HunyuanModels.HUNYUAN_EMBEDDING);
+	}
+
+	/** Util 私有构造器。 */
+	@Test
+	public void testUtilPrivateConstructor() throws Exception {
+		java.lang.reflect.Constructor<HunyuanUtil> c = HunyuanUtil.class.getDeclaredConstructor();
+		c.setAccessible(true);
+		java.lang.reflect.InvocationTargetException ex = assertThrows(
+			java.lang.reflect.InvocationTargetException.class, c::newInstance);
+		assertTrue(ex.getCause() instanceof AssertionError);
+	}
+
+	/** init(String apiKey) 显式初始化。 */
+	@Test
+	public void testInitWithApiKey() {
+		HunyuanUtil.init("plain-key");
+		assertEquals("hunyuan", HunyuanUtil.client().name());
+	}
+
+	/** Util chat(ChatRequest) 便捷方法。 */
+	@Test
+	public void testUtilChatWithRequest() {
+		handle(200, "{\"id\":\"u2\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"req-resp\"},\"finish_reason\":\"stop\"}]}");
+		HunyuanUtil.init(AiConfig.builder().apiKey("util-key2").baseUrl(this.baseUrl).build());
+		ChatResponse resp = HunyuanUtil.chat(ChatRequest.builder()
+			.model(HunyuanModels.HUNYUAN_TURBOS_LATEST)
+			.messages(ChatMessage.user("hello")).build());
+		assertEquals("req-resp", resp.firstText());
+		assertEquals("Bearer util-key2", this.lastAuth.get());
+	}
+
+	/** Util chatStream 便捷方法。 */
+	@Test
+	public void testUtilChatStream() {
+		String sse = "data: {\"id\":\"s\",\"choices\":[{\"delta\":{\"content\":\"X\"},\"index\":0}]}\n\n"
+			+ "data: {\"id\":\"s\",\"choices\":[{\"delta\":{\"content\":\"Y\"},\"index\":0}]}\n\n"
+			+ "data: [DONE]\n\n";
+		handle(ex -> {
+			byte[] bytes = sse.getBytes(StandardCharsets.UTF_8);
+			ex.getResponseHeaders().set("Content-Type", "text/event-stream");
+			ex.sendResponseHeaders(200, bytes.length);
+			try (OutputStream os = ex.getResponseBody()) {
+				os.write(bytes);
+			}
+		});
+		HunyuanUtil.init(AiConfig.builder().apiKey("stream-key").baseUrl(this.baseUrl).build());
+		StringBuilder sb = new StringBuilder();
+		HunyuanUtil.chatStream(ChatRequest.builder()
+			.model(HunyuanModels.HUNYUAN_TURBOS_LATEST)
+			.messages(ChatMessage.user("hi")).build(),
+			chunk -> {
+				if (chunk.deltaText() != null) {
+					sb.append(chunk.deltaText());
+				}
+			});
+		assertEquals("XY", sb.toString());
+	}
+
+	/** Util embed(List) 便捷方法。 */
+	@Test
+	public void testUtilEmbed() {
+		handle(200, "{\"object\":\"list\",\"model\":\"hunyuan-embedding\",\"data\":["
+			+ "{\"index\":0,\"embedding\":[0.1,0.2,0.3],\"object\":\"embedding\"}],"
+			+ "\"usage\":{\"total_tokens\":2}}");
+		HunyuanUtil.init(AiConfig.builder().apiKey("emb-key").baseUrl(this.baseUrl).build());
+		EmbeddingResponse resp = HunyuanUtil.embed(List.of("hello"));
+		assertEquals("hunyuan-embedding", resp.model());
+		assertEquals(3, resp.embeddings().get(0).length, 1e-6);
+	}
+
+	/** 从环境变量懒加载成功路径。 */
+	@Test
+	public void testLazyLoadFromEnv() throws Exception {
+		setEnv(HunyuanUtil.ENV_API_KEY, "env-key-123");
+		try {
+			resetUtil();
+			assertEquals("hunyuan", HunyuanUtil.client().name());
+		} finally {
+			removeEnv(HunyuanUtil.ENV_API_KEY);
+			resetUtil();
+		}
+	}
+
+	/** 反射写入环境变量。 */
+	@SuppressWarnings("unchecked")
+	private static void setEnv(String key, String value) throws Exception {
+		Class<?> pe = Class.forName("java.lang.ProcessEnvironment");
+		Field f = pe.getDeclaredField("theUnmodifiableEnvironment");
+		f.setAccessible(true);
+		Map<String, String> unmod = (Map<String, String>) f.get(null);
+		Field m = unmod.getClass().getDeclaredField("m");
+		m.setAccessible(true);
+		Map<String, String> inner = (Map<String, String>) m.get(unmod);
+		inner.put(key, value);
+	}
+
+	/** 反射删除环境变量。 */
+	@SuppressWarnings("unchecked")
+	private static void removeEnv(String key) throws Exception {
+		Class<?> pe = Class.forName("java.lang.ProcessEnvironment");
+		Field f = pe.getDeclaredField("theUnmodifiableEnvironment");
+		f.setAccessible(true);
+		Map<String, String> unmod = (Map<String, String>) f.get(null);
+		Field m = unmod.getClass().getDeclaredField("m");
+		m.setAccessible(true);
+		Map<String, String> inner = (Map<String, String>) m.get(unmod);
+		inner.remove(key);
 	}
 }

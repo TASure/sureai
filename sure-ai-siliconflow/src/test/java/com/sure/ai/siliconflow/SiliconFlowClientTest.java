@@ -26,6 +26,7 @@ import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.After;
 import org.junit.Before;
@@ -251,5 +252,114 @@ public class SiliconFlowClientTest {
 		assertTrue(ex.getCause() instanceof AssertionError);
 		assertEquals("deepseek-ai/DeepSeek-V3", SiliconFlowModels.DEEPSEEK_V3);
 		assertEquals("BAAI/bge-m3", SiliconFlowModels.BGE_M3);
+	}
+
+	/** Util 私有构造器。 */
+	@Test
+	public void testUtilPrivateConstructor() throws Exception {
+		java.lang.reflect.Constructor<SiliconFlowUtil> c = SiliconFlowUtil.class.getDeclaredConstructor();
+		c.setAccessible(true);
+		java.lang.reflect.InvocationTargetException ex = assertThrows(
+			java.lang.reflect.InvocationTargetException.class, c::newInstance);
+		assertTrue(ex.getCause() instanceof AssertionError);
+	}
+
+	/** init(String apiKey) 显式初始化。 */
+	@Test
+	public void testInitWithApiKey() {
+		SiliconFlowUtil.init("plain-key");
+		assertEquals("siliconflow", SiliconFlowUtil.client().name());
+	}
+
+	/** Util chat(ChatRequest) 便捷方法。 */
+	@Test
+	public void testUtilChatWithRequest() {
+		handle(200, "{\"id\":\"u2\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"req-resp\"},\"finish_reason\":\"stop\"}]}");
+		SiliconFlowUtil.init(AiConfig.builder().apiKey("util-key2").baseUrl(this.baseUrl).build());
+		ChatResponse resp = SiliconFlowUtil.chat(ChatRequest.builder()
+			.model(SiliconFlowModels.DEEPSEEK_V3)
+			.messages(ChatMessage.user("hello")).build());
+		assertEquals("req-resp", resp.firstText());
+		assertEquals("Bearer util-key2", this.lastAuth.get());
+	}
+
+	/** Util chatStream 便捷方法。 */
+	@Test
+	public void testUtilChatStream() {
+		String sse = "data: {\"id\":\"s\",\"choices\":[{\"delta\":{\"content\":\"X\"},\"index\":0}]}\n\n"
+			+ "data: {\"id\":\"s\",\"choices\":[{\"delta\":{\"content\":\"Y\"},\"index\":0}]}\n\n"
+			+ "data: [DONE]\n\n";
+		handle(ex -> {
+			byte[] bytes = sse.getBytes(StandardCharsets.UTF_8);
+			ex.getResponseHeaders().set("Content-Type", "text/event-stream");
+			ex.sendResponseHeaders(200, bytes.length);
+			try (OutputStream os = ex.getResponseBody()) {
+				os.write(bytes);
+			}
+		});
+		SiliconFlowUtil.init(AiConfig.builder().apiKey("stream-key").baseUrl(this.baseUrl).build());
+		StringBuilder sb = new StringBuilder();
+		SiliconFlowUtil.chatStream(ChatRequest.builder()
+			.model(SiliconFlowModels.DEEPSEEK_V3)
+			.messages(ChatMessage.user("hi")).build(),
+			chunk -> {
+				if (chunk.deltaText() != null) {
+					sb.append(chunk.deltaText());
+				}
+			});
+		assertEquals("XY", sb.toString());
+	}
+
+	/** Util embed(model, input) 便捷方法。 */
+	@Test
+	public void testUtilEmbed() {
+		handle(200, "{\"object\":\"list\",\"model\":\"BAAI/bge-m3\",\"data\":["
+			+ "{\"index\":0,\"embedding\":[0.1,0.2,0.3],\"object\":\"embedding\"}],"
+			+ "\"usage\":{\"total_tokens\":2}}");
+		SiliconFlowUtil.init(AiConfig.builder().apiKey("emb-key").baseUrl(this.baseUrl).build());
+		EmbeddingResponse resp = SiliconFlowUtil.embed(
+			SiliconFlowModels.BGE_M3, List.of("hello"));
+		assertEquals("BAAI/bge-m3", resp.model());
+		assertEquals(3, resp.embeddings().get(0).length, 1e-6);
+	}
+
+	/** 从环境变量懒加载成功路径。 */
+	@Test
+	public void testLazyLoadFromEnv() throws Exception {
+		setEnv(SiliconFlowUtil.ENV_API_KEY, "env-key-123");
+		try {
+			resetUtil();
+			assertEquals("siliconflow", SiliconFlowUtil.client().name());
+		} finally {
+			removeEnv(SiliconFlowUtil.ENV_API_KEY);
+			resetUtil();
+		}
+	}
+
+	/** 反射写入环境变量。 */
+	@SuppressWarnings("unchecked")
+	private static void setEnv(String key, String value) throws Exception {
+		Class<?> pe = Class.forName("java.lang.ProcessEnvironment");
+		Field f = pe.getDeclaredField("theUnmodifiableEnvironment");
+		f.setAccessible(true);
+		Map<String, String> unmod = (Map<String, String>) f.get(null);
+		Field m = unmod.getClass().getDeclaredField("m");
+		m.setAccessible(true);
+		Map<String, String> inner = (Map<String, String>) m.get(unmod);
+		inner.put(key, value);
+	}
+
+	/** 反射删除环境变量。 */
+	@SuppressWarnings("unchecked")
+	private static void removeEnv(String key) throws Exception {
+		Class<?> pe = Class.forName("java.lang.ProcessEnvironment");
+		Field f = pe.getDeclaredField("theUnmodifiableEnvironment");
+		f.setAccessible(true);
+		Map<String, String> unmod = (Map<String, String>) f.get(null);
+		Field m = unmod.getClass().getDeclaredField("m");
+		m.setAccessible(true);
+		Map<String, String> inner = (Map<String, String>) m.get(unmod);
+		inner.remove(key);
 	}
 }

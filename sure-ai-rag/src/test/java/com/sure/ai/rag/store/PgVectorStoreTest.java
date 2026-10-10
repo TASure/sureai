@@ -182,9 +182,16 @@ public class PgVectorStoreTest {
 
 	/** 连接拒绝包装为 AiException。 */
 	@Test
-	public void testConnectionRefusedThrows() {
-		mock.close();
-		assertThrows(AiException.class, () -> baseBuilder().build().size());
+	public void testConnectionRefusedThrows() throws IOException {
+		// 取一个立即关闭的临时端口，避免复用本类 mock 端口被其他并发测试重新占用。
+		try (java.net.ServerSocket dead = new java.net.ServerSocket(0)) {
+			int deadPort = dead.getLocalPort();
+			mock.close();
+			PgVectorStore store = PgVectorStore.builder()
+					.host("127.0.0.1").port(deadPort)
+					.database("testdb").user("u").table(TABLE).build();
+			assertThrows(AiException.class, store::size);
+		}
 	}
 
 	// ===== 协议帧构造辅助 =====
