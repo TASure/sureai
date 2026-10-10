@@ -19,6 +19,7 @@ package com.sure.ai.ollama;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -102,6 +103,52 @@ public class OllamaUtilTest {
 	public void testInitNoArgs() {
 		OllamaUtil.init();
 		assertNotNull(OllamaUtil.client());
+	}
+
+	/** env 设置 baseUrl 时，loadFromEnv 指向该地址并可对话。 */
+	@Test
+	public void testLoadFromEnvWithBaseUrl() throws Exception {
+		resetHolder();
+		EnvVars env = EnvVars.begin();
+		try {
+			env.set("SURE_AI_OLLAMA_BASE_URL", this.baseUrl);
+			assertEquals("你好", OllamaUtil.chat("llama", "hi").firstText());
+		}
+		finally {
+			env.restore();
+			resetHolder();
+		}
+	}
+
+	/** env 未设置时，loadFromEnv 回退默认 localhost 地址（仅构造不触网）。 */
+	@Test
+	public void testLoadFromEnvDefaultBase() throws Exception {
+		resetHolder();
+		EnvVars env = EnvVars.begin();
+		try {
+			env.set("SURE_AI_OLLAMA_BASE_URL", null);
+			assertNotNull(OllamaUtil.client());
+		}
+		finally {
+			env.restore();
+			resetHolder();
+		}
+	}
+
+	/** 反射重置 HOLDER 单例。 */
+	private static void resetHolder() throws Exception {
+		var f = OllamaUtil.class.getDeclaredField("HOLDER");
+		f.setAccessible(true);
+		f.get(null).getClass().getMethod("reset").invoke(f.get(null));
+	}
+
+	/** Models 私有构造器不可实例化，常量可读。 */
+	@Test
+	public void testModelsConstructor() throws Exception {
+		var c = OllamaModels.class.getDeclaredConstructor();
+		c.setAccessible(true);
+		var ex = assertThrows(java.lang.reflect.InvocationTargetException.class, c::newInstance);
+		assertTrue(ex.getCause() instanceof AssertionError);
 	}
 
 	/** 私有构造器不可实例化。 */

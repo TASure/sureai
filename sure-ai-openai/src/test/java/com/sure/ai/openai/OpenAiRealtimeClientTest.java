@@ -233,6 +233,40 @@ public class OpenAiRealtimeClientTest {
 		assertEquals("boom", this.collector.error);
 	}
 
+	/** error 为字符串时，onError 取 error 字符串本身。 */
+	@Test
+	public void testHandleMessageErrorAsString() {
+		this.client.connect();
+		deliver("{\"type\":\"error\",\"error\":\"string-boom\"}");
+		assertEquals("string-boom", this.collector.error);
+	}
+
+	/** error 字段缺失时，onError 回退为原始报文。 */
+	@Test
+	public void testHandleMessageErrorFallbackToRaw() {
+		this.client.connect();
+		String raw = "{\"type\":\"error\",\"code\":429}";
+		deliver(raw);
+		assertEquals(raw, this.collector.error);
+	}
+
+	/** 公开生产构造（携带 DefaultRealtimeConnector）可实例化且命名正确（不触发连接）。 */
+	@Test
+	public void testPublicConstructor() {
+		AiConfig cfg = AiConfig.builder().apiKey("k").baseUrl("https://api.openai.com/v1").build();
+		OpenAiRealtimeClient c = new OpenAiRealtimeClient(cfg, "gpt-4o-realtime", this.collector);
+		assertEquals("openai-realtime", c.name());
+	}
+
+	/** baseUrl 带尾斜杠时 buildUri 应去掉重复斜杠。 */
+	@Test
+	public void testBuildUriTrailingSlash() {
+		AiConfig cfg = AiConfig.builder().apiKey("k").baseUrl("https://api.openai.com/v1/").build();
+		OpenAiRealtimeClient c = new OpenAiRealtimeClient(cfg, "m", this.connector, this.collector);
+		c.connect();
+		assertEquals("wss://api.openai.com/v1/realtime?model=m", this.connector.uri.toString());
+	}
+
 	/** 未识别事件 → onEvent 兜底。 */
 	@Test
 	public void testOnEvent() {

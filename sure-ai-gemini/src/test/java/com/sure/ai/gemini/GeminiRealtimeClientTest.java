@@ -269,6 +269,34 @@ public class GeminiRealtimeClientTest {
 		assertEquals("gemini-realtime", this.client.name());
 	}
 
+	/** 公开生产构造（DefaultRealtimeConnector）可实例化且命名正确（不触发连接）。 */
+	@Test
+	public void testPublicConstructor() {
+		GeminiRealtimeClient c = new GeminiRealtimeClient(AiConfig.of("k"), "gemini-live", this.collector);
+		assertEquals("gemini-realtime", c.name());
+	}
+
+	/** baseUrl 为 https 且带尾斜杠时 buildUri 改写为 wss 并去尾斜杠。 */
+	@Test
+	public void testBuildUriHttpsBaseTrailingSlash() {
+		FakeConnector conn = new FakeConnector();
+		AiConfig cfg = AiConfig.builder().apiKey("k").baseUrl("https://example.com/ws/").build();
+		GeminiRealtimeClient c = new GeminiRealtimeClient(cfg, "gemini-live", conn, this.collector);
+		c.connect();
+		String uri = conn.uri.toString();
+		assertTrue(uri, uri.startsWith("wss://example.com/ws"));
+		assertTrue(uri, uri.contains("GenerativeService.BidiGenerateContent"));
+		assertTrue(uri, uri.endsWith("?key=k"));
+	}
+
+	/** error 为字符串时，onError 取该字符串。 */
+	@Test
+	public void testErrorAsString() {
+		this.client.connect();
+		deliver("{\"error\":\"string-boom\"}");
+		assertEquals("string-boom", this.collector.error);
+	}
+
 	/** serverContent.interrupted=true → onInterrupted（barge-in，2.4.0 标准化）。 */
 	@Test
 	public void testInterrupted() {

@@ -116,4 +116,77 @@ public class GeminiUtilTest {
 		c.setAccessible(true);
 		assertThrows(java.lang.reflect.InvocationTargetException.class, c::newInstance);
 	}
+
+	/** GeminiModels 私有构造器不可实例化。 */
+	@Test
+	public void testModelsPrivateCtor() throws Exception {
+		var c = GeminiModels.class.getDeclaredConstructor();
+		c.setAccessible(true);
+		assertThrows(java.lang.reflect.InvocationTargetException.class, c::newInstance);
+	}
+
+	/** 环境变量懒加载：HOLDER 置空后经 SURE_AI_GEMINI_API_KEY/BASE_URL 构造客户端。 */
+	@Test
+	public void testLoadFromEnv() throws Exception {
+		EnvVars env = EnvVars.begin();
+		try {
+			resetHolder();
+			env.set("SURE_AI_GEMINI_API_KEY", "env-key");
+			env.set("SURE_AI_GEMINI_BASE_URL", this.baseUrl);
+			assertEquals("你好", GeminiUtil.chat("gemini", "hi").firstText());
+			// baseUrl 为空 → 走默认地址分支（仅校验不抛异常）。
+			resetHolder();
+			env.set("SURE_AI_GEMINI_BASE_URL", null);
+			assertNotNull(GeminiUtil.client());
+		}
+		finally {
+			env.restore();
+			resetHolder();
+		}
+	}
+
+	/** realtimeClient 经环境变量懒加载构造（AiConfig.of(apiKey)）。 */
+	@Test
+	public void testRealtimeClientFromEnv() {
+		EnvVars env = EnvVars.begin();
+		try {
+			GeminiUtil.resetRealtimeClient();
+			env.set("SURE_AI_GEMINI_API_KEY", "rt-key");
+			var listener = new com.sure.ai.client.realtime.RealtimeEventListener() {
+				public void onTranscript(String text) {
+				}
+
+				public void onAudio(byte[] audio) {
+				}
+
+				public void onError(String err) {
+				}
+
+				public void onClose() {
+				}
+
+				public void onEvent(String type, String rawJson) {
+				}
+
+				public void onInterrupted() {
+				}
+			};
+			GeminiRealtimeClient c = GeminiUtil.realtimeClient("gemini-live", listener);
+			assertEquals("gemini-realtime", c.name());
+		}
+		finally {
+			GeminiUtil.resetRealtimeClient();
+			env.restore();
+		}
+	}
+
+	/** 反射置空 HOLDER 单例，强制下次 client() 走 env 懒加载。 */
+	private static void resetHolder() throws Exception {
+		var f = GeminiUtil.class.getDeclaredField("HOLDER");
+		f.setAccessible(true);
+		Object holder = f.get(null);
+		var inst = holder.getClass().getDeclaredField("instance");
+		inst.setAccessible(true);
+		inst.set(holder, null);
+	}
 }
