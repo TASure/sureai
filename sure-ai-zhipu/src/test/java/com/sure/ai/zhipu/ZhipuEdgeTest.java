@@ -18,6 +18,7 @@ package com.sure.ai.zhipu;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -223,18 +224,49 @@ public class ZhipuEdgeTest {
 		}
 	}
 
-	/** REALTIME.reset() 覆盖 L361。 */
+	/** REALTIME.reset() 后单例被清空，再次调用应生成新实例（覆盖 L361）。 */
 	@Test
-	public void testResetRealtimeClient() {
-		ZhipuUtil.resetRealtimeClient();
-		assertTrue(true);
+	public void testResetRealtimeClient() throws Exception {
+		com.sure.ai.zhipu.EnvVars env = com.sure.ai.zhipu.EnvVars.begin();
+		try {
+			env.set(ZhipuUtil.ENV_API_KEY, "rt-id.rt-secret");
+			holder("REALTIME").reset();
+			RealtimeEventListener listener = new RealtimeEventListener() {
+				@Override public void onTranscript(String text) { }
+				@Override public void onAudio(byte[] audio) { }
+				@Override public void onError(String error) { }
+				@Override public void onClose() { }
+				@Override public void onEvent(String type, String rawJson) { }
+			};
+			ZhipuRealtimeClient first = ZhipuUtil.realtimeClient("rt-model", listener);
+			assertNotNull(first);
+			ZhipuUtil.resetRealtimeClient();
+			ZhipuRealtimeClient second = ZhipuUtil.realtimeClient("rt-model", listener);
+			assertNotNull(second);
+			assertNotSame("reset 后应生成新实例", first, second);
+		} finally {
+			env.restore();
+			ZhipuUtil.resetRealtimeClient();
+		}
 	}
 
-	/** VIDEO.reset() 覆盖 L239-240。 */
+	/** VIDEO.reset() 后单例被清空，再次调用应生成新实例（覆盖 L239-240）。 */
 	@Test
-	public void testResetVideoClient() {
-		ZhipuUtil.resetVideoClient();
-		assertTrue(true);
+	public void testResetVideoClient() throws Exception {
+		com.sure.ai.zhipu.EnvVars env = com.sure.ai.zhipu.EnvVars.begin();
+		try {
+			env.set(ZhipuUtil.ENV_API_KEY, "v-id.v-secret");
+			holder("VIDEO").reset();
+			ZhipuVideoClient first = ZhipuUtil.videoClient();
+			assertNotNull(first);
+			ZhipuUtil.resetVideoClient();
+			ZhipuVideoClient second = ZhipuUtil.videoClient();
+			assertNotNull(second);
+			assertNotSame("reset 后应生成新实例", first, second);
+		} finally {
+			env.restore();
+			holder("VIDEO").reset();
+		}
 	}
 
 	/** buildVideoClientFromEnv：env key 缺失时覆盖 L204。 */
