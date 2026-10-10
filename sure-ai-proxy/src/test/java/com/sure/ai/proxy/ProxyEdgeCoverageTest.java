@@ -18,6 +18,7 @@ package com.sure.ai.proxy;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -26,6 +27,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -130,6 +132,52 @@ public class ProxyEdgeCoverageTest {
 			.build();
 		HttpResponse<String> resp = this.http.send(req, HttpResponse.BodyHandlers.ofString());
 		assertEquals(401, resp.statusCode());
+	}
+
+	/** 无鉴权访问 /v1/embeddings → 401（覆盖 handleEmbeddings 的 tenant==null 分支）。 */
+	@Test
+	public void embeddingsWithoutAuthReturns401() throws Exception {
+		start(new ClientRegistry());
+		HttpRequest req = HttpRequest.newBuilder(URI.create(this.base + "/v1/embeddings"))
+			.header("Content-Type", "application/json")
+			.POST(HttpRequest.BodyPublishers.ofString("{\"input\":[\"hi\"]}"))
+			.build();
+		HttpResponse<String> resp = this.http.send(req, HttpResponse.BodyHandlers.ofString());
+		assertEquals(401, resp.statusCode());
+	}
+
+	/** {@link VirtualKeyAuth}：Bearer 后为空 token → null（覆盖空 token 分支）。 */
+	@Test
+	public void virtualKeyAuthEmptyTokenReturnsNull() {
+		VirtualKeyAuth auth = new VirtualKeyAuth(Map.of("sk-ok", "tenant1"));
+		assertEquals(null, auth.authenticate("Bearer "));
+		assertEquals("tenant1", auth.authenticate("Bearer sk-ok"));
+	}
+
+	/** {@link SureAiProxy#writeSse}：OutputStream 抛 IOException → IllegalStateException。 */
+	@Test
+	public void writeSseIOExceptionThrowsIllegalState() throws Exception {
+		java.io.OutputStream throwing = new java.io.FilterOutputStream(
+			new java.io.ByteArrayOutputStream()) {
+			@Override
+			public void write(int b) throws java.io.IOException {
+				throw new java.io.IOException("boom");
+			}
+
+			@Override
+			public void flush() throws java.io.IOException {
+				throw new java.io.IOException("boom");
+			}
+		};
+		java.lang.reflect.Method m = SureAiProxy.class
+			.getDeclaredMethod("writeSse", java.io.OutputStream.class, String.class);
+		m.setAccessible(true);
+		try {
+			m.invoke(null, throwing, "payload");
+			fail("expected IllegalStateException");
+		} catch (java.lang.reflect.InvocationTargetException e) {
+			assertTrue(e.getCause() instanceof IllegalStateException);
+		}
 	}
 
 	/** embeddings 请求体非 JSON → 400。 */

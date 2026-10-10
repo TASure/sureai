@@ -28,6 +28,7 @@ import java.util.Map;
 import org.junit.Test;
 
 import com.sure.ai.agent.event.AgentErrorEvent;
+import com.sure.ai.agent.event.AgentEvent;
 import com.sure.ai.agent.event.AgentEventSink;
 import com.sure.ai.agent.event.FinalAnswerEvent;
 import com.sure.ai.agent.event.StepCompletedEvent;
@@ -102,6 +103,35 @@ public class OtelCoverageExtraTest {
 			}
 		}
 		assertTrue(errorAttrFound);
+	}
+
+	/** 未知 AgentEvent 类型：resolveAgentId 返回 null，不抛异常（覆盖兜底 return null）。 */
+	@Test
+	public void unknownEventTypeDoesNotThrow() {
+		InMemorySpanExporter exporter = InMemorySpanExporter.create();
+		SdkTracerProvider tracerProvider = SdkTracerProvider.builder()
+			.addSpanProcessor(SimpleSpanProcessor.create(exporter))
+			.build();
+		Tracer tracer = tracerProvider.get("sureai-test");
+		AgentEventSink sink = new OtelAgentEventSink();
+		Span span = tracer.spanBuilder("run").startSpan();
+		try (Scope scope = span.makeCurrent()) {
+			sink.onEvent(new AgentEvent() {
+				@Override
+				public String type() {
+					return "unknown.event";
+				}
+
+				@Override
+				public long timestampEpochMs() {
+					return 1L;
+				}
+			});
+		} finally {
+			span.end();
+		}
+		List<SpanData> spans = exporter.getFinishedSpanItems();
+		assertEquals(1, spans.size());
 	}
 
 	/** blank operationName 回退 chat：成功耗时属性 operation.name=chat。 */

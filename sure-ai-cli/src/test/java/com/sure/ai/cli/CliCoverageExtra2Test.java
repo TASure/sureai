@@ -117,7 +117,36 @@ public class CliCoverageExtra2Test {
 		java.io.BufferedReader eof = new java.io.BufferedReader(
 			new java.io.InputStreamReader(new java.io.ByteArrayInputStream(new byte[0]),
 				StandardCharsets.UTF_8));
-		// 通过 Unsafe 写入 static final 字段（绕过 final 检查）。
+		replaceStdin(eof);
+
+		AiClient client = new BothClient();
+		ClientFactory factory = global -> new Prepared(null, client, "m");
+		CliRunner runner = new CliRunner(this.out, factory);
+		int code = runner.run(new String[] { "repl" });
+		assertEquals(0, code);
+		assertTrue(output().contains("sureai repl"));
+	}
+
+	/** readStdinLine：STDIN.readLine 抛 IOException → 返回 null（覆盖 catch 分支）。 */
+	@Test
+	public void readStdinLineIOExceptionReturnsNull() throws Exception {
+		java.io.BufferedReader throwing = new java.io.BufferedReader(
+			new java.io.StringReader("")) {
+			@Override
+			public String readLine() throws java.io.IOException {
+				throw new java.io.IOException("stdin-boom");
+			}
+		};
+		replaceStdin(throwing);
+		java.lang.reflect.Method m = CliRunner.class
+			.getDeclaredMethod("readStdinLine");
+		m.setAccessible(true);
+		Object result = m.invoke(null);
+		assertEquals(null, result);
+	}
+
+	/** 通过 Unsafe 写入 static final STDIN 字段。 */
+	private static void replaceStdin(java.io.BufferedReader reader) throws Exception {
 		java.lang.reflect.Field unsafeField = Class.forName("sun.misc.Unsafe")
 			.getDeclaredField("theUnsafe");
 		unsafeField.setAccessible(true);
@@ -130,14 +159,7 @@ public class CliCoverageExtra2Test {
 			.getMethod("staticFieldOffset", java.lang.reflect.Field.class).invoke(unsafe, stdinField);
 		unsafe.getClass()
 			.getMethod("putObject", Object.class, long.class, Object.class)
-			.invoke(unsafe, base, offset, eof);
-
-		AiClient client = new BothClient();
-		ClientFactory factory = global -> new Prepared(null, client, "m");
-		CliRunner runner = new CliRunner(this.out, factory);
-		int code = runner.run(new String[] { "repl" });
-		assertEquals(0, code);
-		assertTrue(output().contains("sureai repl"));
+			.invoke(unsafe, base, offset, reader);
 	}
 
 	/** RAG：显式 --embedding-model 跳过默认模型推导。 */

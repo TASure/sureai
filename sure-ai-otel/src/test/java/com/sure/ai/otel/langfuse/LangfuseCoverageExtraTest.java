@@ -149,6 +149,24 @@ public class LangfuseCoverageExtraTest {
 		c.onRetry("/x", 1, 429);
 	}
 
+	/** onRetry enabled 但无在途调用：state==null 空操作（覆盖 state==null return 分支）。 */
+	@Test
+	public void retryEnabledWithoutStartNoop() {
+		LangfuseMetricsCollector c = new LangfuseMetricsCollector(true,
+			ev -> CompletableFuture.completedFuture(null), null);
+		c.onRetry("/x", 1, 429);
+	}
+
+	/** onRetry 有在途调用：追加 retry 事件到 batch（覆盖 state!=null 分支）。 */
+	@Test
+	public void retryWithStartAddsRetryEvent() {
+		LangfuseMetricsCollector c = new LangfuseMetricsCollector(true,
+			ev -> CompletableFuture.completedFuture(null), null);
+		c.onRequestStart("/x");
+		c.onRetry("/x", 1, 429);
+		c.onRequestSuccess("/x", 200, 1);
+	}
+
 	/** finish 时 sender 抛异常：被吞咽并记 warning，不影响主流程。 */
 	@Test
 	public void finishSenderErrorSwallowed() {
