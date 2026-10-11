@@ -152,6 +152,11 @@ public class ApprovalEdgeTest {
 			assertEquals(ApprovalStatus.TIMEOUT, d.status());
 		} finally {
 			killer.interrupt();
+			// 清除当前线程残留的中断标志：TimeoutApprovalHandler 捕获
+			// InterruptedException 时会 Thread.currentThread().interrupt() 重新置位，
+			// 残留标志会使 JUnit 同线程后续测试的 future.get 立即抛 InterruptedException，
+			// 污染断言（如 testTimeoutHandlerPropagatesDelegateFailure 的 ExecutionException 分支）。
+			Thread.interrupted();
 		}
 	}
 }

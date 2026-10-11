@@ -43,7 +43,15 @@ jobs:
         # （JDK25/macos/windows）跳过 jacoco 插桩——JDK25 的 HttpClient/字节码实现差异
         # 会导致个别模块行探测差异（如 OllamaClient 短报文路径）误报门禁失败，
         # 矩阵价值是验证测试跨环境通过，覆盖率由主环境统一把关。
-        run: mvn -B verify ${{ (matrix.java == '21' && matrix.os == 'ubuntu-latest') && '' || '-Djacoco.skip=true' }}
+        # 统一 shell: bash：windows 默认 pwsh 调用 mvn.cmd 时会把 -Dkey=value 参数
+        # 拆成 "-Dkey" + "=value"（Unknown lifecycle phase），bash 无此问题。
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == "ubuntu-latest" && "${{ matrix.java }}" == "21" ]]; then
+            mvn -B verify
+          else
+            mvn -B verify -Djacoco.skip=true
+          fi
 
       - name: Upload JaCoCo coverage report
         if: matrix.java == '21'
