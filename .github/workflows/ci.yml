@@ -39,7 +39,11 @@ jobs:
           cache: maven
 
       - name: Build, test and verify
-        run: mvn -B verify
+        # 覆盖率门禁（jacoco check）仅在 JDK21 + ubuntu 主环境执行；矩阵其他环境
+        # （JDK25/macos/windows）跳过 jacoco 插桩——JDK25 的 HttpClient/字节码实现差异
+        # 会导致个别模块行探测差异（如 OllamaClient 短报文路径）误报门禁失败，
+        # 矩阵价值是验证测试跨环境通过，覆盖率由主环境统一把关。
+        run: mvn -B verify ${{ (matrix.java == '21' && matrix.os == 'ubuntu-latest') && '' || '-Djacoco.skip=true' }}
 
       - name: Upload JaCoCo coverage report
         if: matrix.java == '21'
