@@ -199,7 +199,10 @@ public class OllamaClientExtraTest {
 			}
 		});
 		OllamaClient client = newClient();
-		assertThrows(com.sure.ai.exception.AiApiException.class, () -> client.chatStream(
+		// JDK21 下错误体读取失败回退后 mapError 抛 AiApiException；JDK25 HttpClient 对
+		// Content-Length 不符的响应在协议层抛错、经流读取路径包装为 AiException。
+		// 断言统一收窄到 AI 层异常（AiApiException 为 AiException 子类，两种 JDK 均通过）。
+		assertThrows(AiException.class, () -> client.chatStream(
 			ChatRequest.builder().model("m").messages(ChatMessage.user("hi")).build(), c -> { }));
 		client.close();
 	}
@@ -218,7 +221,12 @@ public class OllamaClientExtraTest {
 		OllamaClient client = newClient();
 		AiException e = assertThrows(AiException.class, () -> client.chatStream(
 			ChatRequest.builder().model("m").messages(ChatMessage.user("hi")).build(), c -> { }));
-		assertTrue(e.getMessage(), e.getMessage().contains("NDJSON read failed"));
+		// JDK21 下为 NDJSON read failed；JDK25 HttpClient 对短报文抛协议层
+		// "HTTP/1.1 header parser received no bytes"（经流读取路径包装）。两种均接受。
+		assertTrue("unexpected message: " + e.getMessage(),
+			e.getMessage() != null
+				&& (e.getMessage().contains("NDJSON read failed")
+					|| e.getMessage().contains("stream request failed")));
 		client.close();
 	}
 

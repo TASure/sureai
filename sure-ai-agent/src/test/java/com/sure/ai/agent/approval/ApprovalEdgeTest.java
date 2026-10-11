@@ -107,10 +107,14 @@ public class ApprovalEdgeTest {
 
 	@Test
 	public void testTimeoutHandlerInterruptedWhileWaiting() throws Exception {
-		// delegate 永远阻塞；50ms 后中断当前线程 → future.get 抛 InterruptedException
+		// delegate 永远阻塞；确认其已启动后，另一线程中断当前等待中的主线程 →
+		// future.get 抛 InterruptedException → 返回 TIMEOUT 决定。
+		// 用 CountDownLatch 同步 delegate 启动 + 300ms 缓冲余量，消除跨 OS 调度时序差异。
+		java.util.concurrent.CountDownLatch started = new java.util.concurrent.CountDownLatch(1);
 		ApprovalHandler blocking = new ApprovalHandler() {
 			@Override
 			public ApprovalDecision request(ApprovalRequest request) {
+				started.countDown();
 				try {
 					Thread.sleep(5000);
 				} catch (InterruptedException e) {
@@ -127,15 +131,27 @@ public class ApprovalEdgeTest {
 		TimeoutApprovalHandler timeout = new TimeoutApprovalHandler(blocking,
 				Duration.ofMillis(5000));
 		Thread self = Thread.currentThread();
-		java.util.concurrent.ScheduledExecutorService scheduler =
-				java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
-		scheduler.schedule(self::interrupt, 60, java.util.concurrent.TimeUnit.MILLISECONDS);
+		Thread killer = new Thread(() -> {
+			try {
+				// 等 delegate 真正启动（= future 已提交、主线程即将进入 get）
+				if (!started.await(2, java.util.concurrent.TimeUnit.SECONDS)) {
+					return;
+				}
+				// 缓冲余量：确保主线程已进入 future.get 的阻塞等待
+				Thread.sleep(300);
+				self.interrupt();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		});
+		killer.setDaemon(true);
+		killer.start();
 		try {
 			ApprovalDecision d = timeout.request(
 					ApprovalRequest.of("a", "pay", args(), "x", true));
 			assertEquals(ApprovalStatus.TIMEOUT, d.status());
 		} finally {
-			scheduler.shutdownNow();
+			killer.interrupt();
 		}
 	}
 }

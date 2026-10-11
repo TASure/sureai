@@ -119,7 +119,10 @@ jobs:
       - name: Native-image compile
         run: |
           mkdir -p sure-ai-cli/target/native-image
-          native-image -jar sure-ai-cli/target/sure-ai-cli-2.2.0-SNAPSHOT.jar \
+          # fat jar 动态定位（排除 original-/sources/javadoc 变体），避免版本号硬编码随 bump 失效
+          JAR=$(ls sure-ai-cli/target/*.jar | grep -v -E 'original-|sources|javadoc' | head -1)
+          echo "native-image input jar: $JAR"
+          native-image -jar "$JAR" \
             -H:Name=sure-ai-cli -H:Path=sure-ai-cli/target/native-image
 
       # 冒烟：list 子命令零网络、零 API key，验证 native 二进制可启动 + ProviderRegistry
