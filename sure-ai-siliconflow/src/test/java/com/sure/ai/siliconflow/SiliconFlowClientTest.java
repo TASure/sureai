@@ -348,6 +348,11 @@ public class SiliconFlowClientTest {
 		m.setAccessible(true);
 		Map<String, String> inner = (Map<String, String>) m.get(unmod);
 		inner.put(key, value);
+		// 个别平台（如 Windows）System.getenv 与反射表分离时注入不生效 → 标记跳过
+		if (!java.util.Objects.equals(System.getenv(key), value)) {
+			throw new org.junit.AssumptionViolatedException(
+				"环境变量注入未生效（" + key + "），当前平台跳过测试");
+		}
 	}
 
 	/** 反射删除环境变量。 */
