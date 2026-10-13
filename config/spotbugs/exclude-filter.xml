@@ -375,4 +375,18 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- GatewayUtil 暴露/暂存共享有状态组件（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         registry() 返回的 ClientRegistry 设计上即供调用方 register/remove 的可变共享注册表
+         （静态入口的注册便捷性是 API 本意），Builder 为一次性装配器，暂存 registry /
+         tenantManager 等调用方组件是按引用共享惯例，与 GatewayClient / FrameworkUtil.Builder
+         同类；调用方负责这些组件的生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.gateway.GatewayUtil"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="~com.sure.ai.gateway.GatewayUtil\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>
