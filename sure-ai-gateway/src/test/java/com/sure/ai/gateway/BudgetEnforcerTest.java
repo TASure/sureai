@@ -16,6 +16,7 @@
 package com.sure.ai.gateway;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -158,6 +159,105 @@ public class BudgetEnforcerTest {
 		assertEquals(0.0, u.costLimit(), 1e-9);
 		assertEquals(0L, u.tokenLimit());
 		assertEquals(0, u.qpsLimit());
+	}
+
+	/**
+	 * maxConcurrency=2 的租户前两次 tryAcquireConcurrency 放行、第三次已满返回 false。
+	 */
+	@Test
+	public void testConcurrencyLimitAllowsUpToMax() {
+		Fixture f = fixture(TenantConfig.builder().maxConcurrency(2).build());
+		assertTrue(f.enforcer.tryAcquireConcurrency("t1"));
+		assertTrue(f.enforcer.tryAcquireConcurrency("t1"));
+		assertFalse("并发已满应返回 false", f.enforcer.tryAcquireConcurrency("t1"));
+	}
+
+	/**
+	 * releaseConcurrency 对称释放后，被占满的并发位可再次 acquire。
+	 */
+	@Test
+	public void testConcurrencyReleaseThenAcquireAgain() {
+		Fixture f = fixture(TenantConfig.builder().maxConcurrency(1).build());
+		assertTrue(f.enforcer.tryAcquireConcurrency("t1"));
+		assertFalse(f.enforcer.tryAcquireConcurrency("t1"));
+		f.enforcer.releaseConcurrency("t1");
+		assertTrue("释放后应可再次获取", f.enforcer.tryAcquireConcurrency("t1"));
+	}
+
+	/**
+	 * 未配置租户的 tryAcquireConcurrency 恒 true、releaseConcurrency 为 no-op。
+	 */
+	@Test
+	public void testUnknownTenantConcurrencyAlwaysTrue() {
+		Fixture f = fixture(TenantConfig.builder().maxConcurrency(2).build());
+		assertTrue(f.enforcer.tryAcquireConcurrency("ghost"));
+		assertTrue(f.enforcer.tryAcquireConcurrency("ghost"));
+		f.enforcer.releaseConcurrency("ghost");
+	}
+
+	/**
+	 * maxConcurrency=0（不限）的租户不建闸门，任意多次 acquire 恒 true。
+	 */
+	@Test
+	public void testUnlimitedConcurrencyTenantAlwaysTrue() {
+		Fixture f = fixture(TenantConfig.builder().maxConcurrency(0).build());
+		for (int i = 0; i < 5; i++) {
+			assertTrue(f.enforcer.tryAcquireConcurrency("t1"));
+		}
+		f.enforcer.releaseConcurrency("t1");
+	}
+
+	/**
+	 * tenantId 为 null / 空白时并发检查直接放行，不抛异常。
+	 */
+	@Test
+	public void testBlankTenantConcurrencyUnrestricted() {
+		Fixture f = fixture(TenantConfig.builder().maxConcurrency(1).build());
+		assertTrue(f.enforcer.tryAcquireConcurrency(null));
+		assertTrue(f.enforcer.tryAcquireConcurrency("  "));
+		f.enforcer.releaseConcurrency(null);
+		f.enforcer.releaseConcurrency("  ");
+	}
+
+	/**
+	 * 并发闸门与 checkBeforeCall 的 QPS/预算检查互不干扰：占满并发位不影响预算检查通过。
+	 */
+	@Test
+	public void testConcurrencyIndependentOfBudgetCheck() {
+		Fixture f = fixture(TenantConfig.builder().maxConcurrency(1).build());
+		// 占满唯一并发位
+		assertTrue(f.enforcer.tryAcquireConcurrency("t1"));
+		assertFalse(f.enforcer.tryAcquireConcurrency("t1"));
+		// checkBeforeCall 仍按既有语义正常放行（预算/QPS 未受限）
+		f.enforcer.checkBeforeCall("t1", 0.0);
+		f.enforcer.recordAfterCall("t1", "m", TokenUsage.of(1, 1, 2), 0.0);
+		assertEquals(1, f.enforcer.currentUsage("t1").requestsInWindow());
+	}
+
+	/**
+	 * 同租户改配 maxConcurrency 后新闸门按新上限重建生效（旧闸门被替换）。
+	 */
+	@Test
+	public void testConcurrencyRebuiltOnConfigChange() {
+		Fixture f = fixture(TenantConfig.builder().maxConcurrency(1).build());
+		assertTrue(f.enforcer.tryAcquireConcurrency("t1"));
+		assertFalse(f.enforcer.tryAcquireConcurrency("t1"));
+		// 扩到 3：下次准入按新上限重建闸门
+		f.mgr.configureTenant("t1", TenantConfig.builder().maxConcurrency(3).build());
+		assertTrue(f.enforcer.tryAcquireConcurrency("t1"));
+		assertTrue(f.enforcer.tryAcquireConcurrency("t1"));
+		assertTrue(f.enforcer.tryAcquireConcurrency("t1"));
+		assertEquals(3, f.enforcer.concurrencyLimit("t1"));
+	}
+
+	/**
+	 * concurrencyLimit 返回当前配置上限；未配置租户返回 0。
+	 */
+	@Test
+	public void testConcurrencyLimitQuery() {
+		Fixture f = fixture(TenantConfig.builder().maxConcurrency(4).build());
+		assertEquals(4, f.enforcer.concurrencyLimit("t1"));
+		assertEquals(0, f.enforcer.concurrencyLimit("ghost"));
 	}
 
 	/** 测试夹具。 */

@@ -253,6 +253,19 @@ public final class ClientRegistry {
 		return out;
 	}
 
+	/**
+	 * 返回全部注册候选（含不健康实例），供探活与健康视图枚举。
+	 *
+	 * @return 全部候选列表
+	 */
+	public List<ClientCandidate> candidates() {
+		List<ClientCandidate> out = new ArrayList<>();
+		registry.forEach((platform, m) -> m.forEach((instanceId, e) ->
+				out.add(new ClientCandidate(e.client, platform, instanceId,
+						e.capabilities, e.weight, e.defaultModel))));
+		return out;
+	}
+
 	private Entry lookup(String platform, String instanceId) {
 		Map<String, Entry> m = registry.get(platform);
 		return m == null ? null : m.get(instanceId);

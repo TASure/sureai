@@ -183,17 +183,17 @@ public class GatewayCoverageExtraTest {
 	@Test
 	public void tenantConfigValidationRejectsNegative() {
 		assertThrows(IllegalArgumentException.class,
-			() -> new TenantConfig(-1, 0, 0, null));
+			() -> new TenantConfig(-1, 0, 0, null, 0));
 		assertThrows(IllegalArgumentException.class,
-			() -> new TenantConfig(0, -1, 0, null));
+			() -> new TenantConfig(0, -1, 0, null, 0));
 		assertThrows(IllegalArgumentException.class,
-			() -> new TenantConfig(0, 0, -1, null));
+			() -> new TenantConfig(0, 0, -1, null, 0));
 	}
 
 	/** null budgetPeriod 回退默认 1 天。 */
 	@Test
 	public void tenantConfigNullPeriodFallback() {
-		TenantConfig cfg = new TenantConfig(0, 0, 0, null);
+		TenantConfig cfg = new TenantConfig(0, 0, 0, null, 0);
 		assertEquals(Duration.ofDays(1), cfg.budgetPeriod());
 	}
 
@@ -507,7 +507,7 @@ public class GatewayCoverageExtraTest {
 	@Test
 	public void budgetEnforcerTokenLimitExceeded() {
 		TenantManager tm = new TenantManager();
-		tm.configureTenant("t1", new TenantConfig(0, 100L, 0, Duration.ofDays(1)));
+		tm.configureTenant("t1", new TenantConfig(0, 100L, 0, Duration.ofDays(1), 0));
 		BudgetEnforcer e = newEnforcer(tm, emptyAggregator());
 		e.recordAfterCall("t1", "m", TokenUsage.of(50, 50, 100), 0.0);
 		assertThrows(AiBudgetExceededException.class, () -> e.checkBeforeCall("t1", 0.0));
@@ -517,7 +517,7 @@ public class GatewayCoverageExtraTest {
 	@Test
 	public void budgetEnforcerCostLimitExceeded() {
 		TenantManager tm = new TenantManager();
-		tm.configureTenant("t2", new TenantConfig(1.0, 0, 0, Duration.ofDays(1)));
+		tm.configureTenant("t2", new TenantConfig(1.0, 0, 0, Duration.ofDays(1), 0));
 		BudgetEnforcer e = newEnforcer(tm, emptyAggregator());
 		e.recordAfterCall("t2", "m", TokenUsage.of(0, 0, 0), 2.0);
 		assertThrows(AiBudgetExceededException.class, () -> e.checkBeforeCall("t2", 0.0));
@@ -527,7 +527,7 @@ public class GatewayCoverageExtraTest {
 	@Test
 	public void budgetEnforcerQpsLimitExceeded() {
 		TenantManager tm = new TenantManager();
-		tm.configureTenant("t3", new TenantConfig(0, 0, 1, Duration.ofDays(1)));
+		tm.configureTenant("t3", new TenantConfig(0, 0, 1, Duration.ofDays(1), 0));
 		BudgetEnforcer e = newEnforcer(tm, emptyAggregator());
 		e.checkBeforeCall("t3", 0.0);
 		assertThrows(AiBudgetExceededException.class, () -> e.checkBeforeCall("t3", 0.0));

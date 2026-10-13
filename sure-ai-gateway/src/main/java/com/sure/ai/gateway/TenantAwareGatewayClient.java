@@ -19,6 +19,7 @@ import java.util.function.Consumer;
 
 import com.sure.ai.client.AiClient;
 import com.sure.ai.cost.CostCalculator;
+import com.sure.ai.exception.AiBudgetExceededException;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
@@ -36,9 +37,13 @@ import com.sure.ai.model.TokenUsage;
  * <ol>
  *   <li>取到 tenantId 后，调用前 {@link BudgetEnforcer#checkBeforeCall} 校验成本/token/QPS，
  *       超限直接抛 {@link com.sure.ai.exception.AiBudgetExceededException}，不触达下游；</li>
+ *   <li>再 {@link BudgetEnforcer#tryAcquireConcurrency} 获取并发许可，已满同样抛
+ *             {@link com.sure.ai.exception.AiBudgetExceededException}；</li>
  *   <li>调用下游 {@code delegate.chat}；</li>
  *   <li>成功后用可选的 {@link CostCalculator} 把实际 {@link TokenUsage} 折算为 USD 成本，
- *       {@link BudgetEnforcer#recordAfterCall} 入账（同时写入共享 {@code CostAggregator}）。</li>
+ *       {@link BudgetEnforcer#recordAfterCall} 入账（同时写入共享 {@code CostAggregator}）；</li>
+ *   <li>{@code finally} 中 {@link BudgetEnforcer#releaseConcurrency} 对称释放并发许可，
+ *       即使下游抛异常也释放。</li>
  * </ol>
  *
  * <p>未带 tenantId 的请求直接透传，不做任何管控。流式调用因分片不带累计用量，只做事前检查、
@@ -90,32 +95,62 @@ public final class TenantAwareGatewayClient implements AiClient {
 	@Override
 	public ChatResponse chat(ChatRequest request) {
 		String tenantId = tenantIdOf(request);
+		boolean acquired = false;
 		if (tenantId != null) {
 			this.enforcer.checkBeforeCall(tenantId, 0.0d);
+			acquired = acquireConcurrencyOrThrow(tenantId);
 		}
-		ChatResponse response = this.delegate.chat(request);
-		if (tenantId != null) {
-			String model = response.model() != null ? response.model() : request.model();
-			TokenUsage usage = response.usage();
-			double cost = this.costCalculator == null || usage == null
-					? 0.0d : this.costCalculator.calculate(model, usage);
-			this.enforcer.recordAfterCall(tenantId, model, usage, cost);
+		try {
+			ChatResponse response = this.delegate.chat(request);
+			if (tenantId != null) {
+				String model = response.model() != null ? response.model() : request.model();
+				TokenUsage usage = response.usage();
+				double cost = this.costCalculator == null || usage == null
+						? 0.0d : this.costCalculator.calculate(model, usage);
+				this.enforcer.recordAfterCall(tenantId, model, usage, cost);
+			}
+			return response;
+		} finally {
+			if (acquired) {
+				this.enforcer.releaseConcurrency(tenantId);
+			}
 		}
-		return response;
 	}
 
 	@Override
 	public void chatStream(ChatRequest request, Consumer<ChatStreamChunk> consumer) {
 		String tenantId = tenantIdOf(request);
+		boolean acquired = false;
 		if (tenantId != null) {
 			this.enforcer.checkBeforeCall(tenantId, 0.0d);
+			acquired = acquireConcurrencyOrThrow(tenantId);
 		}
-		this.delegate.chatStream(request, consumer);
+		try {
+			this.delegate.chatStream(request, consumer);
+		} finally {
+			if (acquired) {
+				this.enforcer.releaseConcurrency(tenantId);
+			}
+		}
 	}
 
 	@Override
 	public void close() {
 		this.delegate.close();
+	}
+
+	/**
+	 * 获取租户并发许可；已满则抛 {@link AiBudgetExceededException}（消息含 max 值）。
+	 *
+	 * @param tenantId 租户 ID
+	 * @return 成功获取到许可恒返回 true（调用方负责在 finally 中释放）
+	 */
+	private boolean acquireConcurrencyOrThrow(String tenantId) {
+		if (!this.enforcer.tryAcquireConcurrency(tenantId)) {
+			throw new AiBudgetExceededException(tenantId, "Tenant '" + tenantId
+					+ "' exceeded concurrency limit: max=" + this.enforcer.concurrencyLimit(tenantId));
+		}
+		return true;
 	}
 
 	/**
