@@ -25,7 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TenantConfig` 由 4 组件扩为 5 组件（新增 `maxConcurrency`，默认 0=不限）：向后兼容——旧构造器 / Builder 行为不变，`maxConcurrency` 默认 0 不改变既有租户配置；未配置并发上限时 `tryAcquireConcurrency` 恒返回 true、不建闸门。
 
 ### 测试
-- gateway 模块测试 **100 → 194（+94）**，模块行覆盖 **98.97%**；全工程合计 **1555** 个测试（2.6.0 基线 1461，本批 +94），`mvn -B verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 门禁零违规）。
+- gateway 模块测试 **100 → 194（+94）**。
+- 全工程合计 **2814** 个测试（按 `mvn -B clean verify -Dgpg.skip=true` 逐模块 surefire 实测口径；较 2.6.0 发布点 commit 80ffa50 的源码 `@Test` 基线 **2720** 增 **+94**，增量全部来自网关模块）。
+- `mvn -B clean verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 门禁零违规）；gateway 模块行覆盖 **98.97%（1062/1073）**，全模块均 ≥98%（最低 rag 98.09%）。
 
 ## [2.6.0] - Unreleased
 
