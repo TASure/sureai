@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - Unreleased
+
+本版本线为「网关生产化」专项：在 `sure-ai-gateway` 既有「多供应商注册 → 路由 → 故障转移 → 租户配额」之上，补齐上线生产环境所需的横切能力——按 client 维度的三态熔断、健康探活 SPI、请求级超时装饰、流式故障转移边界、网关指标与概要审计、租户并发上限，以及一个对标各平台 `XxxUtil` 的静态装配入口 `GatewayUtil`。全部为可选装配，未注入这些组件时行为与既有版本完全一致；网关模块只依赖 core + cost，零第三方运行期依赖不变。
+
+### Added
+- **熔断器（`com.sure.ai.gateway`）**：`CircuitBreakerConfig` record（`failureThreshold`/`windowSize`/`openTimeoutMs`/`halfOpenPermittedCalls`，`defaults()`=3/5/10000/1，`builder()`）+ `CircuitBreakerRegistry`（`allowRequest`/`onSuccess`/`onFailure`/`snapshot`/`snapshots`/`size`/`reset`/`defaults()`），按 `(platform,instanceId)` 维度懒创建 core 三态熔断器。
+- **健康探活**：`HealthProbe` SPI（`boolean isHealthy(AiClient,String,String)`）+ `DefaultHealthProbe`（恒 true，默认不额外探活）；`HealthMonitor`（`start`/`stop` 幂等、`runOnce` 同步一轮、`healthView()`，probe false 或抛异常 → `markUnhealthy` 冷却）；`ClientHealthView` record（`platform`/`instanceId`/`healthy`/`circuitState`/`probeHealthy`/`lastProbeAtMs`）。
+- **请求超时装饰**：`GatewayTimeoutDecorator`（构造 `(delegate, timeoutMs)`；per-request 覆盖键 `EXTRA_TIMEOUT_MS="timeoutMs"` 在 extra；超时抛 `AiTimeoutException`，`FailoverConfig` 默认可转移 → 自动触发 failover；流式超时丢弃迟到分片；`close()` 先关 delegate 再 `shutdownNow`）。
+- **流式故障转移边界**：`GatewayClient.chatStream` 首段投递前异常可正常转移下一候选；首段已投递后异常原样透传不转移（避免内容重复）。
+- **观测与审计**：`GatewayMetrics`（`onRequestStart`/`onRequestSuccess`/`onRequestFailure`/`onCircuitTrip`/`onCircuitReject`/`recordCost`/`snapshot`/`reset`；快照含 totalRequests/successCount/failureCount/circuitBreakerTrips/circuitBreakerRejections/avgLatencyMs/p50Ms/p95Ms/p99Ms/estimatedCostUsd，与 core `AiMetrics`/`MetricsCollector` 体系同构）；`AuditEvent`（requestId/method/model/tenantId/platform/instanceId/status(SUCCESS|FAILED|FAILED_OVER|REJECTED|TIMEOUT)/durationMs/estimatedCostUsd/detail/timestampMs）+ `GatewayAuditLogger`（JUL 一行概要、不落全文、`log(event)`/`log(List)`）。
+- **租户并发限流**：`TenantConfig` 新增第 5 组件 `maxConcurrency`（0=不限）+ `limitedConcurrency()`；`BudgetEnforcer.tryAcquireConcurrency(tenantId)`/`releaseConcurrency(tenantId)`（每租户公平 `Semaphore`，超上限返回 false 由调用方抛 `AiBudgetExceededException`）；QPS 复用 core `RateLimiter` 令牌桶（`checkBeforeCall` 既有）；`TenantAwareGatewayClient` 自动配对 acquire/release（chat 与 chatStream 均 finally 释放）。
+- **静态入口 `GatewayUtil`**：final 类 + `SingletonHolder` 懒加载单例（对标 `OpenAiUtil`）：`getInstance()`/`init(GatewayUtil)`/`reset()`；`registry()`（注册 client）、`gateway()`（复合 `AiClient`，装配租户层时包 `TenantAwareGatewayClient`）、`metrics()`（观测快照）、`startHealthMonitor()`/`stopHealthMonitor()`（幂等）。Builder：`registry`/`strategy`/`failoverConfig`/`circuitBreakers`/`circuitBreakerConfig`/`metrics`/`auditLogger`/`costCalculator`/`tenant(TenantManager,CostAggregator,BudgetEnforcer)`/`healthProbe`+`healthIntervalMs`，`build()`→`GatewayUtil`。
+- **文档**：`docs/gateway.md` 新增「生产化能力（v2.7.0 新增）」章节（熔断 / 探活 / 超时 / 流式 failover / 观测审计 / 租户并发 / GatewayUtil 快速上手 / 健康视图示例 8 小节），README 中英文特性区同步生产化能力清单。
+
+### Changed
+- `GatewayClient` 构造器扩展为 7 参全量版（`registry, strategy, failoverConfig, circuitBreakers, metrics, auditLogger, costCalculator`）；旧 3 参（`registry, strategy, failoverConfig`）与 1 参（`registry`）构造器行为不变，不传熔断 / 指标 / 审计 / 成本时等价于既有版本。
+- 路由候选过滤叠加 OPEN 熔断过滤（被剔除者不调用、计 `onCircuitReject`，全部 OPEN → 快速失败异常消息含 `circuit breaker`）；流式 failover 以「首段是否已投递」为界——均为新增路径，不改变既有同步调用语义。
+- `TenantConfig` 由 4 组件扩为 5 组件（新增 `maxConcurrency`，默认 0=不限）：向后兼容——旧构造器 / Builder 行为不变，`maxConcurrency` 默认 0 不改变既有租户配置；未配置并发上限时 `tryAcquireConcurrency` 恒返回 true、不建闸门。
+
+### 测试
+- gateway 模块测试 **100 → 194（+94）**，模块行覆盖 **98.97%**；全工程合计 **1555** 个测试（2.6.0 基线 1461，本批 +94），`mvn -B verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 门禁零违规）。
+
 ## [2.6.0] - Unreleased
 
 本版本线为「文档导入器 + 向量库追平」专项：新增 `sure-ai-ingest` 文档导入模块（对标 LangChain4j 数据导入，已进 `sure-ai-all`/`sure-ai-bom` 聚合链），把「来源（本地文件 / 网络 URL）→ 纯文本 + 元数据」一站式收口；同时把 rag 外部向量库从 9 种追到 14 种（新增 PGVector / Typesense / Cassandra / MongoDB / Neo4j）。全部为 JDK 原生协议客户端、零第三方运行期依赖；各库鉴权与查询能力的支持子集在文档中如实标注。
