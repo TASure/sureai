@@ -68,6 +68,7 @@
         <module>sure-ai-proxy</module>
         <module>sure-ai-micrometer</module>
         <module>sure-ai-otel</module>
+        <module>sure-ai-evals</module>
         <module>sure-ai-spring-boot-starter</module>
         <module>sure-ai-quarkus-extension</module>
         <module>sure-ai-quarkus-extension-deployment</module>
@@ -178,6 +179,11 @@
             <dependency>
                 <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-otel</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-evals</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
