@@ -51,6 +51,7 @@
 - **全链路异步 / 虚拟线程（v1.9.0）**：`AiClient` 新增 `chatAsync`/`chatStreamAsync` default 方法族，`AsyncClients` 一行把任意同步 Client 包装为 `AsyncAiClient`/`AsyncEmbeddingClient`/`AsyncImageClient`/`AsyncVideoClient`/`AsyncAudioClient`，统一跑在 JDK 21 虚拟线程上（`AsyncExecutors.virtualThreadExecutor()`），`CompletableFuture` 可取消、异常原样透传。见 [docs/async.md](docs/async.md)
 - **OpenTelemetry GenAI 桥接（v1.9.0）**：`sure-ai-otel` 把 `MetricsCollector`/`RetryListener`/`AgentEventSink` 桥接为 OTel GenAI 语义约定指标（`gen_ai.client.operation.duration` / `input_tokens` / `output_tokens`），仅依赖 OTel API（provided），SDK/导出器由使用方自备；传 null MeterProvider 即空操作无感降级。见 [docs/observability.md](docs/observability.md#opentelemetry-genai-桥接可选模块)
 - **Langfuse 原生导出（v2.4.0）**：`sure-ai-otel` 的 `langfuse` 子包零依赖直连 Langfuse Ingestion API——`LangfuseExporters.metricsCollectorFromEnv()` 一行把一次聊天调用上报为 `trace` + `generation`（耗时/model/token 用量，重试挂为 event），HTTP Basic `base64(pk:sk)` 认证，密钥缺失即空操作无感降级。见 [docs/observability.md](docs/observability.md#langfuse-原生导出v240)
+- **通用评估全链路（v2.8.0）**：`sure-ai-evals` 新模块（仅依赖 core、零第三方运行期依赖，已进 `sure-ai-all`/`sure-ai-bom`）——**LLM-as-judge 通用化**（`LlmJudgeMetric` 四模式：BINARY / 1~5 分量表 / 百分制 / pairwise，rubric 可配、裁判失败容错为 NaN）+ 确定性指标（exact_match / contains / regex / JSON Schema 合法性）+ 语义指标（embedding 余弦相似度）+ 运行指标（延迟 / token 成本）；**数据集** CSV/JSONL 手写加载器（引号/转义/BOM/坏行容错）；`EvalRunner` 批量并发执行（失败用例与指标双隔离，聚合 pass rate / p50 / p95 / 总 token）；**JSON/Markdown/HTML 三格式报告**（HTML 自包含无外链）；**CI 阈值断言**（`EvalThreshold`/`EvalAssertions` 不达标抛 AssertionError）；**录制回放与 TraceRegression**（`RecordingClient` JSONL 落盘、回放零网络、基线 vs 当前容差回归）；**A/B 对比**（`EvalComparison` 逐指标差值 + pairwise 胜平负）；可观测增量——OTel `eval.evaluation` span 与 Langfuse scores（score-create）。与 RAG 专用评估（faithfulness 等）互补不依赖。见 [docs/evals.md](docs/evals.md)
 - **命令行工具（v2.0.0）**：`sure-ai-cli` 零依赖终端直接问答——`chat` / `stream` / `rag`（本地文档）/ `list` / `repl` 五子命令，一键切换全部 23 个平台；可打 fat jar，亦可 GraalVM native-image 编译为单文件可执行。不写一行 Java 即可体验全库。见 [docs/cli.md](docs/cli.md)
 - **Maven 工程脚手架（v2.0.0）**：`sure-ai-archetype` 一条 `mvn archetype:generate` 生成带 BOM import、单平台 Client 调用、README 与 .gitignore 的 Hello World 工程，platform 属性可切换 23 平台。见 [docs/COOKBOOK.md](docs/COOKBOOK.md)
 - **GraalVM native-image AOT 加固（v2.0.0）**：全库补齐 `META-INF/native-image/**` 反射 / 资源 / 编译参数元数据（reflect-config 共 42 条：core 30 + agent 8 + mcp-server 4），fat jar 自动内联，native 编译免手写配置；`NativeImageMetadataTest` 守卫 core model 包不遗漏。见 [docs/native-image.md](docs/native-image.md)
@@ -107,6 +108,8 @@
 编排层：`sure-ai-framework`（v2.5.0 声明式编排——`FrameworkUtil` 接口即服务 + Advisor 链四件套 + `SemanticCache` 语义缓存；仅依赖 core，已进 `sure-ai-all`/`sure-ai-bom` 聚合链，见 [docs/framework.md](docs/framework.md)）。
 
 数据导入层：`sure-ai-ingest`（v2.6.0 文档导入器——`FileSystemLoader`/`URLLoader` + `DocumentParser` SPI，内置 TXT/MD/HTML/PDF 全 JDK 支持，已进 `sure-ai-all`/`sure-ai-bom`；可选 `sure-ai-ingest-poi` 提供 DOCX/XLSX/PPTX，Apache POI 5.5.1 provided、仅进 bom 版本管理、不进运行期聚合链，见 [docs/ingest.md](docs/ingest.md)）。
+
+评估层：`sure-ai-evals`（v2.8.0 通用评估——CSV/JSONL 数据集 → 四类指标（确定性 / 语义 / LLM 裁判 / 运行指标）→ `EvalRunner` 批量并发 → JSON/Markdown/HTML 报告 → CI 阈值断言；`RecordingClient` 录制回放 + `TraceRegression` 基线回归；仅依赖 core、零第三方运行期依赖，与 RAG 专用评估互补，已进 `sure-ai-all`/`sure-ai-bom`，见 [docs/evals.md](docs/evals.md)）。
 
 应用层：`sure-ai-cli`（命令行直接问答：chat / stream / rag / list / repl，一键切换全部 23 个平台，可打 fat jar 并支持 [GraalVM native-image](docs/native-image.md)；不进入 `sure-ai-all` 聚合链，见 [docs/cli.md](docs/cli.md)）。
 
@@ -522,6 +525,7 @@ sure-ai-core          ← 公共模型/接口/HTTP/JSON（所有平台依赖此�
 sure-ai-rag           ← RAG 检索增强生成（依赖 core，与平台解耦）
 sure-ai-agent         ← Agent 编排 ReAct 多工具循环（依赖 core，与平台解耦）
 sure-ai-framework     ← 声明式编排 AiService 接口即服务 + Advisor 链 + SemanticCache（依赖 core，与平台解耦）
+sure-ai-evals         ← 通用评估：CSV/JSONL 数据集 + 指标 SPI（确定性/语义/LLM 裁判/运行指标）+ EvalRunner 批量执行 + 三格式报告 + CI 断言 + 录制回放回归（依赖 core，与平台解耦）
 sure-ai-micrometer    ← 可观测性 Micrometer 桥接（依赖 core，micrometer-core provided 不传递）
 sure-ai-otel          ← 可观测性 OpenTelemetry GenAI 桥接（依赖 core，otel-api provided 不传递）
 sure-ai-quarkus-extension(-deployment) ← Quarkus 自动装配扩展（双模块；core/平台零 Quarkus 依赖）

@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - Unreleased
+
+本版本线为「评估与可观测」专项：新增通用评估模块 `sure-ai-evals`（对标 Spring AI 2.0 / LangChain4j 评估能力），把「数据集 → 指标 → 批量执行 → 报告 → CI 阈值断言 → 录制回放回归」收口为一条链；并在 `sure-ai-otel` 增量补齐评估 run 的 OTel span 与 Langfuse scores 上报。新模块仅依赖 `sure-ai-core`、零第三方运行期依赖，与 RAG 专用评估（`com.sure.ai.rag.evaluation`）互补、互不依赖。全部为新增模块 / 新增路径，未改动任何既有模块公开签名，无既有行为破坏。
+
+### Added
+- **新模块 `sure-ai-evals`（包 `com.sure.ai.evals`，仅依赖 core，已注册进 parent / bom / all）**：
+  - **数据集**：`EvalCase`（id / 多轮 input / expected / tags / metadata / expectedTools）与 `EvalDataset` 不可变模型；`DatasetLoader` 接口（`load(Reader/InputStream/Path)`，UTF-8 含 BOM 容错）；`CsvDatasetLoader`（手写字符级解析：双引号包裹、字段内逗号/换行、`""` 转义、CRLF、空行跳过；表头别名 `input|question|prompt` / `expected|answer|reference` / `id` / `tags` / `expectedTools`，未识别列并入 metadata；坏行 `SKIP`/`FAIL` 策略）；`JsonlDatasetLoader`（逐行 JSON，input 字符串或消息数组，`metadata` 递归转 Map，坏行 `SKIP`/`FAIL`）。
+  - **指标 SPI**：`EvalMetric`（`name` / `evaluate(case,outcome,context)` / `passThreshold` 默认 1.0）；`MetricResult`（分数 clamp 到 [0,1]，NaN 表示不适用并在聚合中剔除）；`EvalContext`（run 级共享元数据）；`EvalOutcome`（实际响应 / 文本 / 耗时 / 异常）。
+  - **内置指标**：`LlmJudgeMetric`（四 `JudgeMode`——BINARY / SCALE_1_TO_5→`(n-1)/4` / SCORE_100→`/100` / PAIRWISE→A 胜 1.0/平 0.5/B 胜 0.0；rubric 模板占位符 `{input}/{expected}/{actual}`；裁判失败/空文本/不可解析默认 NaN，可 `onUnparseableDefaultScore` 给固定分）；`ExactMatchMetric`（空白归一化 + 可选忽略大小写）；`ContainsMetric`（子串 / 分隔切多子串 / allRequired / 忽略大小写）；`RegexMetric`（FIND/MATCHES，非法正则判 0 不抛出）；`JsonSchemaValidityMetric`（按目标类 Schema 结构化子集校验：required 存在 + 类型/枚举匹配，得分=通过数/应检数）；`EmbeddingSimilarityMetric`（cosine，默认阈值 0.8，零范数/空向量/调用失败→NaN）；`LatencyMetric`（≤target=1、≥limit=0、线性衰减，默认 1000/3000ms）；`TokenCostMetric`（total token 代理成本，默认 500/2000，缺 usage→NaN）。
+  - **执行与聚合**：`EvalRunner`（默认顺序、`concurrency(n)` 自建固定池随 close 关闭、`executorService` 注入外部池不关；单用例模型异常与单指标异常双重隔离；聚合每指标 mean/min/max/passRate/applicable/NaN、总 token、失败用例数、延迟 p50/p95）；`EvalUtil` 一站式静态入口（`dataset`/`csvLoader`/`jsonlLoader`/`runner`/`run`/`assertMeets`/`assertNoRegression` + 默认 runner 单例）；`EvalComparison`（两份报告逐指标均分差 + 逐用例逐指标 pairwise 胜/平/负）；`EvalRunListener` 用例级钩子扩展点；`EvalException` 统一运行期异常。
+  - **报告**：不可变 `EvalReport` / `CaseDetail` / `MetricStats`；三种写出器 `EvalJsonReportWriter`（NaN→JSON null）/ `EvalMarkdownReportWriter`（汇总表+失败清单+逐用例表，`|` 转义）/ `EvalHtmlReportWriter`（自包含单文件，内联 CSS、无外链、全量 HTML 转义）。
+  - **CI 断言**：`EvalThreshold`（`putMean` / `putPassRate` 双维阈值表）+ `EvalAssertions.assertMeets`（不达标抛 `AssertionError`，消息含指标名/实际值/期望值/失败用例；缺失或全 NaN 指标按不达标处理）。
+  - **录制回放与回归（`trace` 子包）**：`EvalTrace`（单次请求⇄响应成对 JSON 快照，往返保留消息/toolCalls/采样参数/候选/usage，刻意不落多模态二进制与平台透传对象）；`RecordingClient`（装饰 `AiClient`：`record(delegate, path)` 每次 chat 追加一行 JSONL，`replay(path)` 零网络按「请求匹配优先、录制顺序兜底」回放，录制耗尽抛异常；流式分片聚合后落盘）；`TraceRegression`（基线 vs 当前按指标均值比较，`delta > tolerance` 判退化、`delta == tolerance` 不判、`delta < -tolerance` 记改善；默认容差 0.02，可全局或按指标配；用例按 caseId 对齐，逐用例分数跌幅/失败数增加同判退化；`RegressionResult.assertPassed()` 接 CI）。
+- **`sure-ai-otel` 增量（评估 run 观测桥接）**：
+  - `OtelEvalTracing`：把一次 `EvalReport` 映射为 `eval.evaluation` span，属性遵循 GenAI evaluation 语义约定扩展（`gen_ai.evaluation.dataset.name` / `case_count` / `failed_case_count` / `total_tokens` / `latency_p50/p95` / 每指标均值 `gen_ai.evaluation.metric.<name>`，指标名经合法字符清洗、均值 NaN 跳过）；存在失败用例或任一适用指标通过率<1 时 span 置 ERROR 并写低基数 `error.type`（`eval.execution_failure` / `eval.assertion_failure`）；不按用例展开子 span 防高基数；null provider 全空操作无感降级。门面 `OtelSupport.evalTracing(TracerProvider|OpenTelemetry)`。
+  - `langfuse/EvalReportLangfuseExporter`：把一次评估 run 导出为 Langfuse 一个 trace + 若干 `score-create`（`dataType=NUMERIC`）——每指标均值一个 score，另补 `pass_rate` / `total_tokens` / `failed_case_count` 三个数值 score；整批经 `LangfuseBatchSender` 单次发送；密钥缺失即空操作，发送异常只记 warning 不抛出。门面 `LangfuseExporters.evalReportExporter(LangfuseConfig)`。
+- **文档与示例**：新建 `docs/evals.md`（中文全量）+ 英文精简镜像 `docs/en/evals.md`；`docs/COOKBOOK.md` 新增场景 19（golden dataset 离线回归）/ 20（LLM-as-judge 打分接 CI）/ 21（A/B 对比两模型）；README 中英文特性区与模块树补 `sure-ai-evals`；`sure-ai-examples` 新增离线 `EvalsDemo`（`evals` case）与 `RegressionDemo`（`regression` case）并注册进 `ExamplesRunner`。
+
+### Changed
+- `sure-ai-otel` 新增对 `sure-ai-evals` 的依赖（`OtelEvalTracing` / `EvalReportLangfuseExporter` 需消费 `EvalReport`）；`sure-ai-evals` 注册进 parent pom `<modules>`、`sure-ai-bom` 依赖管理与 `sure-ai-all` 聚合链。均为**新增模块 / 新增依赖边**，不修改任何既有模块公开 API，未装配评估能力时现有行为与 2.7.0 完全一致。
+
+### 测试
+- 测试基线 **2814**（2.7.0 全量 `mvn -B clean verify -Dgpg.skip=true` 逐模块 surefire 实测口径）。
+- 全工程合计 **2996** 个测试（较基线 **+182**，增量全部来自 `sure-ai-evals` 新模块、`sure-ai-otel` 评估桥接用例与 `sure-ai-examples` 示例；0 失败 / 0 错误 / 0 跳过）。
+- `mvn -B clean verify -Dgpg.skip=true` **BUILD SUCCESS**（checkstyle / spotbugs / jacoco / license 门禁零违规）；`sure-ai-evals` 行覆盖 **98.44%**（≥98% 门禁），`sure-ai-otel` 行覆盖 **100.00%**，全模块均 ≥98%。
+
 ## [2.7.0] - Unreleased
 
 本版本线为「网关生产化」专项：在 `sure-ai-gateway` 既有「多供应商注册 → 路由 → 故障转移 → 租户配额」之上，补齐上线生产环境所需的横切能力——按 client 维度的三态熔断、健康探活 SPI、请求级超时装饰、流式故障转移边界、网关指标与概要审计、租户并发上限，以及一个对标各平台 `XxxUtil` 的静态装配入口 `GatewayUtil`。全部为可选装配，未注入这些组件时行为与既有版本完全一致；网关模块只依赖 core + cost，零第三方运行期依赖不变。
