@@ -28,6 +28,7 @@ import com.sure.ai.evals.dataset.EvalDataset;
 import com.sure.ai.evals.dataset.JsonlDatasetLoader;
 import com.sure.ai.evals.metric.EvalMetric;
 import com.sure.ai.evals.report.EvalReport;
+import com.sure.ai.evals.trace.TraceRegression;
 
 /**
  * 评估一站式静态入口：快速构造数据集 / 加载器 / 执行器 / 跑评估 / 断言。
@@ -154,6 +155,17 @@ public final class EvalUtil {
 	 */
 	public static void assertMeets(EvalReport report, EvalThreshold threshold) {
 		EvalAssertions.assertMeets(report, threshold);
+	}
+
+	/**
+	 * 断言当前报告相对基线报告无指标退化（默认容差 0.02，对接 CI）。
+	 *
+	 * @param baseline 基线报告（录制当次）
+	 * @param current  当前报告（回放重跑）
+	 * @throws AssertionError 存在退化时抛出
+	 */
+	public static void assertNoRegression(EvalReport baseline, EvalReport current) {
+		TraceRegression.compare(baseline, current).assertPassed();
 	}
 
 	/**
