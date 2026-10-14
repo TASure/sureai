@@ -181,7 +181,7 @@ public final class EvalCase {
 		 */
 		public Builder input(List<ChatMessage> input) {
 			Assert.notNull(input, "input 不能为 null");
-			this.input = input;
+			this.input = List.copyOf(input);
 			return this;
 		}
 
@@ -215,7 +215,7 @@ public final class EvalCase {
 		 */
 		public Builder tags(List<String> tags) {
 			Assert.notNull(tags, "tags 不能为 null");
-			this.tags = tags;
+			this.tags = List.copyOf(tags);
 			return this;
 		}
 
@@ -227,7 +227,7 @@ public final class EvalCase {
 		 */
 		public Builder metadata(Map<String, Object> metadata) {
 			Assert.notNull(metadata, "metadata 不能为 null");
-			this.metadata = metadata;
+			this.metadata = Map.copyOf(metadata);
 			return this;
 		}
 
@@ -239,7 +239,7 @@ public final class EvalCase {
 		 */
 		public Builder expectedTools(List<String> expectedTools) {
 			Assert.notNull(expectedTools, "expectedTools 不能为 null");
-			this.expectedTools = expectedTools;
+			this.expectedTools = List.copyOf(expectedTools);
 			return this;
 		}
 

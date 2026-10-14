@@ -389,4 +389,13 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- EvalOutcome 执行结果记录持有异常引用（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         error() 返回的 Throwable 是调用方/被测客户端现场抛出的原始异常，评估层需要读取其
+         类型、堆栈与 cause 链做失败归因与报告展示；复制 Throwable 会丢失堆栈因果链，
+         且异常对象本就只读消费，与 McpRequest.params 同类只读视图惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.evals.metric.EvalOutcome"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>

@@ -165,7 +165,7 @@ public final class EvalDataset {
 		 */
 		public Builder cases(List<EvalCase> cases) {
 			Assert.notNull(cases, "cases 不能为 null");
-			this.cases = cases;
+			this.cases = List.copyOf(cases);
 			return this;
 		}
 
@@ -177,7 +177,7 @@ public final class EvalDataset {
 		 */
 		public Builder metadata(Map<String, Object> metadata) {
 			Assert.notNull(metadata, "metadata 不能为 null");
-			this.metadata = metadata;
+			this.metadata = Map.copyOf(metadata);
 			return this;
 		}
 
