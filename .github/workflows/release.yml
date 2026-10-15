@@ -143,5 +143,6 @@ jobs:
           files: |
             sure-ai-all/target/bom.json
             sure-ai-all/target/bom.xml
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
