@@ -86,7 +86,10 @@ jobs:
         run: mvn -B -DskipTests -Dgpg.skip=true install
 
       - name: OWASP dependency-check
-        run: mvn -B -Psecurity -pl sure-ai-all dependency-check:check -Dgpg.skip=true
+        # NVD_API_KEY 为仓库 Actions secret（NVD 官网激活后写入），注入 nvdApiKey 参数：
+        # 带 key 可显著提高 NVD API 配额（50 req/30s），避免无 key 限流/失败；
+        # 13.x 对缺失 key 直接报 Invalid API Key，故 secret 未配置时本 job 变红但不阻塞门禁（continue-on-error）。
+        run: mvn -B -Psecurity -pl sure-ai-all dependency-check:check -Dgpg.skip=true -DnvdApiKey="${{ secrets.NVD_API_KEY }}"
 
       - name: Upload dependency-check report
         if: always()
