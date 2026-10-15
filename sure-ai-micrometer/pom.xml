@@ -42,7 +42,9 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-core</artifactId>
-            <version>1.13.6</version>
+            <!-- 1.16.7：修复 CVE-2026-40984（HTTP server instrumentation DoS，1.13/1.14/1.15/1.16.0-1.16.5 均受影响）；
+                 1.13 线已停更（最高 1.13.15 仍在受影响范围）。仅 provided，不影响零依赖特性。 -->
+            <version>1.16.7</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
