@@ -621,9 +621,10 @@
                                  continue-on-error 决定（见 .github/workflows/ci.yml）。 -->
                             <failBuildOnCVSS>7</failBuildOnCVSS>
                             <!-- 无 NVD_API_KEY 时官方限流约 5 次/30 秒：请求间隔固定 6s，
-                                 降低无 key 场景下因限流导致的 NVD API 请求失败；
-                                 配置仓库 secrets NVD_API_KEY 后该延迟自动被 key 权限覆盖。 -->
-                            <nvdApiDelay>6000</nvdApiDelay>
+                                 降低无 key 场景下因限流导致的 NVD API 请求失败。
+                                 配置仓库 secrets NVD_API_KEY（50 req/30s）后间隔收紧到 1s，
+                                 首次全量下载从 ~60min 降到 ~10min；后续 CI 由 actions/cache 复用数据目录。 -->
+                            <nvdApiDelay>1000</nvdApiDelay>
                             <!-- 同时输出 HTML（人读报告）与 XML（程序化消费/归档） -->
                             <formats>
                                 <format>HTML</format>
