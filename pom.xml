@@ -107,7 +107,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <junit.version>4.13.2</junit.version>
-        <sure.core.version>0.2.0</sure.core.version>
+        <sure.core.version>1.17.0</sure.core.version>
         <!-- Apache POI 版本：仅 sure-ai-ingest-poi 以 provided 引入，不进运行期链 -->
         <poi.version>5.5.1</poi.version>
         <!-- JaCoCo 行覆盖率门禁下限：全模块 ≥98%（sure-ai-core 亦 0.98） -->
