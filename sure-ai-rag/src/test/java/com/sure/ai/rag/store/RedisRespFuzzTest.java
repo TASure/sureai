@@ -24,22 +24,22 @@ import static org.junit.Assert.fail;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Random;
 
 import org.junit.Test;
 
 import com.sure.ai.exception.AiException;
+import com.sure.ai.rag.store.resp.RespCodec;
 
 /**
- * Redis RESP2 编解码模糊健壮性测试（sureai v2.1.0「生产级信任」批次 1）。
+ * Redis RESP2 编解码模糊健壮性测试（sureai v2.1.0「生产级信任」批次 1；v2.4.0 迁移至
+ * 共享 {@link RespCodec}，v1.8.0 内联于 {@code RedisVectorStore} 的私有方法已抽取）。
  *
- * <p>零真实网络：不建 Socket。RESP 读方法 {@code readReply/readArray/readBulk/readLine} 与
- * 写方法 {@code encode} 均为 {@link RedisVectorStore} 私有静态方法，测试以同包 + 反射驱动，
- * 用 {@link ByteArrayInputStream} 喂字节流。方法：固定种子 {@code Random(42)} + 边界枚举
- * （非法长度、截断、负长度、畸形批量串、超大声明长度）。断言原则：只允许正常返回或 {@link AiException}；
+ * <p>零真实网络：不建 Socket。用 {@link ByteArrayInputStream} 喂字节流给
+ * {@link RespCodec#readReply(InputStream)}，{@link RespCodec#encode(List)} 编码后再喂回。
+ * 方法：固定种子 {@code Random(42)} + 边界枚举（非法长度、截断、负长度、畸形批量串、
+ * 超大声明长度）。断言原则：只允许正常返回或 {@link AiException}/{@link java.io.IOException}；
  * 严禁 {@link NumberFormatException}/{@link OutOfMemoryError}/{@link NegativeArraySizeException}/
  * {@link NullPointerException} 逃逸。</p>
  *
@@ -54,13 +54,12 @@ public class RedisRespFuzzTest {
 	/**
 	 * 编解码往返：合法 RESP 请求编码后再喂回解析器，结构必须正确还原。
 	 *
-	 * @throws Exception 反射异常
+	 * @throws Exception IO 异常
 	 */
 	@Test
 	public void encodeDecodeRoundTrip() throws Exception {
-		Method encode = RedisVectorStore.class.getDeclaredMethod("encode", List.class);
-		encode.setAccessible(true);
-		byte[] wire = (byte[]) encode.invoke(null, List.of("HSET", "doc:1", "text", "hello"));
+		byte[] wire = RespCodec.encode(List.of("HSET", "doc:1", "text", "hello"));
+		assertNotNull(wire);
 		// 服务端回一个批量串回复
 		Object resp = readReply("$5\r\nhello\r\n");
 		assertEquals("hello", resp);
@@ -131,47 +130,39 @@ public class RedisRespFuzzTest {
 		}
 	}
 
-	/** 以反射调用私有静态 readReply(InputStream)。 */
+	/** 以字节数组喂入 readReply。 */
 	private static Object readReply(String wire) throws Exception {
 		return readReply(wire.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 	}
 
-	/** 以反射调用私有静态 readReply(InputStream)。 */
+	/** 以字节数组喂入 readReply。 */
 	private static Object readReply(byte[] wire) throws Exception {
-		Method m = RedisVectorStore.class.getDeclaredMethod("readReply", InputStream.class);
-		m.setAccessible(true);
-		return m.invoke(null, new ByteArrayInputStream(wire));
+		try (InputStream in = new ByteArrayInputStream(wire)) {
+			return RespCodec.readReply(in);
+		}
 	}
 
-	/** 断言：要么正常返回，要么 AiException；严禁 JVM 级崩溃。 */
+	/** 断言：要么正常返回，要么 AiException / IOException；严禁 JVM 级崩溃。 */
 	private static void assertGraceful(String wire) {
 		assertGraceful(wire.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 	}
 
-	/** 断言：要么正常返回，要么 AiException；严禁 JVM 级崩溃。 */
+	/** 断言：要么正常返回，要么 AiException / IOException；严禁 JVM 级崩溃。 */
 	private static void assertGraceful(byte[] wire) {
 		try {
 			readReply(wire);
-		} catch (InvocationTargetException ite) {
-			Throwable cause = ite.getCause();
-			if (cause instanceof AiException) {
-				return; // 业务协议错误：允许
-			}
-			if (cause instanceof java.io.IOException) {
-				return; // 真实 IO（ByteArrayInputStream 罕见）：按既有契约允许
-			}
-			if (cause instanceof StackOverflowError || cause instanceof OutOfMemoryError
-					|| cause instanceof NullPointerException
-					|| cause instanceof NumberFormatException
-					|| cause instanceof NegativeArraySizeException
-					|| cause instanceof ArrayIndexOutOfBoundsException) {
-				fail("RESP 解码触发 JVM 级崩溃 " + cause.getClass().getName()
-					+ "，cause=" + cause.getMessage());
+		} catch (AiException | java.io.IOException e) {
+			return; // 业务协议错误 / 真实 IO：按既有契约允许
+		} catch (Throwable t) {
+			if (t instanceof StackOverflowError || t instanceof OutOfMemoryError
+					|| t instanceof NullPointerException || t instanceof NumberFormatException
+					|| t instanceof NegativeArraySizeException
+					|| t instanceof ArrayIndexOutOfBoundsException) {
+				fail("RESP 解码触发 JVM 级崩溃 " + t.getClass().getName()
+					+ "，cause=" + t.getMessage());
 			}
 			// 其它 RuntimeException：也视为不应逃逸
-			fail("RESP 解码抛出非预期异常 " + cause);
-		} catch (Exception e) {
-			fail("反射调用异常 " + e);
+			fail("RESP 解码抛出非预期异常 " + t);
 		}
 	}
 }

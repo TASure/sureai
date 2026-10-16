@@ -125,6 +125,39 @@ grok does not support IMAGE capability
 - `Anthropic` / `Gemini` / `Bedrock` / `Cohere` 的主 Client 直接继承 `AbstractAiClient`（而非 `OpenAiCompatClient`），其对话/嵌入等方法各自独立实现，不经过兼容基类的 guard 入口。
 - TTS / STT 虽列入基类声明集合，但兼容基类的 `synthesize()` / `transcribe()` 直接委托音频策略、未挂 guard；具体 TTS/STT 能力由各平台专用 Client（如 `AzureTtsClient`、`DoubaoTtsClient`）实现。
 
+> **注意：本表的 `IMAGE` / `VIDEO` 指「图像/视频生成」能力（受 guard 的生成接口），与多模态「输入」（图像理解 / 视频理解）是两回事。**
+> 各平台的图像/视频**输入**支持情况（Anthropic 视觉、Gemini/Qwen-VL 视频输入、工具结果回传语义）
+> 不在本表范围，已在 v2.4.0 批次按官方文档联网核实并记录，详见
+> [multimodal.md](multimodal.md) 与各平台文档的「能力核实」注记。本批未改动任何平台的生成能力声明。
+
 ## 演进约定
 
 后续新增平台时，应在其 Client 中覆写 `capabilities()`，**只声明真实可用的能力**，而非一律继承全量兜底；这样未支持的能力会在发请求前被 `guard()` 清晰拦截，而不是把含糊的 4xx 抛给用户。
+
+## 编排能力（v2.5.0，非平台 guard 维）
+
+本文的 `Capability` 枚举矩阵描述的是「某平台 Client 是否支持某**请求能力**」（CHAT / EMBED / IMAGE …），由 `guard()` 在发请求前快速失败。它与 **v2.5.0 新增的声明式编排层**是两回事——后者是 core 之上的应用侧编排能力，**不挂在任何平台 Client 的 guard 表面上**，因而不在本矩阵内：
+
+- **AiService 接口即服务**（`sure-ai-framework`）：注解族 + JDK 动态代理把接口映射为对话服务，任意 `AiClient` 均可驱动；
+- **Advisor 链**：`before`/`around`/`after` 三钩子横切，四件套（语义缓存短路 / 日志 / 工具循环 / 结构化自纠）；
+- **SemanticCache**：embedding 余弦阈值命中，可插拔 `CacheStore`。
+
+编排能力与平台无关——同一套接口与 Advisor 链换平台 client 即可复用。详见 [framework.md](framework.md)。
+
+## 文档导入与向量库适配（v2.6.0，非平台 guard 维）
+
+与 v2.5.0 编排层同理，v2.6.0 的「文档导入器」与「5 个新向量库」都是**平台无关的应用侧能力**，
+不挂在任何平台 Client 的 guard 表面上，因而不在上面的 `Capability` 矩阵内：
+
+- **文档导入器（`sure-ai-ingest`）**：`DocumentLoader` SPI（`FileSystemLoader` 本地 /
+  `URLLoader` 网络）+ `DocumentParser` 格式解析 SPI；内置 TXT/MD/HTML/PDF 为纯 JDK 实现
+  （PDF 为有限文本层提取、不引 PDFBox；HTML 为最小正则剥标签），DOCX/XLSX/PPTX 由可选
+  `sure-ai-ingest-poi`（Apache POI 5.5.1 provided）承载。产出复用 rag `Document`。详见 [ingest.md](ingest.md)。
+- **向量库 9 → 14**：新增 `PgVectorStore`（PG 前端/后端协议）、`TypesenseVectorStore`（REST）、
+  `CassandraVectorStore`（CQL v4）、`MongoDbVectorStore`（OP_MSG+BSON）、`Neo4jVectorStore`
+  （HTTP tx/commit），均为 JDK 原生协议客户端、零官方驱动；各家鉴权与查询能力的支持子集
+  （如 PG 仅 trust/明文、Cassandra 仅无认证/SASL PLAIN、MongoDB 未实现 SCRAM、Neo4j 走 HTTP 而非 Bolt）
+  在 [vector-stores.md](vector-stores.md) 逐库如实标注。配套新增 5 个 metadata filter 方言翻译器
+  （6 → 11）。
+
+这些能力与「某平台是否支持某请求能力」正交：导入与向量存储换实现不影响平台 guard 行为。

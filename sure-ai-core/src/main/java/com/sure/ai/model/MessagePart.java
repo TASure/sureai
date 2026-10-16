@@ -22,10 +22,10 @@ package com.sure.ai.model;
  * @author sureai
  * @since 0.1.0
  */
-public sealed interface MessagePart permits TextPart, ImagePart, DocumentPart {
+public sealed interface MessagePart permits TextPart, ImagePart, DocumentPart, VideoPart {
 
 	/**
-	 * 返回片段类型："text"、"image_url" 或 "document"。
+	 * 返回片段类型："text"、"image_url"、"document" 或 "video_url"。
 	 *
 	 * @return 类型字符串
 	 */

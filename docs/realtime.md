@@ -37,6 +37,9 @@ sureai 对基于 WebSocket 的实时全双工语音对话做了统一抽象：�
 - **事件归一**：`RealtimeEventListener` 统一暴露 `onTranscript`（转写文本）/ `onAudio`（回复音频分片）/
   `onError` / `onClose` / `onEvent`（未识别类型的原始事件兜底）。
 - **零第三方依赖**：WebSocket 直接复用 JDK 21 `java.net.http.WebSocket`。
+- **连接韧性（2.4.0）**：内置自动重连（指数退避、可配上限 / 可关闭）、周期心跳 ping 与空闲超时判死、
+  连接生命周期回调，以及 VAD（speech started/stopped）与中断（barge-in）事件标准化；
+  重连 / 心跳任务经包内可注入调度抽象执行，核心逻辑零真实网络即可测。
 
 ## 2. 快速上手
 
@@ -89,6 +92,81 @@ client.close();
 | `onClose()` | 连接关闭 |
 | `onEvent(String type, String rawJson)` | 未识别类型的原始事件兜底 |
 
+> 以下为 **2.4.0 新增** 回调，均为 `default` 空实现——老实现者不覆写也不受影响（向后兼容）：
+
+| 新增回调 | 触发时机 |
+|---|---|
+| `onConnected()` | 连接建立（握手成功；首次与每次重连成功均触发） |
+| `onDisconnected(int code, String reason)` | 异常掉线（用户主动 `close()` 不触发） |
+| `onReconnecting(int attempt, long delayMillis)` | 即将发起第 `attempt` 次重连（指数退避等待 `delayMillis`） |
+| `onReconnected(int attempts)` | 重连成功（此前失败 `attempts` 次） |
+| `onReconnectFailed(int attempts)` | 达到上限仍未成功，放弃重连 |
+| `onSpeechStart()` | 服务端 VAD：用户语音开始 |
+| `onSpeechStop()` | 服务端 VAD：用户语音结束 |
+| `onInterrupted()` | 模型输出被打断（barge-in） |
+
+**事件标准化映射**（各平台原生事件名 → 统一回调）：
+
+| 统一回调 | OpenAI / Azure / 智谱（OpenAI 兼容） | Gemini Live | 通义千问 Qwen |
+|---|---|---|---|
+| `onAudio` | `response.output_audio.delta` | `serverContent.modelTurn.parts[].inlineData` | `output.audio.delta` |
+| `onTranscript` | `response.audio_transcript.delta` / `conversation.item.input_audio_transcription.completed` | `serverContent.modelTurn.parts[].text` | `output.text` / `transcript` |
+| `onSpeechStart` | `input_audio_buffer.speech_started` | （协议无等价事件，回落 `onEvent`） | （回落 `onEvent`） |
+| `onSpeechStop` | `input_audio_buffer.speech_stopped` | （协议无等价事件，回落 `onEvent`） | （回落 `onEvent`） |
+| `onInterrupted` | `conversation.interrupted` / `response.output_audio.interrupted` | `serverContent.interrupted == true` | （回落 `onEvent`） |
+| `onError` | 顶层 `error.type` / 错误帧 | 下行错误载荷 | 顶层 `type == "error"` |
+
+> 上表逐字核对自各平台 Client 的事件路由实现（`handleMessage` 的 `switch` 分支）：
+> OpenAI 系按 `type` 字段路由；Gemini 按顶层 oneof 字段（`serverContent`）路由，且**每次新建
+> WebSocket 会话（含自动重连成功后）必须先重发 `{"setup":{"model":"models/<model>"}}`**——SDK 已在
+> 重连成功钩子内自动重发，业务侧无感知；Qwen（DashScope）按顶层 `type` 路由。豆包复用火山实时
+> 对话协议，事件名经其专用 Client 归一到同一组回调。无法识别的帧统一回落 `onEvent(type, rawJson)`。
+
+**上行帧（SDK 内部封装，业务侧无需手工拼接）**：
+
+| 动作 | OpenAI 兼容系 JSON | Gemini JSON |
+|---|---|---|
+| 上行音频分片 | `input_audio_buffer.append`（含 base64 audio） | `realtimeInput.chunks[].inlineData`（`mimeType=audio/pcm;rate=16000` + base64） |
+| 上行文本 | `conversation.item.create` + `response.create` | `realtimeInput.text` |
+
+### 3.3 RealtimeOptions（2.4.0）
+
+连接韧性通过 `RealtimeOptions` 配置，经 `AbstractRealtimeClient` 的 4 参构造器注入
+（平台现有 3 参构造器沿用 `defaults()`，行为兼容）：
+
+| 选项 | 默认 | 说明 |
+|---|---|---|
+| `autoReconnect` | `true` | 异常掉线后是否自动重连 |
+| `maxReconnectAttempts` | `5` | 最大重连次数，超过则回调 `onReconnectFailed` |
+| `reconnectBaseDelayMillis` | `1000` | 指数退避起步（`min(base*2^(n-1), max)`） |
+| `reconnectMaxDelayMillis` | `30000` | 退避封顶 |
+| `heartbeatIntervalMillis` | `30000` | 周期 ping 间隔，`<=0` 关闭心跳 |
+| `heartbeatTimeoutMillis` | `10000` | 该时长内无任何入站帧即判死并触发重连 |
+
+```java
+// 生产常用：放宽重连次数、缩短心跳以快速探死
+RealtimeOptions opts = RealtimeOptions.builder()
+    .autoReconnect(true)
+    .maxReconnectAttempts(8)                 // 默认 5
+    .reconnectBaseDelayMillis(1_000)        // 默认 1s
+    .reconnectMaxDelayMillis(30_000)         // 默认封顶 30s
+    .heartbeatIntervalMillis(15_000)        // 默认 30s；<=0 关闭心跳
+    .heartbeatTimeoutMillis(5_000)          // 默认 10s 无入站帧即判死
+    .build();
+
+// 退避时序（第 n 次重连等待 = min(base * 2^(n-1), max)）：
+//   n=1 → 1s，n=2 → 2s，n=3 → 4s，n=4 → 8s，n=5 → 16s，n=6+ → 封顶 30s
+long waitMs = opts.backoffMillis(3);        // = 4000
+```
+
+> **如何用上自定义 `RealtimeOptions`**：平台静态单例 `XxxUtil.realtimeClient(model, listener)`
+> 与平台 3 参公开构造器默认走 `RealtimeOptions.defaults()`（上表全部默认值，开箱即有韧性）。
+> 需自定义时，子类化对应平台 Client、走 `AbstractRealtimeClient` 的 4 参构造器
+> `(AiConfig, RealtimeConnector, RealtimeEventListener, RealtimeOptions)` 注入；重连与心跳任务
+> 由包内可注入的 `RealtimeTaskScheduler` 调度，测试时替换为同步执行器即可确定性复现。
+> 重连全过程通过 3.2 节的 `onReconnecting` / `onReconnected` / `onReconnectFailed` /
+> `onDisconnected` 回调观测；Gemini 在重连成功后由 SDK 自动重发 `setup`，业务无需处理。
+
 ## 4. 各平台 WebSocket 端点与鉴权对比
 
 | 平台 | WSS 端点 | 鉴权方式 | 事件路由要点 |
@@ -117,6 +195,11 @@ client.close();
 Realtime 单测**不连接真实网络**：通过注入 `FakeRealtimeConnector` 返回 `FakeWebSocket`，
 直接调用 `handleMessage(rawJson)` 喂入各平台协议样本，断言是否正确回调到
 `onTranscript` / `onAudio` / `onError` / `onEvent`，覆盖 5 个平台的事件路由差异。
+
+连接韧性（2.4.0）同样零网络：注入「同步立即执行」的 `RealtimeTaskScheduler`，
+使自动重连链在调用线程内确定性跑完，覆盖重连次数 / 指数退避 / 放弃重连 /
+心跳超时判死 / 生命周期回调顺序 / VAD 与中断事件标准化；心跳节拍与空闲时间戳
+（`heartbeatTick()`、`lastActivityNanos`）对测试包可见，无需真实定时器。
 
 ```bash
 mvn -B -pl sure-ai-openai -am test

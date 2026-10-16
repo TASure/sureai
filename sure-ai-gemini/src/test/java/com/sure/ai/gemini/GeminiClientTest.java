@@ -53,6 +53,8 @@ import com.sure.ai.model.ImageResponse;
 import com.sure.ai.model.MessagePart;
 import com.sure.ai.model.Model;
 import com.sure.ai.model.TextPart;
+import com.sure.ai.model.ToolCall;
+import com.sure.ai.model.VideoPart;
 
 /**
  * {@link GeminiClient} 集成测试：本地 HttpServer mock。
@@ -424,5 +426,64 @@ public class GeminiClientTest {
 	@Test
 	public void testName() {
 		assertEquals("gemini", newClient().name());
+	}
+
+	/** 视频输入：URL/文件引用 VideoPart 映射为 fileData（fileUri + mimeType）。 */
+	@Test
+	public void testVideoFileData() {
+		handle(200, "{\"candidates\":[{\"content\":{\"role\":\"model\","
+			+ "\"parts\":[{\"text\":\"summarized\"}]},\"finishReason\":\"STOP\"}]}");
+		GeminiClient client = newClient();
+		List<MessagePart> parts = List.of(TextPart.of("summarize"),
+			VideoPart.ofUrl("gs://bucket/demo.mp4"));
+		client.chat(ChatRequest.builder().model("gemini-2.5-flash")
+			.messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"fileData\""));
+		assertTrue(body.contains("\"fileUri\":\"gs://bucket/demo.mp4\""));
+		assertTrue(body.contains("\"mimeType\":\"video/mp4\""));
+		client.close();
+	}
+
+	/** 视频输入：base64 VideoPart 映射为 inlineData。 */
+	@Test
+	public void testVideoInlineData() {
+		handle(200, "{\"candidates\":[{\"content\":{\"role\":\"model\","
+			+ "\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}");
+		GeminiClient client = newClient();
+		List<MessagePart> parts = List.of(VideoPart.ofBase64("dmR2ZWRhdGE=", "video/mp4"));
+		client.chat(ChatRequest.builder().model("m").messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"inlineData\""));
+		assertTrue(body.contains("\"mimeType\":\"video/mp4\""));
+		assertTrue(body.contains("dmR2ZWRhdGE="));
+		client.close();
+	}
+
+	/** 工具调用回传：assistant toolCalls → model 轮 functionCall 块（并行多调用）。 */
+	@Test
+	public void testFunctionCallRoundTrip() {
+		handle(200, "{\"candidates\":[{\"content\":{\"role\":\"model\","
+			+ "\"parts\":[{\"text\":\"done\"}]},\"finishReason\":\"STOP\"}]}");
+		GeminiClient client = newClient();
+		List<ToolCall> calls = List.of(
+			ToolCall.of("call_1", "get_weather", "{\"city\":\"SF\"}"),
+			ToolCall.of("call_2", "get_time", "{\"tz\":\"PT\"}"));
+		// 工具结果回传：user 轮 functionResponse 块。
+		ChatMessage toolResult = ChatMessage.of(
+			com.sure.ai.model.Role.TOOL, "{\"weather\":\"cloudy\"}", null,
+			"get_weather", "call_1", null);
+		client.chat(ChatRequest.builder().model("m")
+			.messages(ChatMessage.user("weather?"), ChatMessage.assistant(calls), toolResult)
+			.build());
+		String body = this.lastBody.get();
+		assertTrue("assistant turn must use role=model", body.contains("\"role\":\"model\""));
+		assertTrue(body.contains("\"functionCall\""));
+		assertTrue(body.contains("\"get_weather\""));
+		assertTrue(body.contains("\"get_time\""));
+		assertTrue(body.contains("\"functionResponse\""));
+		assertTrue(body.contains("\"call_1\""));
+		assertTrue("functionResponse.response 应为对象", body.contains("\"weather\":\"cloudy\""));
+		client.close();
 	}
 }

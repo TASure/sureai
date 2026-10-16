@@ -27,11 +27,12 @@ import java.time.Duration;
  * @param maxTokensPerPeriod 周期内 token 上限，0=不限
  * @param rateLimitQps       每秒请求上限，0=不限
  * @param budgetPeriod       预算周期（默认 1 天）
+ * @param maxConcurrency     并发请求上限，0=不限
  * @author sureai
  * @since 1.6.0
  */
 public record TenantConfig(double maxCostPerPeriod, long maxTokensPerPeriod,
-		int rateLimitQps, Duration budgetPeriod) {
+		int rateLimitQps, Duration budgetPeriod, int maxConcurrency) {
 
 	/** 默认预算周期：1 天。 */
 	public static final Duration DEFAULT_PERIOD = Duration.ofDays(1);
@@ -50,6 +51,9 @@ public record TenantConfig(double maxCostPerPeriod, long maxTokensPerPeriod,
 		if (rateLimitQps < 0) {
 			throw new IllegalArgumentException("rateLimitQps must be >= 0");
 		}
+		if (maxConcurrency < 0) {
+			throw new IllegalArgumentException("maxConcurrency must be >= 0");
+		}
 	}
 
 	/**
@@ -58,7 +62,7 @@ public record TenantConfig(double maxCostPerPeriod, long maxTokensPerPeriod,
 	 * @return 不限额配置
 	 */
 	public static TenantConfig unlimited() {
-		return new TenantConfig(0, 0, 0, DEFAULT_PERIOD);
+		return new TenantConfig(0, 0, 0, DEFAULT_PERIOD, 0);
 	}
 
 	/**
@@ -98,6 +102,15 @@ public record TenantConfig(double maxCostPerPeriod, long maxTokensPerPeriod,
 	}
 
 	/**
+	 * 是否对并发数做了限制。
+	 *
+	 * @return 受限返回 true
+	 */
+	public boolean limitedConcurrency() {
+		return this.maxConcurrency > 0;
+	}
+
+	/**
 	 * Builder。
 	 */
 	public static final class Builder {
@@ -105,6 +118,7 @@ public record TenantConfig(double maxCostPerPeriod, long maxTokensPerPeriod,
 		private double maxCostPerPeriod;
 		private long maxTokensPerPeriod;
 		private int rateLimitQps;
+		private int maxConcurrency;
 		private Duration budgetPeriod = DEFAULT_PERIOD;
 
 		private Builder() {
@@ -155,13 +169,24 @@ public record TenantConfig(double maxCostPerPeriod, long maxTokensPerPeriod,
 		}
 
 		/**
+		 * 并发请求上限。
+		 *
+		 * @param maxConcurrency 并发上限，0=不限
+		 * @return this
+		 */
+		public Builder maxConcurrency(int maxConcurrency) {
+			this.maxConcurrency = maxConcurrency;
+			return this;
+		}
+
+		/**
 		 * 构建。
 		 *
 		 * @return 租户配置
 		 */
 		public TenantConfig build() {
 			return new TenantConfig(this.maxCostPerPeriod, this.maxTokensPerPeriod,
-					this.rateLimitQps, this.budgetPeriod);
+					this.rateLimitQps, this.budgetPeriod, this.maxConcurrency);
 		}
 	}
 }

@@ -158,4 +158,19 @@ public class BedrockUtilTest {
 		before.close();
 		BedrockUtil.resetClient();
 	}
+
+	/** 便捷 chat/chatStream 委托 client()（dead server 触发异常，行仍执行）。 */
+	@Test
+	public void testConvenienceDelegates() {
+		BedrockClient dead = new BedrockClient("ak", "sk", null, "us-east-1", "m");
+		BedrockUtil.init(dead);
+		assertThrows(Exception.class, () -> BedrockUtil.chat("m", "hi"));
+		assertThrows(Exception.class, () -> BedrockUtil.chat(
+			com.sure.ai.model.ChatRequest.builder().model("m")
+				.messages(com.sure.ai.model.ChatMessage.user("hi")).build()));
+		assertThrows(Exception.class, () -> BedrockUtil.chatStream("m", "hi", c -> { }));
+		assertThrows(Exception.class, () -> BedrockUtil.chatStream(
+			com.sure.ai.model.ChatRequest.builder().model("m")
+				.messages(com.sure.ai.model.ChatMessage.user("hi")).build(), c -> { }));
+	}
 }
