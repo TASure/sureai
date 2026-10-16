@@ -19,12 +19,16 @@ package com.sure.ai.agent.plan;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import com.sure.ai.agent.AgentListener;
 import com.sure.ai.agent.memory.ConversationMemory;
 import com.sure.ai.agent.tool.ToolArgumentValidator;
 import com.sure.ai.agent.tool.ToolRegistry;
 import com.sure.ai.client.AiClient;
+import com.sure.ai.client.async.AsyncExecutors;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.exception.AiTimeoutException;
 import com.sure.ai.internal.json.Json;
@@ -75,6 +79,9 @@ public final class PlanExecuteAgent {
 	/** 单步内最大工具调用轮数。 */
 	public static final int MAX_TOOL_CALLS_PER_STEP = 3;
 
+	/** 单轮并行工具调用的默认最大并发数（分波执行）。 */
+	public static final int DEFAULT_MAX_PARALLEL_TOOL_CALLS = 8;
+
 	private final AiClient client;
 	private final ChatRequest baseRequest;
 	private final ToolRegistry registry;
@@ -83,6 +90,7 @@ public final class PlanExecuteAgent {
 	private final Duration timeout;
 	private final ConversationMemory memory;
 	private final ToolArgumentValidator validator = new ToolArgumentValidator();
+	private final boolean parallelToolCalls;
 
 	/**
 	 * 用默认参数构造。
@@ -124,6 +132,17 @@ public final class PlanExecuteAgent {
 	public PlanExecuteAgent(AiClient client, ChatRequest baseRequest, ToolRegistry registry,
 			AgentListener listener, int maxIterations, Duration timeout,
 			ConversationMemory memory) {
+		this(client, baseRequest, registry, listener, maxIterations, timeout, memory, true);
+	}
+
+	/**
+	 * 规范全参构造（2.3.0 新增并行开关，private 仅供派生方法使用）。
+	 *
+	 * @param parallelToolCalls 单轮多 tool_calls 是否并发执行（false 回退串行）
+	 */
+	private PlanExecuteAgent(AiClient client, ChatRequest baseRequest, ToolRegistry registry,
+			AgentListener listener, int maxIterations, Duration timeout,
+			ConversationMemory memory, boolean parallelToolCalls) {
 		Assert.notNull(client, "client must not be null");
 		Assert.notNull(baseRequest, "baseRequest must not be null");
 		Assert.notNull(registry, "registry must not be null");
@@ -138,6 +157,29 @@ public final class PlanExecuteAgent {
 		this.maxIterations = maxIterations;
 		this.timeout = timeout;
 		this.memory = memory;
+		this.parallelToolCalls = parallelToolCalls;
+	}
+
+	/**
+	 * 当前是否开启单轮多 tool_calls 并发执行。
+	 *
+	 * @return true 表示并行（默认），false 表示串行
+	 * @since 2.3.0
+	 */
+	public boolean parallelToolCalls() {
+		return this.parallelToolCalls;
+	}
+
+	/**
+	 * 以新的并行工具调用开关派生一个配置相同的新编排器。
+	 *
+	 * @param enabled 是否并发执行单轮内的多个工具调用
+	 * @return 新的 PlanExecuteAgent（其余配置与本实例一致）
+	 * @since 2.3.0
+	 */
+	public PlanExecuteAgent withParallelToolCalls(boolean enabled) {
+		return new PlanExecuteAgent(this.client, this.baseRequest, this.registry,
+			this.listener, this.maxIterations, this.timeout, this.memory, enabled);
 	}
 
 	/**
@@ -268,12 +310,70 @@ public final class PlanExecuteAgent {
 				return msg == null ? "" : msg.content();
 			}
 			history.add(ChatMessage.assistant(calls));
-			for (ToolCall call : calls) {
-				String r = executeTool(call);
-				history.add(ChatMessage.tool(call.id(), r));
+			List<String> results = executeTools(calls, deadline);
+			for (int i = 0; i < calls.size(); i++) {
+				history.add(ChatMessage.tool(calls.get(i).id(), results.get(i)));
 			}
 		}
 		throw new AiException("Step exceeded max tool calls: " + MAX_TOOL_CALLS_PER_STEP);
+	}
+
+	/**
+	 * 执行一轮内的全部工具调用，结果按 tool_call 顺序返回（语义与 ReActAgent 一致）。
+	 *
+	 * <p>开启并行（默认）且调用数 &gt; 1 时以虚拟线程分波并发执行，结果按下标收集后由调用线程
+	 * 统一追加历史；单工具失败/超时收敛为错误文本，不影响其余工具。关闭并行或单调用走串行。</p>
+	 */
+	private List<String> executeTools(List<ToolCall> calls, long deadline) {
+		if (!this.parallelToolCalls || calls.size() == 1) {
+			List<String> serial = new ArrayList<>(calls.size());
+			for (ToolCall call : calls) {
+				serial.add(safeExecute(call));
+			}
+			return serial;
+		}
+
+		String[] results = new String[calls.size()];
+		for (int start = 0; start < calls.size(); start += DEFAULT_MAX_PARALLEL_TOOL_CALLS) {
+			int end = Math.min(start + DEFAULT_MAX_PARALLEL_TOOL_CALLS, calls.size());
+			List<CompletableFuture<String>> futures = new ArrayList<>(end - start);
+			for (int i = start; i < end; i++) {
+				final ToolCall call = calls.get(i);
+				futures.add(CompletableFuture.supplyAsync(() -> safeExecute(call),
+					AsyncExecutors.virtualThreadExecutor()));
+			}
+			for (int j = start; j < end; j++) {
+				CompletableFuture<String> future = futures.get(j - start);
+				long remaining = deadline - System.nanoTime();
+				try {
+					results[j] = future.get(remaining > 0 ? remaining : 0L,
+						TimeUnit.NANOSECONDS);
+				} catch (TimeoutException te) {
+					future.cancel(true);
+					results[j] = "工具执行超时 " + calls.get(j).name();
+				} catch (Exception e) {
+					this.listener.onError(e);
+					results[j] = "工具执行异常 " + calls.get(j).name() + ": " + e.getMessage();
+				}
+			}
+		}
+		return List.of(results);
+	}
+
+	/**
+	 * 执行单个工具调用的安全包装：异常收敛为错误文本，保证失败隔离。
+	 */
+	private String safeExecute(ToolCall call) {
+		try {
+			return executeTool(call);
+		} catch (Throwable t) {
+			try {
+				this.listener.onError(t);
+			} catch (RuntimeException ignored) {
+				// 监听器自身异常不再向外扩散
+			}
+			return "工具执行异常 " + call.name() + ": " + t.getMessage();
+		}
 	}
 
 	/**

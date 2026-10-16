@@ -91,6 +91,22 @@ public class RedisVectorStoreTest {
 		assertEquals("v1.pdf", cmd.get(7));
 	}
 
+	/** add(Vector) 委托。 */
+	@Test
+	public void testAddSingle() {
+		mock.enqueue("+OK\r\n");
+		baseBuilder().build().add(sampleVector("v1"));
+	}
+
+	/** 构建器全量 setter。 */
+	@Test
+	public void testBuilderSetters() {
+		mock.enqueue("+OK\r\n");
+		baseBuilder().keyPrefix("pre:").vectorField("vec").textField("txt")
+				.algo(RedisVectorStore.VectorAlgo.HNSW)
+				.timeout(java.time.Duration.ofSeconds(2)).build();
+	}
+
 	/** HSET 命令总数 = 8（HSET,key,vec,blob,text,textVal,source,metaVal）。 */
 	@Test
 	public void testHsetArgCount() {

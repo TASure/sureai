@@ -34,7 +34,8 @@ JDK `HttpClient` POST 单端点，请求头 `Accept: application/json, text/even
 
 - 响应 `application/json` → 直接解析为单个 JSON-RPC 响应；
 - 响应 `text/event-stream` → 用 `SseLineReader` 聚合 SSE，取 `id` 匹配的事件数据；
-- 首次响应若带 `Mcp-Session-Id` 头，缓存后在后续请求原样带回。
+- 首次响应若带 `Mcp-Session-Id` 头，缓存后在后续请求原样带回；
+- 按 2026-07-28 规范镜像请求头 `Mcp-Method`（必带）与 `Mcp-Name`（tools/call、resources/read、prompts/get），非 ASCII 名自动用 `=?base64?...?=` 哨兵编码（见 `McpHeaders`）。
 
 ## 快速上手
 

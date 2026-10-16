@@ -81,6 +81,20 @@ AnthropicUtil.chatStream(
 - 支持 Function Calling
 - Anthropic 的 system prompt 通过 `ChatMessage.system()` 传入
 
+## 能力核实（v2.4.0，2026-10 联网核对）
+
+- **图像输入（视觉）已核实支持**：`ImagePart` 三种形态均按官方协议序列化——base64 内联
+  （`source.type=base64`）、URL 引用（`source.type=url`，v2.4.0 补全）、以及 Files API
+  （`source.type=file`，本 SDK 未封装文件上传，可经 `extra`/原生扩展）。依据：
+  https://platform.claude.com/docs/en/build-with-claude/vision
+- **视频输入已核实为不支持**：Claude 仅图像理解，不支持视频输入。依据同上。
+- **并行工具调用已核实**：单轮可返回多个 `tool_use` 块（SDK 已循环序列化）；所有对应
+  `tool_result` 必须合并在紧随其后的**单条 user 消息**里（v2.4.0 已把连续的
+  `ChatMessage.tool(...)` 自动合并为一条 user 消息的多个 `tool_result` 块）。依据：
+  https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use
+
 ## 官方文档
 
 https://docs.anthropic.com/en/api/messages
+https://platform.claude.com/docs/en/build-with-claude/vision
+

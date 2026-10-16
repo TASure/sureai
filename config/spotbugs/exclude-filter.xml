@@ -338,4 +338,64 @@
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- 声明式编排层 Builder 暂存共享组件引用（EI_EXPOSE_REP2）：
+         FrameworkUtil.Builder 为一次性装配器，client/memory 本就是调用方提供的组件
+         （AiClient 为平台客户端、ChatMemory 为有状态会话记忆），语义即按引用共享，
+         与 RagPipeline.Builder / ChatRequest.Builder 同类惯例；调用方负责其生命周期。 -->
+    <Match>
+        <Class name="~com.sure.ai.framework.FrameworkUtil\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 语义缓存 Builder 暂存共享组件引用（EI_EXPOSE_REP2）：
+         SemanticCache.Builder 为一次性装配器，embedder/store 本就是调用方提供的可插拔组件
+         （EmbeddingClient 为平台向量客户端、CacheStore 为有状态缓存后端，缺省 LruCacheStore、
+         外部可传 RedisCacheStore），语义即按引用共享，与 FrameworkUtil.Builder /
+         RagPipeline.Builder 同类惯例；调用方负责其生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.framework.cache.Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- AdvisorContext 暴露可变消息列表（EI_EXPOSE_REP）：
+         messages() 设计上即供链上 advisor（工具循环回填 tool 结果、校验 advisor 追加修正指令）
+         就地读写同一份对话历史，终端再据此重建请求；返回不可变视图会让工具循环无法工作，
+         与 ChatMemory.history() 返回可变列表同类编排惯例。上下文每次调用新建、不跨线程共享。 -->
+    <Match>
+        <Class name="com.sure.ai.framework.advisor.AdvisorContext"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+
+    <!-- SemanticCacheAdvisor 持有调用方注入的共享 SemanticCache（EI_EXPOSE_REP2）：
+         缓存是调用方构建（embedder/threshold/store 均由其配置）并可能跨代理共享的有状态组件，
+         advisor 仅 get/put，不拥有其生命周期，与 ReActAgent.registry / AiConfig.CacheStore
+         同类按引用共享惯例；调用方负责缓存后端与 TTL。 -->
+    <Match>
+        <Class name="com.sure.ai.framework.advisor.SemanticCacheAdvisor"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- GatewayUtil 暴露/暂存共享有状态组件（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         registry() 返回的 ClientRegistry 设计上即供调用方 register/remove 的可变共享注册表
+         （静态入口的注册便捷性是 API 本意），Builder 为一次性装配器，暂存 registry /
+         tenantManager 等调用方组件是按引用共享惯例，与 GatewayClient / FrameworkUtil.Builder
+         同类；调用方负责这些组件的生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.gateway.GatewayUtil"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="~com.sure.ai.gateway.GatewayUtil\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- EvalOutcome 执行结果记录持有异常引用（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         error() 返回的 Throwable 是调用方/被测客户端现场抛出的原始异常，评估层需要读取其
+         类型、堆栈与 cause 链做失败归因与报告展示；复制 Throwable 会丢失堆栈因果链，
+         且异常对象本就只读消费，与 McpRequest.params 同类只读视图惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.evals.metric.EvalOutcome"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>

@@ -101,7 +101,47 @@ server.registerTool(SureAiTools.chatTool(clients));
 ## 协议兼容说明
 
 - **有状态 2025-06-18**：响应 `initialize`（`protocolVersion` / `capabilities` / `serverInfo`），接受 `notifications/initialized`，HTTP 握手返回 `Mcp-Session-Id`。
-- **无状态 2026-07-28（实验性）**：当请求 `params._meta.io.modelcontextprotocol/protocolVersion` 存在、或方法为 `server/discover` 时，无需 initialize 直接处理；结果带 `resultType="complete"`、`_meta.serverInfo`，list 结果带 `ttlMs` / `cacheScope`，实现 `server/discover`。未覆盖 MRTR、`subscriptions/listen`、OAuth 等扩展面。
+- **无状态 2026-07-28**：当请求 `params._meta.io.modelcontextprotocol/protocolVersion` 存在、或方法为 `server/discover` 时，无需 initialize 直接处理；所有结果带 `resultType="complete"`、无状态结果带 `_meta.serverInfo`，list 结果带 `ttlMs` / `cacheScope`，实现 `server/discover`。
+
+## 无状态扩展面（2026-07-28，v2.3.0 收口）
+
+逐项对照 [2026-07-28 规范](https://modelcontextprotocol.io/specification/2026-07-28/changelog) 实现，规范依据见各项链接。
+
+### MRTR（Multi Round-Trip Requests，多轮请求）
+
+> 术语澄清：规范中的 MRTR 是 **Multi Round-Trip Requests**（[SEP-2322](https://modelcontextprotocol.io/specification/2026-07-28/changelog)），并非「multi-agent transport」。
+
+- **已实现**：规范要求「所有结果都必须带 `resultType`」（`"complete"` 或 `"input_required"`）。本引擎现已对**所有** JSON-RPC 结果注入 `resultType="complete"`（含有状态 `initialize` / `ping` / `tools/call`）。
+- **未实现**：`InputRequiredResult`（`resultType:"input_required"` + `inputRequests`）与客户端带 `inputResponses` 重试的完整多轮回调——这需要客户端侧的 elicitation/sampling 交互输入循环，本批不做，留待后续。
+
+### subscriptions / listen
+
+> 规范：[Subscriptions 模式](https://modelcontextprotocol.io/specification/draft/basic/patterns/subscriptions)。`subscriptions/listen` **取代**旧的 HTTP GET 端点与 `resources/subscribe` / `resources/unsubscribe`。
+
+- **已实现**：
+  - `subscriptions/listen` RPC：回显服务端承诺的订阅子集（`toolsListChanged` / `promptsListChanged` / `resourcesListChanged` / `resourceSubscriptions`），在 `com.sure.ai.mcp.server.McpSubscriptions` 中与传输层共享过滤语义；
+  - HTTP 下以 `text/event-stream` 应答，首帧发 `notifications/subscriptions/acknowledged`，并在 `_meta.io.modelcontextprotocol/subscriptionId` 回显请求 id。
+- **差异/未实现**：本批工具在启动期静态注册、无运行期列表变更源，故 ack 后随附一条 graceful-close 完成结果即结束流，未实现持续推送 `notifications/tools/list_changed` 等的真正长连接；`resources/subscribe` / `resources/unsubscribe` 按规范已移除（方法未找到 -32601）。
+
+### Mcp-Method / Mcp-Name 请求头
+
+> 规范：[Streamable HTTP / Request Metadata](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http)。
+
+- **客户端（sure-ai-mcp）已实现**：`StreamableHttpMcpTransport` 每次 POST 镜像 `Mcp-Method`（必带）与 `Mcp-Name`（`tools/call` / `resources/read` / `prompts/get`）；非 ASCII 名走 `=?base64?...?=` 哨兵格式（见 `McpHeaders.encode/decode`）。
+- **服务端（sure-ai-mcp-server）已实现**：请求若携带 `Mcp-Method` / `Mcp-Name`，传输层 Base64 解码后与 body 比对，不一致返回 `400` + JSON-RPC `-32020 HeaderMismatch`。
+- **差异**：未携带这些头的旧请求一律放行（向后兼容，默认不强制）；`MCP-Protocol-Version` 头的强制校验与 `x-mcp-header` / `Mcp-Param-*` 镜像未实现。
+
+### OAuth 客户端凭证 / 受保护资源元数据
+
+> 规范：[Authorization Server Discovery](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/authorization-server-discovery) + [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728/)。
+
+- **已实现**：HTTP 传输按 RFC 9728 在 `/.well-known/oauth-protected-resource[&lt;path&gt;]` 暴露受保护资源元数据（`resource` / `authorization_servers` / `scopes_supported`），可用 `authorizationServers(...)` / `scopesSupported(...)` 配置：
+  ```java
+  HttpMcpServerTransport http = new HttpMcpServerTransport(8080, "/mcp")
+      .authorizationServers("https://as.example.com")
+      .scopesSupported("mcp:tools");
+  ```
+- **差异/未实现**：仅暴露元数据，不做真实 token 校验/客户端凭证换 token（需独立授权服务器，超出本批纯 JDK、零外部依赖范围）。
 
 ## RAG 工具
 

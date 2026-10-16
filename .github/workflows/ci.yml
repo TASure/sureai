@@ -29,7 +29,7 @@ jobs:
             os: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@v6
@@ -39,7 +39,19 @@ jobs:
           cache: maven
 
       - name: Build, test and verify
-        run: mvn -B verify
+        # 覆盖率门禁（jacoco check）仅在 JDK21 + ubuntu 主环境执行；矩阵其他环境
+        # （JDK25/macos/windows）跳过 jacoco 插桩——JDK25 的 HttpClient/字节码实现差异
+        # 会导致个别模块行探测差异（如 OllamaClient 短报文路径）误报门禁失败，
+        # 矩阵价值是验证测试跨环境通过，覆盖率由主环境统一把关。
+        # 统一 shell: bash：windows 默认 pwsh 调用 mvn.cmd 时会把 -Dkey=value 参数
+        # 拆成 "-Dkey" + "=value"（Unknown lifecycle phase），bash 无此问题。
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == "ubuntu-latest" && "${{ matrix.java }}" == "21" ]]; then
+            mvn -B verify
+          else
+            mvn -B verify -Djacoco.skip=true
+          fi
 
       - name: Upload JaCoCo coverage report
         if: matrix.java == '21'
@@ -59,7 +71,7 @@ jobs:
     continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 21
         uses: actions/setup-java@v6
@@ -73,8 +85,21 @@ jobs:
       - name: Install modules to local repository
         run: mvn -B -DskipTests -Dgpg.skip=true install
 
+      # 缓存 NVD/CISA 数据库（~/.dependency-check）：首次冷启动约 60 分钟，
+      # 命中后增量更新仅需 1-3 分钟；key 随依赖树变化失效，但 restore-keys 会回退到最近缓存增量更新。
+      - name: Cache dependency-check data
+        uses: actions/cache@v4
+        with:
+          path: ~/.dependency-check
+          key: dependency-check-${{ runner.os }}-${{ hashFiles('pom.xml', '**/pom.xml') }}
+          restore-keys: |
+            dependency-check-${{ runner.os }}-
+
       - name: OWASP dependency-check
-        run: mvn -B -Psecurity -pl sure-ai-all dependency-check:check -Dgpg.skip=true
+        # NVD_API_KEY 为仓库 Actions secret（NVD 官网激活后写入），注入 nvdApiKey 参数：
+        # 带 key 可显著提高 NVD API 配额（50 req/30s），避免无 key 限流/失败；
+        # 13.x 对缺失 key 直接报 Invalid API Key，故 secret 未配置时本 job 变红但不阻塞门禁（continue-on-error）。
+        run: mvn -B -Psecurity -pl sure-ai-all dependency-check:check -Dgpg.skip=true -DnvdApiKey="${{ secrets.NVD_API_KEY }}"
 
       - name: Upload dependency-check report
         if: always()
@@ -98,7 +123,7 @@ jobs:
     continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up GraalVM JDK 21 + native-image
         uses: graalvm/setup-graalvm@v1
@@ -119,7 +144,10 @@ jobs:
       - name: Native-image compile
         run: |
           mkdir -p sure-ai-cli/target/native-image
-          native-image -jar sure-ai-cli/target/sure-ai-cli-2.2.0-SNAPSHOT.jar \
+          # fat jar 动态定位（排除 original-/sources/javadoc 变体），避免版本号硬编码随 bump 失效
+          JAR=$(ls sure-ai-cli/target/*.jar | grep -v -E 'original-|sources|javadoc' | head -1)
+          echo "native-image input jar: $JAR"
+          native-image -jar "$JAR" \
             -H:Name=sure-ai-cli -H:Path=sure-ai-cli/target/native-image
 
       # 冒烟：list 子命令零网络、零 API key，验证 native 二进制可启动 + ProviderRegistry

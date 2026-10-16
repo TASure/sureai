@@ -170,6 +170,16 @@ public final class ExamplesRunner {
 			case "proxy":
 				ProxyDemo.main(emptyArgs);
 				break;
+			case "evals":
+				EvalsDemo.main(emptyArgs);
+				break;
+			case "regression":
+				try {
+					RegressionDemo.main(emptyArgs);
+				} catch (Exception ex) {
+					System.out.println("regression 示例运行失败: " + ex.getMessage());
+				}
+				break;
 			default:
 				System.out.println("未知平台：" + args[0]);
 				printUsage();
@@ -217,5 +227,7 @@ public final class ExamplesRunner {
 		System.out.println("  gateway-multi - 多平台统一网关对比（OpenAI/DeepSeek/Qwen 同问三答，可离线）");
 		System.out.println("  code-assistant - 代码助手（chatStream 流式 + calculator/datetime 工具调用，可离线）");
 		System.out.println("  proxy     - OpenAI 兼容代理演示（JDK HttpServer，loopback 自测）");
+		System.out.println("  evals     - 通用评估：数据集→确定性+LLM裁判指标→报告→阈值断言（离线）");
+		System.out.println("  regression - 录制→回放→TraceRegression golden 回归（离线）");
 	}
 }

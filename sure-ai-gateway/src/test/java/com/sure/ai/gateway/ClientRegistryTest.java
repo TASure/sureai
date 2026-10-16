@@ -119,4 +119,20 @@ public class ClientRegistryTest {
 		registry.removeAll("openai");
 		assertTrue(registry.byPlatform("openai").isEmpty());
 	}
+
+	/** candidates() 返回全部注册候选（含被标记不健康的实例）。 */
+	@Test
+	public void candidatesIncludesUnhealthy() {
+		ClientRegistry registry = new ClientRegistry();
+		FakeClient c1 = new FakeClient("c1");
+		FakeClient c2 = new FakeClient("c2");
+		registry.register("openai", "us", c1);
+		registry.register("openai", "eu", c2);
+		registry.markUnhealthy("openai", "us", 60_000L);
+
+		// 断言点：不健康后 healthyCandidates 只剩 1 个，但 candidates() 仍返回全部 2 个
+		assertEquals(1, registry.healthyCandidates().size());
+		List<ClientCandidate> all = registry.candidates();
+		assertEquals(2, all.size());
+	}
 }

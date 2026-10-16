@@ -203,6 +203,13 @@
     "allRecordComponents": true
   },
   {
+    "name": "com.sure.ai.model.VideoPart",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allRecordComponents": true
+  },
+  {
     "name": "com.sure.ai.model.Word",
     "allDeclaredConstructors": true,
     "allDeclaredMethods": true,

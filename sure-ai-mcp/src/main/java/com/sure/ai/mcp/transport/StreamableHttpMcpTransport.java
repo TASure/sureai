@@ -41,8 +41,10 @@ import com.sure.ai.mcp.message.McpResponse;
  * Streamable HTTP 传输：JDK {@link HttpClient} POST 单端点。
  *
  * <p>请求头携带 {@code Content-Type: application/json}、
- * {@code Accept: application/json, text/event-stream}；首次响应若返回
- * {@code Mcp-Session-Id} 头则缓存，后续请求原样带回。</p>
+ * {@code Accept: application/json, text/event-stream}；并按 2026-07-28 规范镜像
+ * {@code Mcp-Method}（所有请求）与 {@code Mcp-Name}（tools/call、resources/read、prompts/get），
+ * 非 ASCII 名走 {@link McpHeaders#encode(String)} 的 Base64 哨兵格式。
+ * 首次响应若返回 {@code Mcp-Session-Id} 头则缓存，后续请求原样带回。</p>
  *
  * <p>响应按 Content-Type 分支：{@code application/json} 直接解析为单个 JSON-RPC 响应；
  * {@code text/event-stream} 用 core 的 {@link SseLineReader} 聚合 SSE，取到与请求 id
@@ -76,6 +78,12 @@ public final class StreamableHttpMcpTransport implements McpTransport {
 	@Override
 	public McpResponse sendRequest(McpRequest request) {
 		HttpRequest.Builder rb = baseRequest();
+		// 2026-07-28 标准请求头镜像：Mcp-Method 必有；Mcp-Name 按方法附带（非 ASCII 走 Base64 哨兵）
+		rb.header(McpHeaders.HEADER_MCP_METHOD, request.method());
+		String nameVal = McpHeaders.mcpNameFor(request.method(), request.params());
+		if (nameVal != null) {
+			rb.header(McpHeaders.HEADER_MCP_NAME, McpHeaders.encode(nameVal));
+		}
 		rb.POST(HttpRequest.BodyPublishers.ofString(Json.stringify(request.toJson()), StandardCharsets.UTF_8));
 		HttpResponse<InputStream> resp = send(rb);
 		return decode(request.id(), resp);

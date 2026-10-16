@@ -18,6 +18,7 @@ package com.sure.ai.azure;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
@@ -34,6 +35,8 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.exception.AiException;
+import com.sure.ai.exception.AiTimeoutException;
 import com.sure.ai.model.BatchRequest;
 import com.sure.ai.model.BatchResponse;
 
@@ -55,12 +58,16 @@ public class AzureBatchClientTest {
 	private final AtomicReference<String> reqAuth = new AtomicReference<>();
 	private final AtomicReference<String> rawQuery = new AtomicReference<>();
 
+	/** 响应模式：null=默认；"failed"=任务失败；"timeout"=始终处理中；"noCounts"=无 request_counts；"errStr"=error 字符串。 */
+	private String mode;
+
 	/** 启动 mock 服务。 */
 	@Before
 	public void setUp() throws IOException {
 		this.server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		this.server.start();
 		this.baseUrl = "http://127.0.0.1:" + this.server.getAddress().getPort();
+		this.mode = null;
 		registerHandlers();
 	}
 
@@ -69,6 +76,7 @@ public class AzureBatchClientTest {
 	public void tearDown() {
 		this.server.stop(0);
 		AzureUtil.resetBatchClient();
+		AzureBatchClient.POLL_INTERVAL_MS = 2000L;
 	}
 
 	/** 注册 Azure batches 路由。 */
@@ -89,9 +97,20 @@ public class AzureBatchClientTest {
 				return;
 			}
 			if (method.equals("GET") && path.equals("/openai/v1/batches/" + BATCH_ID)) {
-				String body = "{\"id\":\"" + BATCH_ID + "\",\"object\":\"batch\",\"status\":\"completed\","
-					+ "\"created_at\":1711471649,\"completed_at\":1711479999,"
-					+ "\"request_counts\":{\"total\":50,\"completed\":50,\"failed\":0}}";
+				String body;
+				if ("failed".equals(this.mode)) {
+					body = "{\"id\":\"" + BATCH_ID + "\",\"status\":\"failed\",\"error\":{\"message\":\"boom\"}}";
+				} else if ("timeout".equals(this.mode)) {
+					body = "{\"id\":\"" + BATCH_ID + "\",\"status\":\"in_progress\"}";
+				} else if ("noCounts".equals(this.mode)) {
+					body = "{\"id\":\"" + BATCH_ID + "\",\"status\":\"completed\"}";
+				} else if ("errStr".equals(this.mode)) {
+					body = "{\"id\":\"" + BATCH_ID + "\",\"status\":\"failed\",\"error\":\"oops\"}";
+				} else {
+					body = "{\"id\":\"" + BATCH_ID + "\",\"object\":\"batch\",\"status\":\"completed\","
+						+ "\"created_at\":1711471649,\"completed_at\":1711479999,"
+						+ "\"request_counts\":{\"total\":50,\"completed\":50,\"failed\":0}}";
+				}
 				respond(exchange, 200, body);
 				return;
 			}
@@ -147,6 +166,16 @@ public class AzureBatchClientTest {
 		client.close();
 	}
 
+	/** waitForCompletion 首次即完成 → 直接返回。 */
+	@Test
+	public void testWaitCompleted() {
+		AzureBatchClient.POLL_INTERVAL_MS = 10L;
+		AzureBatchClient client = newClient();
+		BatchResponse resp = client.waitForCompletion(BATCH_ID, 5000L);
+		assertTrue(resp.isCompleted());
+		client.close();
+	}
+
 	/** name() 与 apiVersion()。 */
 	@Test
 	public void testNameAndApiVersion() {
@@ -154,6 +183,87 @@ public class AzureBatchClientTest {
 		assertEquals("azure-batch", client.name());
 		assertEquals("2024-10-21", client.apiVersion());
 		assertNotNull(AzureClient.DEFAULT_API_VERSION);
+		client.close();
+	}
+
+	/** 缺 input_file_id（blank）抛 AiException。 */
+	@Test
+	public void testCreateMissingInputFileId() {
+		AzureBatchClient client = newClient();
+		assertThrows(AiException.class, () -> client.createBatch(BatchRequest.builder()
+			.model("m").inputFileId(" ").build()));
+		client.close();
+	}
+
+	/** endpoint 覆盖、缺省 completionWindow、metadata 序列化。 */
+	@Test
+	public void testCreateWithOptions() {
+		AzureBatchClient client = newClient();
+		client.createBatch(BatchRequest.builder().model("m").inputFileId("f1")
+			.extra("endpoint", "/v1/embeddings").metadata("purpose", "eval").build());
+		String body = this.reqBody.get();
+		assertTrue(body.contains("\"endpoint\":\"/v1/embeddings\""));
+		assertTrue(body.contains("\"completion_window\":\"24h\""));
+		assertTrue(body.contains("\"purpose\":\"eval\""));
+		client.close();
+	}
+
+	/** 任务失败：waitForCompletion 抛 AiException。 */
+	@Test
+	public void testWaitFailed() {
+		this.mode = "failed";
+		AzureBatchClient.POLL_INTERVAL_MS = 10L;
+		AzureBatchClient client = newClient();
+		AiException ex = assertThrows(AiException.class,
+			() -> client.waitForCompletion(BATCH_ID, 5000L));
+		assertTrue(ex.getMessage().contains("failed"));
+		client.close();
+	}
+
+	/** 超时：始终处理中抛 AiTimeoutException。 */
+	@Test
+	public void testWaitTimeout() {
+		this.mode = "timeout";
+		AzureBatchClient.POLL_INTERVAL_MS = 10L;
+		AzureBatchClient client = newClient();
+		assertThrows(AiTimeoutException.class, () -> client.waitForCompletion(BATCH_ID, 80L));
+		client.close();
+	}
+
+	/** 线程已中断：sleepQuietly 捕获 InterruptedException 并抛出 AiException。 */
+	@Test
+	public void testSleepQuietlyInterrupted() throws Exception {
+		AzureBatchClient.POLL_INTERVAL_MS = 10000L;
+		java.lang.reflect.Method m = AzureBatchClient.class.getDeclaredMethod("sleepQuietly");
+		m.setAccessible(true);
+		Thread.currentThread().interrupt();
+		try {
+			assertThrows(java.lang.reflect.InvocationTargetException.class, () -> m.invoke(null));
+		}
+		finally {
+			Thread.interrupted();
+		}
+	}
+
+	/** 无 request_counts：counts 归零；error 字符串解析。 */
+	@Test
+	public void testNoCountsAndErrorString() {
+		this.mode = "errStr";
+		AzureBatchClient client = newClient();
+		BatchResponse resp = client.getBatch(BATCH_ID);
+		assertEquals(0, resp.requestCounts().total());
+		assertEquals("oops", resp.error());
+		client.close();
+	}
+
+	/** 无 request_counts 的 completed 响应（counts 归零不抛）。 */
+	@Test
+	public void testNoCountsCompleted() {
+		this.mode = "noCounts";
+		AzureBatchClient client = newClient();
+		BatchResponse resp = client.getBatch(BATCH_ID);
+		assertTrue(resp.isCompleted());
+		assertEquals(0, resp.requestCounts().total());
 		client.close();
 	}
 }

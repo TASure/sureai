@@ -33,6 +33,8 @@ import org.junit.Test;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import com.sure.ai.internal.json.Json;
+import com.sure.ai.internal.json.JsonObject;
 import com.sure.ai.mcp.message.McpRequest;
 import com.sure.ai.mcp.message.McpResponse;
 
@@ -48,6 +50,8 @@ public class StreamableHttpMcpTransportTest {
 	private String endpoint;
 	private final AtomicReference<String> lastSessionHeader = new AtomicReference<>();
 	private final AtomicReference<String> lastBody = new AtomicReference<>();
+	private final AtomicReference<String> lastMethodHeader = new AtomicReference<>();
+	private final AtomicReference<String> lastNameHeader = new AtomicReference<>();
 
 	/** 启动本地服务。 */
 	@Before
@@ -115,6 +119,44 @@ public class StreamableHttpMcpTransportTest {
 		});
 		StreamableHttpMcpTransport t = new StreamableHttpMcpTransport(this.endpoint, Duration.ofSeconds(5));
 		t.sendRequest(new McpRequest(1L, "x", null));
+	}
+
+	/** 2026-07-28：请求须镜像 Mcp-Method；tools/call 须带 Mcp-Name。 */
+	@Test
+	public void sendsStandardRequestHeaders() {
+		this.server.createContext("/mcp", ex -> {
+			this.lastMethodHeader.set(ex.getRequestHeaders().getFirst("Mcp-Method"));
+			this.lastNameHeader.set(ex.getRequestHeaders().getFirst("Mcp-Name"));
+			ex.getRequestBody().readAllBytes();
+			respond(ex, 200, "application/json", "{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{}}");
+		});
+		StreamableHttpMcpTransport t = new StreamableHttpMcpTransport(this.endpoint, Duration.ofSeconds(5));
+		JsonObject params = Json.object();
+		params.put("name", "echo");
+		params.set("arguments", Json.object());
+		t.sendRequest(new McpRequest(7L, "tools/call", params));
+		assertEquals("tools/call", this.lastMethodHeader.get());
+		assertEquals("echo", this.lastNameHeader.get());
+		t.close();
+	}
+
+	/** 非 ASCII 的 Mcp-Name 走 Base64 哨兵格式，且可被解码回原文。 */
+	@Test
+	public void nonAsciiNameIsBase64Encoded() {
+		this.server.createContext("/mcp", ex -> {
+			this.lastNameHeader.set(ex.getRequestHeaders().getFirst("Mcp-Name"));
+			ex.getRequestBody().readAllBytes();
+			respond(ex, 200, "application/json", "{\"jsonrpc\":\"2.0\",\"id\":8,\"result\":{}}");
+		});
+		StreamableHttpMcpTransport t = new StreamableHttpMcpTransport(this.endpoint, Duration.ofSeconds(5));
+		JsonObject params = Json.object();
+		params.put("name", "你好工具");
+		params.set("arguments", Json.object());
+		t.sendRequest(new McpRequest(8L, "tools/call", params));
+		String header = this.lastNameHeader.get();
+		assertTrue(header, header.startsWith("=?base64?") && header.endsWith("?="));
+		assertEquals("你好工具", McpHeaders.decode(header));
+		t.close();
 	}
 
 	private static void respond(HttpExchange ex, int status, String contentType, String body) throws IOException {

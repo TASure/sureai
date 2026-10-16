@@ -34,20 +34,24 @@
 - **图像生成**：`ImageClient` 统一抽象，支持 DALL·E / 通义万相 / CogView / 文心一格 / Gemini Imagen，异步平台内部轮询屏蔽，对外同步返回
 - **视频生成**：`VideoClient` 统一抽象，支持 Sora / 通义万相 Wan / CogVideoX / Seedance / Azure Sora 2，全平台异步任务轮询屏蔽，对外同步返回
 - **语音 TTS/STT**：`AudioClient` 统一抽象（TTS 合成 + STT 转录），支持 OpenAI / CosyVoice / GLM-TTS / 豆包 / 百度 / Azure Speech，二进制音频 / URL / Base64 三种响应形态
-- **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（文档加载器：本地文件/URL；分块：递归字符/Markdown/固定大小/语义/父子；向量存储：内置 + Milvus/Chroma/Qdrant/Pinecone/Weaviate/Elasticsearch/OpenSearch/Redis 共 9 种外部适配；检索：向量 + BM25 关键词混合加权融合；Prompt 模板 + 查询改写；增强生成）。**高级检索策略（v1.8.0）**：HyDE / Multi-Query(RRF) / CRAG 纠正式 / 父子 Small-to-Big / 语义分块 / 多模态 RAG；**GraphRAG**（实体关系抽取→社区发现→逐社区摘要）；**RAG 评估**（faithfulness / context_precision / context_recall / answer_relevancy 四指标 + 阈值断言 + 轨迹回放回归）；**可移植 metadata filter**（FilterExpression 抽象 + 6 方言翻译器）。见 [docs/rag.md](docs/rag.md)、[docs/vector-stores.md](docs/vector-stores.md)、[docs/prompt-template.md](docs/prompt-template.md)
+- **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（文档加载器：本地文件/URL；分块：递归字符/Markdown/固定大小/语义/父子；向量存储：内置 + Milvus/Chroma/Qdrant/Pinecone/Weaviate/Elasticsearch/OpenSearch/Redis/PGVector/Typesense/Cassandra/MongoDB/Neo4j 共 13 种外部适配（合计 14 种）；检索：向量 + BM25 关键词混合加权融合；Prompt 模板 + 查询改写；增强生成）。**高级检索策略（v1.8.0）**：HyDE / Multi-Query(RRF) / CRAG 纠正式 / 父子 Small-to-Big / 语义分块 / 多模态 RAG；**GraphRAG**（实体关系抽取→社区发现→逐社区摘要）；**RAG 评估**（faithfulness / context_precision / context_recall / answer_relevancy 四指标 + 阈值断言 + 轨迹回放回归）；**可移植 metadata filter**（FilterExpression 抽象 + 11 方言翻译器）。见 [docs/rag.md](docs/rag.md)、[docs/vector-stores.md](docs/vector-stores.md)、[docs/prompt-template.md](docs/prompt-template.md)
+- **文档导入器（v2.6.0）**：`sure-ai-ingest` 新模块（已进 `sure-ai-all`/`sure-ai-bom`）——`DocumentLoader` SPI（`FileSystemLoader` 本地文件 / `URLLoader` 网络 URL，按扩展名/Content-Type 路由）+ `DocumentParser` 格式解析 SPI。内置 **TXT/MD/HTML/PDF** 全 JDK 支持：PDF 为纯 JDK 有限文本层提取（`Tj`/`TJ` 流扫描，**不引 PDFBox**；扫描件/加密/字体映射/多栏不处理，损坏按空返回）、HTML 为最小正则剥标签；DOCX/XLSX/PPTX 由可选模块 `sure-ai-ingest-poi`（Apache POI 5.5.1 **provided** 不传递，需自行声明依赖）。产出直接复用 rag `Document`，无缝接入 `RagPipeline.ingest`。见 [docs/ingest.md](docs/ingest.md)
 - **Agent 编排（ReAct + Plan-and-Execute）**：`sure-ai-agent` 工具注册中心 + Function Calling 参数校验 + ReAct 编排器 + PlanExecuteAgent（规划→逐步执行→汇总，三级计划解析兜底）；多 Agent 编排（TaskSplitter/AgentOrchestrator/ResultAggregator 并行执行+异常隔离）；内置工具包（HttpTool/DateTimeTool/CalculatorTool 白名单四则）；会话记忆（ConversationMemory 环形窗口，可选注入）。任意 `AiClient` 可驱动，异常/超限/超时全防护。见 [docs/agent.md](docs/agent.md)
 - **生产级 Agent（v1.7.0）**：在 ReActAgent 之上可选注入四组生产能力——检查点持久化（`CheckpointStore`/`AgentCheckpointer` 重放式恢复，run 开头/每轮迭代/结束自动落盘）、流式事件（8 类 `AgentEvent` + `StreamingAgentListener` 桥接 + SSE 写出）、HITL 审批（`ApprovalPolicy` 4 预置策略 + `ApprovalHandler` 4 预置处理器，拒绝/超时回灌模型）、长期记忆（`LongTermMemory` 跨会话召回 Top-K 注入 system + 自动沉淀，向量/文本双路降级）。全部传 null 即关闭，行为与历史版本一致。见 [docs/agent-advanced.md](docs/agent-advanced.md)
+- **声明式编排 AiService（v2.5.0）**：`sure-ai-framework` 新模块——`FrameworkUtil.create(接口.class, client)` 一行把带注解的 Java 接口经 JDK 动态代理变成 AI 服务。注解族 `@AiService`/`@SystemMessage`/`@UserMessage`/`@Tool`/`@Memory`/`@Param`（`{paramName}` 模板），返回映射 `String`/`ChatResponse`/`Stream`/`record`（结构化自动挂 json_schema）；`@Tool` 方法签名自动转 JSON Schema（直调拒绝、模型侧触发）。配套 **Advisor 链**三钩子（before 正序/around 嵌套/after 逆序）+ 四件套（`SemanticCacheAdvisor` 语义缓存短路 / `LoggingAdvisor` 日志 / `ToolCallingAdvisor` 自动工具循环 / `StructuredOutputValidationAdvisor` 校验自纠）；**`SemanticCache`** embedding 余弦阈值命中、可插拔 `CacheStore`（缺省 Lru，可接 `RedisCacheStore` 分布式共享）。仅依赖 core、零第三方运行期依赖。见 [docs/framework.md](docs/framework.md)
 - **MCP 客户端**：`sure-ai-mcp` Model Context Protocol JSON-RPC 2.0 客户端，stdio（ProcessBuilder 子进程）/ Streamable HTTP（JDK HttpClient + SSE 聚合）双传输，initialize 握手 + tools/resources/prompts 能力 API；**McpTool 适配器**把 MCP server 工具批量注册进 `ToolRegistry`，与 ReActAgent 无缝组合。见 [docs/mcp.md](docs/mcp.md)
 - **MCP Server**：`sure-ai-mcp-server` 把 sureai 多平台 `AiClient`/`EmbeddingClient`/`ImageClient` 反向暴露为标准 MCP Server，纯 JDK 协议引擎 + stdio/Streamable HTTP 双传输，注册式工具模型保证核心零平台依赖，兼容有状态 2025-06-18 并实验性适配无状态 2026-07-28。见 [docs/mcp-server.md](docs/mcp-server.md)
-- **AI Gateway**：`sure-ai-gateway` 多供应商统一网关，`GatewayClient` 实现 `AiClient` 对调用方透明；6 种路由策略（Explicit/Capability/RoundRobin/Weighted/LowestLatency/LowestCost，可组合）+ 自动故障转移（4xx 不转移/5xx 超时转移，不健康摘除冷却）+ 密钥池轮转（401/429 自动换 key）+ 租户配额预算。见 [docs/gateway.md](docs/gateway.md)
+- **AI Gateway**：`sure-ai-gateway` 多供应商统一网关，`GatewayClient` 实现 `AiClient` 对调用方透明；6 种路由策略（Explicit/Capability/RoundRobin/Weighted/LowestLatency/LowestCost，可组合）+ 自动故障转移（4xx 不转移/5xx 超时转移，不健康摘除冷却）+ 密钥池轮转（401/429 自动换 key）+ 租户配额预算。**生产化（v2.7.0）**：熔断（按 client 维度三态 + 路由过滤 OPEN）/ 健康探活（`HealthProbe` SPI + `HealthMonitor`）/ 请求超时装饰（`GatewayTimeoutDecorator` 可触发 failover）/ 流式首段前故障转移 / `GatewayMetrics`（p50/p95/p99 + 成本）/ `GatewayAuditLogger`（JUL 概要审计）/ 租户并发上限（`maxConcurrency`）/ `GatewayUtil` 静态入口。见 [docs/gateway.md](docs/gateway.md)
 - **成本计量**：`sure-ai-core com.sure.ai.cost` 价格目录（18 个内置模型）+ 单次成本计算（含缓存 token）+ 按租户/模型/时间窗汇总，线程安全内存实现。见 [docs/cost.md](docs/cost.md)
 - **OpenAI 兼容代理**：`sure-ai-proxy` 独立 HTTP 服务（LiteLLM proxy 模式，基于 JDK HttpServer 零新依赖），/v1/chat/completions（非流+SSE 流）、/v1/models、/v1/embeddings；虚拟密钥鉴权；ProxyConfig（properties 配置）。见 [docs/proxy.md](docs/proxy.md)
 - **可观测性（重试回调/指标/限流）**：`RetryListener` 重试事件回调 + `MetricsCollector` 指标埋点（内置零依赖 `AiMetrics`）+ 客户端 QPS 限流（sure-core 令牌桶），`sure-ai-micrometer` 可选 Micrometer/Prometheus 桥接，未挂载零开销。见 [docs/observability.md](docs/observability.md)
-- **响应缓存**：`ChatCacheKey` 请求归一化 SHA-256 + `CacheStore` SPI + 内置 `LruCacheStore`（LRU+TTL，纯 JDK），默认关闭零开销，命中不触发网络/指标/重试，Redis 适配见文档示例。见 [docs/cache.md](docs/cache.md)
+- **响应缓存**：`ChatCacheKey` 请求归一化 SHA-256 + `CacheStore` SPI + 内置 `LruCacheStore`（LRU+TTL，纯 JDK），默认关闭零开销，命中不触发网络/指标/重试；**`RedisCacheStore`（v2.4.0）**基于共享 RESP2 编解码（零 Lettuce/Jedis 依赖）的外部 Redis 缓存，支持多实例共享、`SCAN` 非阻塞清空，LruCacheStore vs RedisCacheStore 选型见文档。见 [docs/cache.md](docs/cache.md)
 - **Spring Boot Starter**：`sure-ai-spring-boot-starter` 自动配置（`sure.ai.<platform>.api-key` 等属性绑定 + `@ConditionalOnProperty` 条件装配 + `@Autowired` 注入），仅 Spring Boot 工程使用，core/平台模块零 Spring 依赖。见 [docs/spring-boot.md](docs/spring-boot.md)
 - **Quarkus 扩展（v1.9.0）**：`sure-ai-quarkus-extension`（runtime + deployment 双模块）按 `sure.ai.<platform>.api-key` 条件把对应 `XxxClient` 注册为 Arc 合成 `@Singleton` Bean，注入即用；与 Spring Starter 配置同构，core/平台模块零 Quarkus 依赖。见 [docs/quarkus-extension.md](docs/quarkus-extension.md)
 - **全链路异步 / 虚拟线程（v1.9.0）**：`AiClient` 新增 `chatAsync`/`chatStreamAsync` default 方法族，`AsyncClients` 一行把任意同步 Client 包装为 `AsyncAiClient`/`AsyncEmbeddingClient`/`AsyncImageClient`/`AsyncVideoClient`/`AsyncAudioClient`，统一跑在 JDK 21 虚拟线程上（`AsyncExecutors.virtualThreadExecutor()`），`CompletableFuture` 可取消、异常原样透传。见 [docs/async.md](docs/async.md)
 - **OpenTelemetry GenAI 桥接（v1.9.0）**：`sure-ai-otel` 把 `MetricsCollector`/`RetryListener`/`AgentEventSink` 桥接为 OTel GenAI 语义约定指标（`gen_ai.client.operation.duration` / `input_tokens` / `output_tokens`），仅依赖 OTel API（provided），SDK/导出器由使用方自备；传 null MeterProvider 即空操作无感降级。见 [docs/observability.md](docs/observability.md#opentelemetry-genai-桥接可选模块)
+- **Langfuse 原生导出（v2.4.0）**：`sure-ai-otel` 的 `langfuse` 子包零依赖直连 Langfuse Ingestion API——`LangfuseExporters.metricsCollectorFromEnv()` 一行把一次聊天调用上报为 `trace` + `generation`（耗时/model/token 用量，重试挂为 event），HTTP Basic `base64(pk:sk)` 认证，密钥缺失即空操作无感降级。见 [docs/observability.md](docs/observability.md#langfuse-原生导出v240)
+- **通用评估全链路（v2.8.0）**：`sure-ai-evals` 新模块（仅依赖 core、零第三方运行期依赖，已进 `sure-ai-all`/`sure-ai-bom`）——**LLM-as-judge 通用化**（`LlmJudgeMetric` 四模式：BINARY / 1~5 分量表 / 百分制 / pairwise，rubric 可配、裁判失败容错为 NaN）+ 确定性指标（exact_match / contains / regex / JSON Schema 合法性）+ 语义指标（embedding 余弦相似度）+ 运行指标（延迟 / token 成本）；**数据集** CSV/JSONL 手写加载器（引号/转义/BOM/坏行容错）；`EvalRunner` 批量并发执行（失败用例与指标双隔离，聚合 pass rate / p50 / p95 / 总 token）；**JSON/Markdown/HTML 三格式报告**（HTML 自包含无外链）；**CI 阈值断言**（`EvalThreshold`/`EvalAssertions` 不达标抛 AssertionError）；**录制回放与 TraceRegression**（`RecordingClient` JSONL 落盘、回放零网络、基线 vs 当前容差回归）；**A/B 对比**（`EvalComparison` 逐指标差值 + pairwise 胜平负）；可观测增量——OTel `eval.evaluation` span 与 Langfuse scores（score-create）。与 RAG 专用评估（faithfulness 等）互补不依赖。见 [docs/evals.md](docs/evals.md)
 - **命令行工具（v2.0.0）**：`sure-ai-cli` 零依赖终端直接问答——`chat` / `stream` / `rag`（本地文档）/ `list` / `repl` 五子命令，一键切换全部 23 个平台；可打 fat jar，亦可 GraalVM native-image 编译为单文件可执行。不写一行 Java 即可体验全库。见 [docs/cli.md](docs/cli.md)
 - **Maven 工程脚手架（v2.0.0）**：`sure-ai-archetype` 一条 `mvn archetype:generate` 生成带 BOM import、单平台 Client 调用、README 与 .gitignore 的 Hello World 工程，platform 属性可切换 23 平台。见 [docs/COOKBOOK.md](docs/COOKBOOK.md)
 - **GraalVM native-image AOT 加固（v2.0.0）**：全库补齐 `META-INF/native-image/**` 反射 / 资源 / 编译参数元数据（reflect-config 共 42 条：core 30 + agent 8 + mcp-server 4），fat jar 自动内联，native 编译免手写配置；`NativeImageMetadataTest` 守卫 core model 包不遗漏。见 [docs/native-image.md](docs/native-image.md)
@@ -55,11 +59,11 @@
 - **熔断器**：`CircuitBreaker` 三态状态机（CLOSED→OPEN→HALF_OPEN），滑动窗口失败计数+OPEN超时+HALF_OPEN探测，`AiConfig.circuitBreaker` 可选注入，默认关闭零开销，与重试/限流嵌套协作。见 [docs/circuit-breaker.md](docs/circuit-breaker.md)
 - **Rerank 重排序**：`RerankClient` 统一抽象，通义千问 qwen3-rerank 接入，二阶段精排可无缝接入 RAG 检索链路
 - **结构化输出**：`response_format` 统一抽象（json_object / JSON Schema），`JsonMapper` 零依赖强类型 record 反序列化，8 平台适配
-- **多模态图像理解**：`MessagePart` 内容块架构（文本 + 图片），OpenAI 兼容 / Gemini / Anthropic / 百度 图片输入归一
+- **多模态图像理解**：`MessagePart` 内容块架构（文本 + 图片），OpenAI 兼容 / Gemini / Anthropic / 百度 图片输入归一；**`VideoPart` 视频输入（v2.4.0，官方文档联网核实）**——Gemini `fileData`/`inlineData`、通义千问 `video_url`，Anthropic 已核实不支持视频输入。见 [docs/multimodal.md](docs/multimodal.md)
 - **PDF 文档输入**：`DocumentPart` 内容块，5 平台 PDF 文档理解适配
 - **Prompt 缓存**：Anthropic `cache_control` / Gemini `cachedContent` / OpenAI 自动缓存，降低长上下文重复前缀成本
 - **Batches 批处理**：`BatchClient` 统一抽象，OpenAI / Azure / 智谱 / Anthropic 异步批量推理，内置轮询
-- **Realtime 实时语音**：`RealtimeClient` 全双工 WebSocket 抽象，OpenAI / Gemini / 通义千问 / 智谱 / 豆包 5 平台接入，连接器可注入便于 mock
+- **Realtime 实时语音**：`RealtimeClient` 全双工 WebSocket 抽象，OpenAI / Gemini / 通义千问 / 智谱 / 豆包 5 平台接入，连接器可注入便于 mock；**连接韧性（v2.4.0）**——`RealtimeOptions` 自动重连（指数退避、可配上限/可关闭）、周期心跳 ping + 空闲判死、8 个生命周期回调、VAD（speech started/stopped）与中断（barge-in）事件标准化，Gemini 重连后自动重发 `setup`。见 [docs/realtime.md](docs/realtime.md)
 - **思考模式**：`reasoningEffort` / `thinkingConfig` 统一抽象 + 思维链 `reasoningContent` 解析，OpenAI / Azure / Gemini / Anthropic / 通义千问 5 平台适配
 - **Grounding 联网**：`grounding` 统一开关，工具式（web_search / googleSearch）与布尔式（enable_search）双范式，OpenAI / Azure / Gemini / 通义千问 / 智谱 / 豆包 6 平台接入，引用来源解析
 - **微调**：`FineTuneClient` 统一抽象（上传训练文件 + 创建/查询任务），OpenAI / Azure / 百度千帆 3 平台接入
@@ -100,6 +104,12 @@
 各平台专项文档：[AWS Bedrock](docs/bedrock.md) · [Cohere](docs/cohere.md) · [Grok](docs/grok.md) · [Mistral](docs/mistral.md) · [llama.cpp](docs/llamacpp.md)；其余平台（OpenAI / Azure / Anthropic / Gemini / DeepSeek / 通义千问 / 智谱 / Moonshot / 豆包 / 百度 / Ollama 及 v1.9.0 新增的 MiniMax / StepFun / Baichuan / Lingyi / SiliconFlow / Hunyuan / Spark）的逐平台文档见 `docs/platforms/`；各平台支持的能力清单见 [docs/capabilities.md](docs/capabilities.md)。
 
 聚合模块：`sure-ai-all`（一个依赖引入全部平台）、`sure-ai-bom`（版本统一管理）。
+
+编排层：`sure-ai-framework`（v2.5.0 声明式编排——`FrameworkUtil` 接口即服务 + Advisor 链四件套 + `SemanticCache` 语义缓存；仅依赖 core，已进 `sure-ai-all`/`sure-ai-bom` 聚合链，见 [docs/framework.md](docs/framework.md)）。
+
+数据导入层：`sure-ai-ingest`（v2.6.0 文档导入器——`FileSystemLoader`/`URLLoader` + `DocumentParser` SPI，内置 TXT/MD/HTML/PDF 全 JDK 支持，已进 `sure-ai-all`/`sure-ai-bom`；可选 `sure-ai-ingest-poi` 提供 DOCX/XLSX/PPTX，Apache POI 5.5.1 provided、仅进 bom 版本管理、不进运行期聚合链，见 [docs/ingest.md](docs/ingest.md)）。
+
+评估层：`sure-ai-evals`（v2.8.0 通用评估——CSV/JSONL 数据集 → 四类指标（确定性 / 语义 / LLM 裁判 / 运行指标）→ `EvalRunner` 批量并发 → JSON/Markdown/HTML 报告 → CI 阈值断言；`RecordingClient` 录制回放 + `TraceRegression` 基线回归；仅依赖 core、零第三方运行期依赖，与 RAG 专用评估互补，已进 `sure-ai-all`/`sure-ai-bom`，见 [docs/evals.md](docs/evals.md)）。
 
 应用层：`sure-ai-cli`（命令行直接问答：chat / stream / rag / list / repl，一键切换全部 23 个平台，可打 fat jar 并支持 [GraalVM native-image](docs/native-image.md)；不进入 `sure-ai-all` 聚合链，见 [docs/cli.md](docs/cli.md)）。
 
@@ -447,11 +457,22 @@ ChatResponse answer = pipeline.ask("sureai 支持哪些能力？");
 ```
 
 内置进程内向量库（余弦相似度），并开箱适配 Milvus / Chroma / Qdrant / Pinecone /
-Weaviate / Elasticsearch / OpenSearch / Redis 共 8 种外部向量库（共 9 种实现）；
-亦可自行实现 `VectorStore` 接口接入 FAISS / pgvector 等。内置文档加载器（本地文件 / URL）、
+Weaviate / Elasticsearch / OpenSearch / Redis / PGVector / Typesense / Cassandra / MongoDB /
+Neo4j 共 13 种外部向量库（共 14 种实现）；亦可自行实现 `VectorStore` 接口接入 FAISS 等。
+v2.6.0 文档导入器（`sure-ai-ingest`）把本地文件 / 网络 URL 读为 rag `Document`（内置 TXT/MD/HTML/PDF，
+DOCX/XLSX/PPTX 由可选 POI 模块承载）。内置文档加载器（本地文件 / URL）、
 BM25 关键词检索与向量+关键词混合检索、Markdown / 固定大小 / 语义 / 父子分块器，
 以及 HyDE / Multi-Query / CRAG / GraphRAG / RAG 评估等高级能力。
 详见 [docs/rag.md](docs/rag.md)、[docs/vector-stores.md](docs/vector-stores.md)。
+
+## 性能基准
+
+core 的序列化 / 反序列化 / 请求体构建 / SSE 解析等热点路径有 JMH 微基准（模块 `sure-ai-benchmark`，纯 CPU、零网络）。
+最近一次实测（2.3.0，JDK 21.0.12.1，AverageTime）：JSON 序列化 / 解析、ChatRequest 构建、OpenAI 请求体序列化、SSE 行解析均在亚微秒~数微秒量级。
+
+**v2.3.0 核心路径优化（JMH 前后对比）**：JSON 解析主路径延迟降低 **32.8%**（2.124 → 1.427 µs/op），JSON 序列化 −16.4%，SSE 行解析 −9.6%；未触及路径变化在 ±1% 噪声带内，无回退。
+
+完整结果与口径见 [docs/benchmark.md](docs/benchmark.md)，原始数据归档见 [docs/benchmarks/benchmark-2.3.0.json](docs/benchmarks/benchmark-2.3.0.json)（含 before/after 双 phase 与完整 rawData）。
 
 ## 环境变量配置
 
@@ -503,6 +524,8 @@ sureai 采用严格的模块级隔离架构：
 sure-ai-core          ← 公共模型/接口/HTTP/JSON（所有平台依赖此模块）
 sure-ai-rag           ← RAG 检索增强生成（依赖 core，与平台解耦）
 sure-ai-agent         ← Agent 编排 ReAct 多工具循环（依赖 core，与平台解耦）
+sure-ai-framework     ← 声明式编排 AiService 接口即服务 + Advisor 链 + SemanticCache（依赖 core，与平台解耦）
+sure-ai-evals         ← 通用评估：CSV/JSONL 数据集 + 指标 SPI（确定性/语义/LLM 裁判/运行指标）+ EvalRunner 批量执行 + 三格式报告 + CI 断言 + 录制回放回归（依赖 core，与平台解耦）
 sure-ai-micrometer    ← 可观测性 Micrometer 桥接（依赖 core，micrometer-core provided 不传递）
 sure-ai-otel          ← 可观测性 OpenTelemetry GenAI 桥接（依赖 core，otel-api provided 不传递）
 sure-ai-quarkus-extension(-deployment) ← Quarkus 自动装配扩展（双模块；core/平台零 Quarkus 依赖）

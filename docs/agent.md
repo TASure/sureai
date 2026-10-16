@@ -19,7 +19,7 @@ graph LR
 ```
 
 - **Thought**：模型给出文本思考（本模块把它作为最终答案或下一轮输入）。
-- **Action**：模型返回 `tool_calls`，编排器逐个执行。
+- **Action**：模型返回 `tool_calls`，编排器执行（单轮多个 `tool_calls` 默认并发，见[并行工具调用](#并行工具调用v230)）。
 - **Observation**：工具结果作为 `tool` 角色消息回灌模型，进入下一轮。
 
 编排器内置两道防护：`maxIterations`（默认 10）与总 `timeout`（默认 120s），
@@ -111,6 +111,28 @@ AgentListener listener = new AgentListener() {
 };
 ReActAgent agent = new ReActAgent(client, base, registry, listener, 10, Duration.ofSeconds(120));
 ```
+
+## 并行工具调用（v2.3.0）
+
+当模型单轮返回多个 `tool_calls` 时，编排器默认**并发执行**（虚拟线程承载），而非历史的逐个串行：
+
+- **并发执行**：多个工具跑在 `AsyncExecutors.virtualThreadExecutor()` 上，分波控制在 `ReActAgent.DEFAULT_MAX_PARALLEL_TOOL_CALLS = 8` 路以内（超过 8 个调用分多波并发，避免无界创建）；
+- **结果按序回填**：工作线程把结果按下标写入数组，**再由调用线程统一追加对话历史**——工作线程全程不碰共享历史，喂回模型的 `tool` 消息顺序与模型给出 `tool_calls` 的顺序严格一致；
+- **失败隔离**：单个工具抛异常 / 超时被 `safeExecute` 收敛为错误文本回填，不影响同轮其余工具继续执行，主循环照常推进（同时触发 `onError`）；等待预算复用总 `timeout` 的剩余时长；
+- **向后兼容开关**：`withParallelToolCalls(boolean)` 派生出配置相同的新编排器；传 `false` 回退历史串行路径，行为与旧版逐字节一致，便于在工具非线程安全或需要严格可重现时序时使用。
+
+```java
+ReActAgent agent = new ReActAgent(openAiClient, base, registry)
+        .withParallelToolCalls(true);   // 默认即 true，显式写出便于审计
+String answer = agent.run("对比西安与北京明天的天气，并查一下汇率");
+// 上例若模型一轮给出 get_weather(西安) / get_weather(北京) / get_exchange_rate 三个 tool_calls，
+// 三者并发跑、结果按调用顺序回填，任一失败不拖垮其余。
+
+ReActAgent serial = new ReActAgent(openAiClient, base, registry)
+        .withParallelToolCalls(false);  // 回退串行
+```
+
+仅 1 个 `tool_call` 或关闭并行时，走历史串行分支，开销与语义均与 2.2.0 一致。
 
 ## 离线可运行示例（FakeAiClient）
 
