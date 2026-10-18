@@ -398,4 +398,13 @@
         <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
     </Match>
 
+    <!-- ToolCatalog 持有调用方注入的委托 ToolRegistry（EI_EXPOSE_REP2）：
+         delegate 是可选镜像目标，调用方构造后仍可独立 register/unregister，
+         市场注册成功后按引用同步写入，语义即按引用共享，与 ReActAgent.registry /
+         GatewayClient.registry 同类惯例；调用方负责注册中心生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.tool.catalog.ToolCatalog"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>
