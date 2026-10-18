@@ -37,7 +37,7 @@
 
     <properties>
         <!-- OpenTelemetry Java 核心版本（2026-09 最新稳定版）。仅 provided / test，不进运行期依赖链 -->
-        <otel.version>1.66.0</otel.version>
+        <otel.version>1.67.0</otel.version>
     </properties>
 
     <dependencies>
