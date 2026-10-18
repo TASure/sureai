@@ -5,12 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.8.0] - Unreleased
+## [2.8.0] - 2026-10-18
 
 本版本线为「评估与可观测」专项：新增通用评估模块 `sure-ai-evals`（对标 Spring AI 2.0 / LangChain4j 评估能力），把「数据集 → 指标 → 批量执行 → 报告 → CI 阈值断言 → 录制回放回归」收口为一条链；并在 `sure-ai-otel` 增量补齐评估 run 的 OTel span 与 Langfuse scores 上报。新模块仅依赖 `sure-ai-core`、零第三方运行期依赖，与 RAG 专用评估（`com.sure.ai.rag.evaluation`）互补、互不依赖。全部为新增模块 / 新增路径，未改动任何既有模块公开签名，无既有行为破坏。
-
-### Changed
-- **JDK 基线升级 21 → 25（仅支持 JDK 25+）**：`maven.compiler.release` 21 → 25（根 pom 与 sure-ai-archetype 模板同步）；CI 矩阵收敛为 `java: [25]`（ubuntu/macos + windows 可选），`dependency-check` 与 GraalVM native job 同步升级到 JDK 25；覆盖率门禁由 ubuntu 主环境统一把关（macos/windows 跳过 jacoco 插桩以避免跨 OS 探测差异误报）。运行期零第三方依赖红线不变。
 
 ### Added
 - **新模块 `sure-ai-evals`（包 `com.sure.ai.evals`，仅依赖 core，已注册进 parent / bom / all）**：
@@ -27,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **文档与示例**：新建 `docs/evals.md`（中文全量）+ 英文精简镜像 `docs/en/evals.md`；`docs/COOKBOOK.md` 新增场景 19（golden dataset 离线回归）/ 20（LLM-as-judge 打分接 CI）/ 21（A/B 对比两模型）；README 中英文特性区与模块树补 `sure-ai-evals`；`sure-ai-examples` 新增离线 `EvalsDemo`（`evals` case）与 `RegressionDemo`（`regression` case）并注册进 `ExamplesRunner`。
 
 ### Changed
+- **JDK 基线升级 21 → 25（仅支持 JDK 25+，破坏性变更）**：`maven.compiler.release` 21 → 25（根 pom 与 sure-ai-archetype 模板同步）；CI 矩阵收敛为 `java: [25]`（ubuntu/macos + windows 可选），`dependency-check` 与 GraalVM native job 同步升级到 JDK 25；覆盖率门禁由 ubuntu 主环境统一把关（macos/windows 跳过 jacoco 插桩以避免跨 OS 探测差异误报）。JDK25 下 HttpClient 在协议层拦截短报文，`sure-ai-ollama` 两个错误体读取 catch 分支不可达（边界测试已存在），该模块行覆盖率门禁为 0.97。运行期零第三方依赖红线不变。
 - `sure-ai-otel` 新增对 `sure-ai-evals` 的依赖（`OtelEvalTracing` / `EvalReportLangfuseExporter` 需消费 `EvalReport`）；`sure-ai-evals` 注册进 parent pom `<modules>`、`sure-ai-bom` 依赖管理与 `sure-ai-all` 聚合链。均为**新增模块 / 新增依赖边**，不修改任何既有模块公开 API，未装配评估能力时现有行为与 2.7.0 完全一致。
 
 ### 测试
