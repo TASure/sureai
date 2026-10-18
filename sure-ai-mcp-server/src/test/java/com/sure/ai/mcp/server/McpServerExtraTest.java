@@ -117,12 +117,13 @@ public class McpServerExtraTest {
 		assertNull(base().dispatch("{}"));
 	}
 
-	/** tools/call 无 params 时走默认分支，返回 unknown tool 错误。 */
+	/** tools/call 无 params 时缺少 name，返回 -32602 InvalidParams。 */
 	@Test
-	public void toolsCallWithoutParamsIsUnknownTool() {
-		JsonObject r = resultOf(base().dispatch(req(2, "tools/call", null)));
-		assertTrue(r.getBoolean("isError"));
-		assertTrue(r.getJsonArray("content").get(0).getAsJsonObject().getString("text").contains("unknown tool"));
+	public void toolsCallWithoutParamsIsInvalidParams() {
+		String resp = base().dispatch(req(2, "tools/call", null));
+		JsonObject error = Json.parse(resp).getAsJsonObject().getJsonObject("error");
+		assertEquals(-32602, error.getInt("code"));
+		assertTrue(error.getString("message").contains("name"));
 	}
 
 	/** initialize 未设置 instructions 时不返回 instructions 字段。 */

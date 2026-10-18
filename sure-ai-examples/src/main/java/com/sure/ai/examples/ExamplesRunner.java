@@ -152,6 +152,9 @@ public final class ExamplesRunner {
 					System.out.println("mcphttp 示例运行失败: " + ex.getMessage());
 				}
 				break;
+			case "agentmarket":
+				AgentEcosystemMcpDemo.main(emptyArgs);
+				break;
 			case "gateway":
 				GatewayDemo.main(emptyArgs);
 				break;
@@ -222,6 +225,7 @@ public final class ExamplesRunner {
 		System.out.println("  models     - 模型列表演示（OpenAI listModels）");
 		System.out.println("  mcpserver - MCP Server 演示（stdio 协议引擎，离线 fake chat 工具）");
 		System.out.println("  mcphttp   - MCP Server 演示（Streamable HTTP，loopback 回环）");
+		System.out.println("  agentmarket - Agent 生态 over MCP（工具市场 + Agent Skills 经 MCP 暴露）");
 		System.out.println("  gateway   - AI Gateway 演示（多供应商注册 + 轮询路由 + 故障转移，离线 fake）");
 		System.out.println("  knowledgebase - 知识库问答 RAG（读本地文档→分块→入库→检索→生成，可离线）");
 		System.out.println("  gateway-multi - 多平台统一网关对比（OpenAI/DeepSeek/Qwen 同问三答，可离线）");
