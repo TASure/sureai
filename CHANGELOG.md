@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0] - Unreleased
+
+本版本线为「Agent 生态」专项（对标 LangChain4j AgenticServices / Anthropic Agent Skills）：在既有 ReAct / PlanExecute 与任务拆分并行编排之上，补齐四块能力——①**Agent Skills 规范实现**（`SKILL.md` frontmatter + 三级渐进式加载 + 技能作为工具）；②**子 Agent 层级式委派**（AgentAsTool / Handoff、嵌套深度与环检测、事件冒泡）；③**工具注册中心市场**（ToolCatalog：标签/关键词发现、MCP 聚合、命名空间、SPI 贡献）；④**MCP 无状态深度融合**（对齐 2026-07-28 无状态规范与官方 Skills 扩展 `io.modelcontextprotocol/skills`，把工具市场与技能经 MCP 暴露）。全部为新增包 / 新增类 / 公共 API 只增不改，零第三方运行期依赖、零真实网络测试红线不变。协议细节均联网核实 modelcontextprotocol.io 官方规范（核实日 2026-10-19），仍处 draft 无法落地的面（OAuth 完整授权流程、MRTR 服务端发起等）如实标注实验性。
+
+### Added
+- **Agent Skills 规范实现（`sure-ai-agent`，新包 `com.sure.ai.agent.skill`）**：
+  - `SkillManifest` 不可变记录（name/description/license/compatibility/allowedTools/metadata/extraProperties，紧凑构造做规范校验：name ≤64 字符、仅小写字母数字连字符、保留词 `anthropic`/`claude` 拒绝；description ≤1024、禁 XML 尖括号；规范无 `version` 字段故不提供）；`SkillFrontmatterParser` 手写 YAML 子集解析（零第三方依赖、不引 snakeyaml：标量 / 单双引号与 `\n`/`\\` 转义 / 块列表 / 嵌套 `metadata` 标量表 / 注释；锚点、折叠标量、流数组、行内注释不支持并在 JavaDoc 注明边界）；`Skill` / `SkillContent` 三级按需模型——构造期只解析 L1 manifest，`loadBody()` 读 L2 正文、`loadResource(path)` 读 L3 资源；`LocalSkillContent` / `ClasspathSkillContent` / `JarEntrySkillContent` 三种来源；`SkillPaths.safeRelative` 路径穿越防护（拒 `..`、绝对路径、反斜杠、NUL）。
+  - `SkillLoader`：`load(Path)`（本地目录单技能直挂或子目录集合）、`loadFromClasspath(base[,loader])`（file 展开目录两种布局）、`loadJar(Path,base)`（显式 jar 入口，加载期把条目读入内存映射；标准 URLClassLoader 不回吐 jar 根 URL，故不做 jar 自动发现）；同名冲突、frontmatter 非法严格抛 `SkillLoadException` 不静默跳过。
+  - `SkillTool`：技能工具化——`toToolFunction`（工具名=技能名、描述=manifest.description）+ `toHandler`（无参返回 L2 正文回灌模型，可选 `resource` 参数返回指定文本资源）；`register`/`registerAll` 一键注册进既有 `ToolRegistry`，ReAct 循环经现有 `getToolSpecs()` 自动可用。`scripts/` 不执行（避免任意脚本执行的安全边界，规范中脚本经宿主 bash 执行，需独立沙箱，留待后续）。
+- **子 Agent 层级式编排（`sure-ai-agent`，新包 `com.sure.ai.agent.delegation`）**：
+  - `AgentRunner` 最小抽象（`run(task)`/`id()`/`description()`，静态适配 `ReActAgent`/`PlanExecuteAgent`/自定义句柄，不改既有 final 类）；`AgentAsTool`（子 Agent 包装为工具，子答案作为 observation 回灌父模型继续推理）；`HandoffAgent` + `HandoffTool`（结果带 `[HANDOFF]` 前缀 + 目标 id，语义=目标答案即最终答案、父不再继续推理，与 AgentAsTool 明确区分）。
+  - `DelegationContext`（chainId/depth/sourceAgentId/parentTask/ancestorIds/memoryPolicy/timeout，`child()` 递进）；`DelegationScope` 线程局部祖先栈 + try-finally 出栈（默认最大深度 5 可配，未用 ScopedValue 避免预览参数）；同 agentId 同链重复抛 `DelegationCycleException`（直接/间接环），超限抛 `DelegationDepthExceededException`；`ForwardingDelegationListener` + `DelegatedAgentEvent` 把全部子 Agent 回调/事件冒泡到父监听者（父 sink 可空、父监听器异常隔离）；`ChildAgentFactory` 按冒泡 sink 现场构造子 Agent。
+  - 记忆策略 `MemoryPolicy`：默认 ISOLATED（专职子 Agent 中间历史不污染父上下文），SHARED 由调用方构造时传同一实例；子异常包装 `DelegationException` 保留 cause；可选单次委派超时，虚拟线程执行、到期取消抛 `DelegationTimeoutException`（超时仅用于叶子级单次委派，JavaDoc 已注明）。
+- **工具注册中心市场（`sure-ai-agent`，新包 `com.sure.ai.agent.tool.catalog`）**：
+  - `RiskLevel`（LOW/MEDIUM/HIGH/CRITICAL，静态标注不替代高风险审批策略）、`ToolSource`（LOCAL/MCP）、`ConflictStrategy`（FAIL/OVERWRITE/RENAME 自动 `__n` 唯一名，默认 OVERWRITE 与底层注册中心覆盖语义一致、可统一调整或单次注册指定）；`ToolMetadata` Builder（name/description/tags 归一化去重/version/riskLevel/source/server/docUrl）；`ToolEntry`（function+handler+metadata 三合一）；`ToolCatalog`（ConcurrentHashMap，可选委托 `ToolRegistry`：注册成功镜像写入、`clear()` 不清委托；`findByTag` 大小写不敏感 / `findByKeyword` 命中名/描述/标签 / `filterBySource` / `filterByRiskLevel` / `list()` 按名排序快照；`registerMcpTools` 批量聚合，`namespace=true` 生成 `mcp.<server>.<tool>` 并自动标注 MCP 来源与 server；`exportTo`/谓词筛选/`exportNames`；冲突解析在锁内原子完成）。
+  - 远程工具清单注册 SPI：`ToolProvider` + `ToolContribution` + `ToolProviders`（ServiceLoader，`load()`/`loadInto`），内置零网络本地示例 `BuiltinSampleToolProvider`（`sample.echo`/`sample.ping`，经 `META-INF/services` 登记）；远程仅提供注册接入点，不发真实网络请求。`sure-ai-mcp` 的 `McpToolAdapter` 新增 `registerAllTools(client,ToolCatalog,serverLabel,strategy,namespace)` 重载，旧方法原样保留。
+- **MCP 无状态深度融合（`sure-ai-mcp-server` / `sure-ai-mcp`，对齐 2026-07-28 无状态基线）**：
+  - 协议帧：`server/discover`（返回 `resultType:"complete"`、`supportedVersions`、`capabilities`、`_meta[io.modelcontextprotocol/serverInfo]`、`ttlMs`/`cacheScope`）；每个 Result 必填 `resultType`（核心枚举仅 `complete`/`input_required`，缺省按 complete）；`CacheableResult` 缓存提示（`ttlMs`/`cacheScope` 在 tools/list、prompts/list、resources/*、skills/list、skills/get 上提供）；`subscriptions/listen` 首条发 `notifications/subscriptions/acknowledged`（`_meta[io.modelcontextprotocol/subscriptionId]`）。
+  - **官方 Skills 扩展 `io.modelcontextprotocol/skills`（SEP-2640，2026-09-13 Final）**：`McpSkillSource` SPI（listSkills/getSkill/readResource + 可选 `directoryRead()`/`listDirectory()`）、`McpSkillInfo`（uri/frontmatter/resources 静态清单或 `"dynamic"`）、`McpSkillResource`（uri/digest `sha256:`/size）；`skills/list`（Base64 URL 游标分页，页大小可配，非法/越界 cursor -32602）、`skills/get`、正文经标准 `resources/read`（`skill://.../SKILL.md` 为 text/markdown，其余 text/plain）、可选 `resources/directory/read`；discover 同时声明 `resources` 能力与 `capabilities.extensions["io.modelcontextprotocol/skills"]`（不冒充核心能力）；未知 URI -32602、内部错误 -32603、未注册来源 -32601。
+  - 工具市场暴露：`McpToolSource` 动态工具来源 SPI（静态表与动态来源合并，按名去重、静态优先、来源间先注册优先）；`McpServerTool` 新增 title/`McpToolAnnotations`（readOnlyHint/destructiveHint/idempotentHint/openWorldHint，序列化为标准 `annotations`）/`_meta` 私有元数据（tags/来源/风险等非标准字段一律入 `_meta`，不伪造核心字段）；旧四参构造保留。
+  - 错误码对齐重编号：`McpError` 新增 `-32020 HeaderMismatch`、`-32021 MissingRequiredClientCapability`、`-32022 UnsupportedProtocolVersion`（data 含 supported/requested）；未知工具/资源/技能统一 `-32602 InvalidParams`（不再以 isError 工具结果返回未知工具），工具执行失败仍为 `isError=true`；Streamable HTTP 层新增 `MCP-Protocol-Version` 头与 `_meta` 一致性校验（不一致 400/-32020，不支持版本 400/-32022）、未知方法响应 HTTP 404。
+  - **示例桥接**：`sure-ai-examples` 新增 `CatalogMcpToolSource`（ToolCatalog→McpToolSource，市场元数据入 `_meta`，处理异常映射 isError）、`SkillMcpSkillSource`（SkillLoader→McpSkillSource，sha256 摘要/字节数、SKILL.md 与 L3 引用资源）两个适配器与可运行 demo `AgentEcosystemMcpDemo`（`agentmarket` case，注册进 `ExamplesRunner`），离线串起 discover→tools/list→tools/call→skills/list→skills/get→resources/read 全链路。
+- **文档**：新建 `docs/agent-skills.md`（Agent Skills / 子 Agent 委派 / 工具市场三章中文全量）；`docs/mcp-server.md` 增补「无状态深化（2.9.0）」与「Skills over MCP 扩展」章节（含官方规范链接）；README 中英文特性区与模块树同步；`docs/COOKBOOK.md` 续场景。
+
+### Changed
+- `sure-ai-mcp` 的 `McpError` 仅新增常量（-32020/-32021/-32022），既有错误码不变；`McpServerTool` 由四参扩展为七参全量构造（旧构造保留）、新增 Builder；`McpServer`/`HttpMcpServerTransport` 仅新增方法与新分支（动态工具源、skills 路由、协议版本头校验、404 映射）。所有改动公共 API 只增不改，二进制向后兼容；既有 `toolsCallUnknownToolIsError` 等两个旧测试断言随「未知工具→-32602」标准化同步更新。
+- `config/spotbugs/exclude-filter.xml` 新增 `McpServerTool`(_meta 字段)/`McpServerTool$Builder`/`McpSkillInfo`(frontmatter) 的 EI_EXPOSE_REP(2) 豁免（自研零依赖 JsonObject 按引用读写的既有惯例，附注释）。
+
+### 测试
+- 测试基线 **2996**（2.8.0 发布点全量 surefire 实测口径）。
+- 全工程合计 **3204** 个测试（较基线 **+208**：Agent Skills +69、工具市场 +49、子 Agent 委派 +37（含后续 2 个嵌套/兄弟用例）、MCP 融合 +53；0 失败 / 0 错误 / 0 跳过）。
+- 新增覆盖：frontmatter 解析边界/非法 frontmatter、classpath/jar/本地目录加载与路径穿越、技能经 ReAct 完整调用；委派 2/3 级嵌套、超深/直接环/间接环、上下文传递、事件冒泡（含空父与父异常隔离）、memory 隔离/SHARED、超时与中断、Handoff 语义、PlanExecute 组合；市场标签/关键词/来源/风险发现、三策略冲突、命名空间、SPI 并发注册/发现；MCP 动态工具源聚合去重、skills 分页/frontmatter/资源/directoryRead、错误码、discover 扩展声明、缓存提示、HTTP 协议版本头（-32020/-32022）与未知方法 404、帧级版本校验。
+- `mvn -B clean verify -Dgpg.skip=true` **BUILD SUCCESS**（JDK25，checkstyle / spotbugs / license / jacoco 门禁零违规）；`sure-ai-mcp-server` 行覆盖 **0.9922**（895/902）、`sure-ai-mcp` 0.9820、`sure-ai-agent` 0.98+（skill/catalog/delegation 新包达标），全模块均 ≥0.98（ollama 例外 0.97）。
+
 ## [2.8.0] - 2026-10-18
 
 本版本线为「评估与可观测」专项：新增通用评估模块 `sure-ai-evals`（对标 Spring AI 2.0 / LangChain4j 评估能力），把「数据集 → 指标 → 批量执行 → 报告 → CI 阈值断言 → 录制回放回归」收口为一条链；并在 `sure-ai-otel` 增量补齐评估 run 的 OTel span 与 Langfuse scores 上报。新模块仅依赖 `sure-ai-core`、零第三方运行期依赖，与 RAG 专用评估（`com.sure.ai.rag.evaluation`）互补、互不依赖。全部为新增模块 / 新增路径，未改动任何既有模块公开签名，无既有行为破坏。

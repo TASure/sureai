@@ -1009,6 +1009,58 @@ System.out.println("pairwise 胜 A / 平 / 胜 B = "
 
 ---
 
+## 场景 22：Agent Skills / 子 Agent 委派 / 工具市场（v2.9.0）
+
+**目标**：把领域知识沉淀成 `SKILL.md` 技能包、把专职 Agent 挂成可委派的工具、用工具市场
+按标签/风险发现并选型，最后一键导出给 ReAct 运行。完整设计见 [agent-skills.md](agent-skills.md)。
+
+```java
+// 1) 加载技能（本地目录 / classpath / 显式 jar），技能即工具
+List<Skill> skills = SkillLoader.loadFromClasspath("skills");
+ToolRegistry registry = new ToolRegistry();
+SkillTool.registerAll(skills, registry);   // 无参→L2 正文，{"resource":"..."}→L3 资源
+
+// 2) 工具市场：注册带元数据的工具，按标签/关键词/风险发现
+ToolCatalog catalog = new ToolCatalog(registry);
+catalog.register(
+    ToolFunction.of("refund", "发起退款",
+        "{\"type\":\"object\",\"required\":[\"orderId\"],"
+        + "\"properties\":{\"orderId\":{\"type\":\"string\"}}}"),
+    args -> refundService.refund(args.getString("orderId")),
+    ToolMetadata.builder("refund").addTag("order").addTag("money")
+        .riskLevel(RiskLevel.HIGH).build());
+List<ToolEntry> safe = catalog.filterByRiskLevel(RiskLevel.LOW);
+catalog.exportTo(registry, e -> e.metadata().riskLevel() != RiskLevel.CRITICAL);
+
+// 3) 子 Agent 委派：把一个专职 ReActAgent 挂成父 Agent 的工具
+ReActAgent specialist = new ReActAgent(specialistClient, base, new ToolRegistry());
+AgentRunner runner = AgentRunner.of(specialist, "specialist", "专职处理子任务");
+AgentAsTool.builder("specialist", "需要专业子任务时委派",
+        ChildAgentFactory.fixed(runner))
+    .maxDepth(5)
+    .memoryPolicy(MemoryPolicy.ISOLATED)
+    .build()
+    .register(registry);
+
+// 4) 父 Agent 照常 ReAct 循环，技能与子 Agent 都作为普通工具被调用
+ReActAgent supervisor = new ReActAgent(superClient, base, registry);
+String answer = supervisor.run("按技能包指引处理，并把专业部分交给专员");
+```
+
+**关键点**：
+- 技能构造期只解析 L1 元数据，正文（L2）/资源（L3）按需读，`SkillPaths.safeRelative` 防路径穿越；
+  同名冲突与非法 frontmatter 严格抛错不静默跳过。
+- 子 Agent 委派默认最大深度 5，同链重复委派抛 `DelegationCycleException`、超深抛
+  `DelegationDepthExceededException`；子 Agent 事件经 `ForwardingDelegationListener` 冒泡。
+- 把工具市场与技能经 MCP 对外暴露（`server/discover` + `skills/list` + `skills/get` +
+  `resources/read`）可直接运行离线 demo：
+
+```bash
+java com.sure.ai.examples.ExamplesRunner agentmarket   # Agent 生态 MCP 全链路（离线）
+```
+
+---
+
 ## 附：示例运行器
 
 `sure-ai-examples` 模块内置 `ExamplesRunner`，离线即可跑（无 Key 自动走 Fake 分支）：
@@ -1021,5 +1073,6 @@ java com.sure.ai.examples.ExamplesRunner gateway-multi   # 三平台同问对比
 java com.sure.ai.examples.ExamplesRunner code-assistant  # 流式 + 工具调用
 java com.sure.ai.examples.ExamplesRunner evals           # 通用评估：数据集→指标→报告→阈值断言（离线）
 java com.sure.ai.examples.ExamplesRunner regression     # 录制→回放→TraceRegression golden 回归（离线）
+java com.sure.ai.examples.ExamplesRunner agentmarket    # Agent 生态：工具市场+技能经 MCP 暴露（离线）
 java com.sure.ai.examples.ExamplesRunner                 # 打印全部可用 case
 ```
