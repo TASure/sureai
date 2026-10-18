@@ -174,6 +174,9 @@ public class QwenVideoClientExtraTest {
 		AiException e = assertThrows(AiException.class, () -> client.generate(
 			VideoRequest.builder().model("wan2.1").prompt("猫").build()));
 		assertTrue(e.getMessage(), e.getMessage().contains("qwen video submit interrupted"));
+		// 业务实现捕获 InterruptedException 后正确 re-interrupt，残留标志会使
+		// watcher.join() 的 Object.wait 立即抛 InterruptedException（JDK25 实测暴露）。
+		Thread.interrupted();
 		watcher.join();
 		Thread.interrupted();
 		client.close();
@@ -199,6 +202,9 @@ public class QwenVideoClientExtraTest {
 		AiException e = assertThrows(AiException.class, () -> client.generate(
 			VideoRequest.builder().model("wan2.1").prompt("猫").build()));
 		assertTrue(e.getMessage(), e.getMessage().contains("qwen video polling interrupted"));
+		// 业务实现捕获 InterruptedException 后正确 re-interrupt，残留标志会使
+		// watcher.join() 的 Object.wait 立即抛 InterruptedException（JDK25 实测暴露）。
+		Thread.interrupted();
 		watcher.join();
 		Thread.interrupted();
 		client.close();

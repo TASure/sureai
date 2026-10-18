@@ -225,6 +225,12 @@ public class LineFrameMcpTransportTest {
 
 		caller.join(5000);
 		assertFalse("caller 线程应已结束", caller.isAlive());
+		// 读线程异步消费并触发超限：立即断言存在竞态（JDK25 调度差异下读线程
+		// 可能尚未消费完 512 字节），改为轮询等待传输关闭。
+		long deadline = System.currentTimeMillis() + 3000;
+		while (t.isOpen() && System.currentTimeMillis() < deadline) {
+			Thread.sleep(20);
+		}
 		assertFalse("超限后传输应关闭", t.isOpen());
 		assertTrue("pending 请求应异常完成", err.get() instanceof AiException);
 		t.close();

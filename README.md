@@ -48,7 +48,7 @@
 - **响应缓存**：`ChatCacheKey` 请求归一化 SHA-256 + `CacheStore` SPI + 内置 `LruCacheStore`（LRU+TTL，纯 JDK），默认关闭零开销，命中不触发网络/指标/重试；**`RedisCacheStore`（v2.4.0）**基于共享 RESP2 编解码（零 Lettuce/Jedis 依赖）的外部 Redis 缓存，支持多实例共享、`SCAN` 非阻塞清空，LruCacheStore vs RedisCacheStore 选型见文档。见 [docs/cache.md](docs/cache.md)
 - **Spring Boot Starter**：`sure-ai-spring-boot-starter` 自动配置（`sure.ai.<platform>.api-key` 等属性绑定 + `@ConditionalOnProperty` 条件装配 + `@Autowired` 注入），仅 Spring Boot 工程使用，core/平台模块零 Spring 依赖。见 [docs/spring-boot.md](docs/spring-boot.md)
 - **Quarkus 扩展（v1.9.0）**：`sure-ai-quarkus-extension`（runtime + deployment 双模块）按 `sure.ai.<platform>.api-key` 条件把对应 `XxxClient` 注册为 Arc 合成 `@Singleton` Bean，注入即用；与 Spring Starter 配置同构，core/平台模块零 Quarkus 依赖。见 [docs/quarkus-extension.md](docs/quarkus-extension.md)
-- **全链路异步 / 虚拟线程（v1.9.0）**：`AiClient` 新增 `chatAsync`/`chatStreamAsync` default 方法族，`AsyncClients` 一行把任意同步 Client 包装为 `AsyncAiClient`/`AsyncEmbeddingClient`/`AsyncImageClient`/`AsyncVideoClient`/`AsyncAudioClient`，统一跑在 JDK 21 虚拟线程上（`AsyncExecutors.virtualThreadExecutor()`），`CompletableFuture` 可取消、异常原样透传。见 [docs/async.md](docs/async.md)
+- **全链路异步 / 虚拟线程（v1.9.0）**：`AiClient` 新增 `chatAsync`/`chatStreamAsync` default 方法族，`AsyncClients` 一行把任意同步 Client 包装为 `AsyncAiClient`/`AsyncEmbeddingClient`/`AsyncImageClient`/`AsyncVideoClient`/`AsyncAudioClient`，统一跑在 JDK 虚拟线程上（JDK 21+ API，基线 25）（`AsyncExecutors.virtualThreadExecutor()`），`CompletableFuture` 可取消、异常原样透传。见 [docs/async.md](docs/async.md)
 - **OpenTelemetry GenAI 桥接（v1.9.0）**：`sure-ai-otel` 把 `MetricsCollector`/`RetryListener`/`AgentEventSink` 桥接为 OTel GenAI 语义约定指标（`gen_ai.client.operation.duration` / `input_tokens` / `output_tokens`），仅依赖 OTel API（provided），SDK/导出器由使用方自备；传 null MeterProvider 即空操作无感降级。见 [docs/observability.md](docs/observability.md#opentelemetry-genai-桥接可选模块)
 - **Langfuse 原生导出（v2.4.0）**：`sure-ai-otel` 的 `langfuse` 子包零依赖直连 Langfuse Ingestion API——`LangfuseExporters.metricsCollectorFromEnv()` 一行把一次聊天调用上报为 `trace` + `generation`（耗时/model/token 用量，重试挂为 event），HTTP Basic `base64(pk:sk)` 认证，密钥缺失即空操作无感降级。见 [docs/observability.md](docs/observability.md#langfuse-原生导出v240)
 - **通用评估全链路（v2.8.0）**：`sure-ai-evals` 新模块（仅依赖 core、零第三方运行期依赖，已进 `sure-ai-all`/`sure-ai-bom`）——**LLM-as-judge 通用化**（`LlmJudgeMetric` 四模式：BINARY / 1~5 分量表 / 百分制 / pairwise，rubric 可配、裁判失败容错为 NaN）+ 确定性指标（exact_match / contains / regex / JSON Schema 合法性）+ 语义指标（embedding 余弦相似度）+ 运行指标（延迟 / token 成本）；**数据集** CSV/JSONL 手写加载器（引号/转义/BOM/坏行容错）；`EvalRunner` 批量并发执行（失败用例与指标双隔离，聚合 pass rate / p50 / p95 / 总 token）；**JSON/Markdown/HTML 三格式报告**（HTML 自包含无外链）；**CI 阈值断言**（`EvalThreshold`/`EvalAssertions` 不达标抛 AssertionError）；**录制回放与 TraceRegression**（`RecordingClient` JSONL 落盘、回放零网络、基线 vs 当前容差回归）；**A/B 对比**（`EvalComparison` 逐指标差值 + pairwise 胜平负）；可观测增量——OTel `eval.evaluation` span 与 Langfuse scores（score-create）。与 RAG 专用评估（faithfulness 等）互补不依赖。见 [docs/evals.md](docs/evals.md)
@@ -71,7 +71,7 @@
 - **模型列表**：`ModelsClient` 统一抽象，OpenAI / Azure / Gemini / Anthropic / 通义千问 5 平台接入
 - **平台能力面收口（v1.4.0）**：每个平台 Client 显式声明自身支持的能力集合，调用未支持的能力（如在 DeepSeek 上调 `embed()`）会在发请求前立即抛出 `AiException: deepseek does not support EMBED capability`，而非把请求发出去再吃上游 4xx。各平台能力清单见 [docs/capabilities.md](docs/capabilities.md)
 - **环境变量自动配置**：未显式 init 时自动从 `SURE_AI_*` 环境变量读取
-- **JDK 21**：record / pattern matching / switch 模式
+- **JDK 25**：record / pattern matching / switch 模式、虚拟线程、结构化并发（基线仅支持 JDK 25+）
 
 ## 模块与平台一览
 
@@ -151,7 +151,7 @@ String reply = OpenAiUtil.chat("gpt-4o-mini", "你好！").firstText();
 System.out.println(reply);
 ```
 
-**3. 跑通**：JDK 21+，IDE 直接运行该 main 方法，控制台即打印模型回复。
+**3. 跑通**：JDK 25+，IDE 直接运行该 main 方法，控制台即打印模型回复。
 
 更多「照着抄」场景（流式 / 多平台网关 / RAG / Agent 工具调用 / 异步虚拟线程 / 可观测性 / CLI / archetype / native 编译）见 [docs/COOKBOOK.md](docs/COOKBOOK.md)。
 
@@ -558,7 +558,7 @@ sure-ai-archetype     ← mvn archetype:generate 一键生成 Hello World 工程
 ## 构建指南
 
 ```bash
-# 需要 JDK 21+ 和 Maven 3.9+
+# 需要 JDK 25+ 和 Maven 3.9+
 mvn -B clean verify
 ```
 

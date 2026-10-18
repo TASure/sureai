@@ -182,6 +182,10 @@ public class QwenImageClientExtraTest {
 		AiException e = assertThrows(AiException.class, () -> client.generate(
 			ImageRequest.builder().model("wanx").prompt("猫").build()));
 		assertTrue(e.getMessage(), e.getMessage().contains("qwen image polling interrupted"));
+		// 业务实现捕获 InterruptedException 后正确 re-interrupt（保持中断状态），
+		// 残留标志会使 watcher.join() 的 Object.wait 立即抛 InterruptedException
+		// （JDK25 下实测暴露；JDK21 未触发属时序差异）。join 前显式清理。
+		Thread.interrupted();
 		watcher.join();
 		Thread.interrupted();
 		client.close();

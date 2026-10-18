@@ -163,6 +163,8 @@ public class OpenAiBatchClientExtraTest {
 		AiException e = assertThrows(AiException.class,
 			() -> client.waitForCompletion(BATCH_ID, 60000L));
 		assertTrue(e.getMessage(), e.getMessage().contains("interrupted"));
+		// 防御：业务实现可能 re-interrupt，join 前清理残留标志（JDK25 稳健性）
+		Thread.interrupted();
 		watcher.join();
 		Thread.interrupted();
 		client.close();

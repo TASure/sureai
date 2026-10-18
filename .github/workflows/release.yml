@@ -36,11 +36,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: 21
+          java-version: 25
           cache: maven
           # 仅导入 GPG 私钥；server 凭证不交给 setup-java（其写入的 ${env.X} 占位符
           # 在 Maven 3.9 不再插值，会导致 nexus-staging "Cannot decipher credentials"），

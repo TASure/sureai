@@ -114,8 +114,8 @@
         <jacoco.line.min>0.98</jacoco.line.min>
         <!-- SpotBugs 静态扫描：默认开启，无源码模块在自身 pom 覆盖为 true -->
         <spotbugs.skip>false</spotbugs.skip>
-        <!-- 字节码目标：sureai 仅支持 JDK21+ -->
-        <maven.compiler.release>21</maven.compiler.release>
+        <!-- 字节码目标：sureai 仅支持 JDK25+（2026-10 决策：放弃 JDK21 兼容） -->
+        <maven.compiler.release>25</maven.compiler.release>
     </properties>
 
     <dependencyManagement>

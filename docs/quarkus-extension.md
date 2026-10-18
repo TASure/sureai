@@ -15,7 +15,7 @@
 
 ## 何时使用
 
-- 你正在写一个 **Quarkus 3.x（JDK 21+）** 应用；
+- 你正在写一个 **Quarkus 3.x（JDK 25+）** 应用；
 - 希望把连接配置交给 `application.properties`，少写 `new OpenAiClient(AiConfig...)` 样板。
 
 非 Quarkus 工程请直接使用各平台模块的 `XxxUtil` 静态入口或手动 `new XxxClient(AiConfig)`，**不要**引入本扩展。

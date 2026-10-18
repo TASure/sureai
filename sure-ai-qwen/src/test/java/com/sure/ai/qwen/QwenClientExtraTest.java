@@ -257,6 +257,8 @@ public class QwenClientExtraTest {
 		AiException e = assertThrows(AiException.class, () -> client.synthesize(
 			TtsRequest.builder().model("cosyvoice").input("x").voice("v").build()));
 		assertTrue(e.getMessage(), e.getMessage().contains("qwen tts request interrupted"));
+		// 防御：业务实现可能 re-interrupt，join 前清理残留标志（JDK25 稳健性）
+		Thread.interrupted();
 		watcher.join();
 		Thread.interrupted();
 		client.close();

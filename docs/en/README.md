@@ -7,7 +7,7 @@
 
 **sureai** is a zero-third-party-dependency Java toolkit for LLM integration. One
 independent module and one static utility class per mainstream AI platform, with strict
-module isolation — pull in only what you use. JDK 21+.
+module isolation — pull in only what you use. JDK 25+.
 
 ## 30-minute fast path
 

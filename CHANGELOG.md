@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 本版本线为「评估与可观测」专项：新增通用评估模块 `sure-ai-evals`（对标 Spring AI 2.0 / LangChain4j 评估能力），把「数据集 → 指标 → 批量执行 → 报告 → CI 阈值断言 → 录制回放回归」收口为一条链；并在 `sure-ai-otel` 增量补齐评估 run 的 OTel span 与 Langfuse scores 上报。新模块仅依赖 `sure-ai-core`、零第三方运行期依赖，与 RAG 专用评估（`com.sure.ai.rag.evaluation`）互补、互不依赖。全部为新增模块 / 新增路径，未改动任何既有模块公开签名，无既有行为破坏。
 
+### Changed
+- **JDK 基线升级 21 → 25（仅支持 JDK 25+）**：`maven.compiler.release` 21 → 25（根 pom 与 sure-ai-archetype 模板同步）；CI 矩阵收敛为 `java: [25]`（ubuntu/macos + windows 可选），`dependency-check` 与 GraalVM native job 同步升级到 JDK 25；覆盖率门禁由 ubuntu 主环境统一把关（macos/windows 跳过 jacoco 插桩以避免跨 OS 探测差异误报）。运行期零第三方依赖红线不变。
+
 ### Added
 - **新模块 `sure-ai-evals`（包 `com.sure.ai.evals`，仅依赖 core，已注册进 parent / bom / all）**：
   - **数据集**：`EvalCase`（id / 多轮 input / expected / tags / metadata / expectedTools）与 `EvalDataset` 不可变模型；`DatasetLoader` 接口（`load(Reader/InputStream/Path)`，UTF-8 含 BOM 容错）；`CsvDatasetLoader`（手写字符级解析：双引号包裹、字段内逗号/换行、`""` 转义、CRLF、空行跳过；表头别名 `input|question|prompt` / `expected|answer|reference` / `id` / `tags` / `expectedTools`，未识别列并入 metadata；坏行 `SKIP`/`FAIL` 策略）；`JsonlDatasetLoader`（逐行 JSON，input 字符串或消息数组，`metadata` 递归转 Map，坏行 `SKIP`/`FAIL`）。

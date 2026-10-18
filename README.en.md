@@ -50,7 +50,7 @@
 - **Response Cache**: `ChatCacheKey` request-normalized SHA-256 + `CacheStore` SPI + built-in `LruCacheStore` (LRU+TTL, pure JDK), disabled by default with zero overhead; cache hits bypass network/metrics/retry; **`RedisCacheStore` (v2.4.0)** — external Redis cache on the shared RESP2 codec (zero Lettuce/Jedis deps), multi-instance shareable, non-blocking `SCAN` flush; selection guidance between LruCacheStore and RedisCacheStore in docs. See [docs/cache.md](docs/cache.md)
 - **Spring Boot Starter**: `sure-ai-spring-boot-starter` auto-configuration (`sure.ai.<platform>.api-key` property binding + `@ConditionalOnProperty` conditional assembly + `@Autowired` injection), for Spring Boot projects only; core/platform modules have zero Spring dependency. See [docs/spring-boot.md](docs/spring-boot.md)
 - **Quarkus extension (v1.9.0)**: `sure-ai-quarkus-extension` (runtime + deployment dual module) conditionally registers each `XxxClient` as an Arc synthetic `@Singleton` bean based on `sure.ai.<platform>.api-key`, ready for injection; configuration mirrors the Spring Starter, and core/platform modules have zero Quarkus dependency. See [docs/quarkus-extension.md](docs/quarkus-extension.md)
-- **Full async / virtual threads (v1.9.0)**: `AiClient` gains a `chatAsync`/`chatStreamAsync` default method family; `AsyncClients` wraps any synchronous client into `AsyncAiClient`/`AsyncEmbeddingClient`/`AsyncImageClient`/`AsyncVideoClient`/`AsyncAudioClient` in one line, running on JDK 21 virtual threads (`AsyncExecutors.virtualThreadExecutor()`); cancelable `CompletableFuture` with exceptions propagated as-is. See [docs/async.md](docs/async.md)
+- **Full async / virtual threads (v1.9.0)**: `AiClient` gains a `chatAsync`/`chatStreamAsync` default method family; `AsyncClients` wraps any synchronous client into `AsyncAiClient`/`AsyncEmbeddingClient`/`AsyncImageClient`/`AsyncVideoClient`/`AsyncAudioClient` in one line, running on JDK virtual threads (JDK 21+ API, baseline 25) (`AsyncExecutors.virtualThreadExecutor()`); cancelable `CompletableFuture` with exceptions propagated as-is. See [docs/async.md](docs/async.md)
 - **OpenTelemetry GenAI bridge (v1.9.0)**: `sure-ai-otel` bridges `MetricsCollector`/`RetryListener`/`AgentEventSink` to OTel GenAI semantic-convention metrics (`gen_ai.client.operation.duration` / `input_tokens` / `output_tokens`); depends only on the OTel API (provided), SDK/exporters are user-supplied; passing a `null` MeterProvider degrades to a no-op with zero overhead. See [docs/observability.md](docs/observability.md#opentelemetry-genai-桥接可选模块)
 - **Langfuse native export (v2.4.0)**: the `langfuse` subpackage of `sure-ai-otel` talks straight to the Langfuse Ingestion API with zero deps — `LangfuseExporters.metricsCollectorFromEnv()` reports one chat call as a `trace` + `generation` (latency/model/token usage, retries as events), HTTP Basic `base64(pk:sk)` auth, no-op graceful degradation when keys are missing. See [docs/observability.md](docs/observability.md#langfuse-原生导出v240)
 - **Generic evaluation pipeline (v2.8.0)**: new `sure-ai-evals` module (core-only, zero third-party runtime deps; included in `sure-ai-all` / `sure-ai-bom`) — genericized **LLM-as-judge** (`LlmJudgeMetric` in four modes: BINARY / 1–5 scale / 100-point / pairwise, configurable rubric, judge failure tolerated as NaN) plus deterministic metrics (exact_match / contains / regex / JSON-schema validity), semantic metric (embedding cosine similarity), and runtime metrics (latency / token cost); **datasets** via hand-written CSV/JSONL loaders (quoting/escaping/BOM/bad-line tolerant); `EvalRunner` runs batches concurrently (per-case and per-metric isolation; aggregates pass rate / p50 / p95 / total tokens); **JSON/Markdown/HTML reports** (HTML self-contained, no external links); **CI threshold assertions** (`EvalThreshold`/`EvalAssertions` throw `AssertionError`); **record/replay & TraceRegression** (`RecordingClient` JSONL logging, zero-network replay, baseline-vs-current tolerance regression); **A/B comparison** (`EvalComparison` per-metric diff + pairwise wins); observability additions — an OTel `eval.evaluation` span and Langfuse scores (score-create). Complementary to (not depending on) the RAG-specific evaluator. See [docs/evals.md](docs/evals.md), [docs/en/evals.md](docs/en/evals.md)
@@ -73,7 +73,7 @@
 - **Model Listing**: unified `ModelsClient` abstraction across 5 platforms (OpenAI / Azure / Gemini / Anthropic / Qwen)
 - **Capability guard (v1.4.0)**: each platform Client explicitly declares the set of capabilities it supports; calling an unsupported capability (e.g. `embed()` on DeepSeek) throws `AiException: deepseek does not support EMBED capability` immediately before any request is sent, instead of firing the request and receiving a vague upstream 4xx. Per-platform capability matrix see [docs/capabilities.md](docs/capabilities.md)
 - **Environment variable auto-config**: lazy-loads from `SURE_AI_*` env vars when not explicitly initialized
-- **JDK 21**: records, pattern matching, switch patterns
+- **JDK 25**: records, pattern matching, switch patterns, virtual threads, structured concurrency (JDK 25+ only)
 
 ## Modules & Platforms
 
@@ -153,7 +153,7 @@ String reply = OpenAiUtil.chat("gpt-4o-mini", "Hello!").firstText();
 System.out.println(reply);
 ```
 
-**3. Run it**: with JDK 21+, run this main method in your IDE and the model's reply prints to the console.
+**3. Run it**: with JDK 25+, run this main method in your IDE and the model's reply prints to the console.
 
 More copy-paste recipes (streaming / multi-platform gateway / RAG / Agent tool-calling / async virtual threads / observability / CLI / archetype / native build) see [docs/COOKBOOK.md](docs/COOKBOOK.md).
 
@@ -565,7 +565,7 @@ sure-ai-archetype     ← mvn archetype:generate one-shot Hello World project (s
 ## Build
 
 ```bash
-# Requires JDK 21+ and Maven 3.9+
+# Requires JDK 25+ and Maven 3.9+
 mvn -B clean verify
 ```
 

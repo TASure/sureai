@@ -221,7 +221,7 @@ System.out.println(answer);
 
 ## 场景 5：异步 / 虚拟线程（v1.9.0 AsyncClients）
 
-**目标**：把阻塞式调用放到 JDK 21 虚拟线程上并发打多家平台。
+**目标**：把阻塞式调用放到 JDK 虚拟线程（JDK 21+ API，基线 25）上并发打多家平台。
 
 ```java
 import com.sure.ai.model.ChatRequest;

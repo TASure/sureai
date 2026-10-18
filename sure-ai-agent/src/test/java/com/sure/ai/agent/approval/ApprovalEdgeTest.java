@@ -110,13 +110,19 @@ public class ApprovalEdgeTest {
 		// delegate 永远阻塞；确认其已启动后，另一线程中断当前等待中的主线程 →
 		// future.get 抛 InterruptedException → 返回 TIMEOUT 决定。
 		// 用 CountDownLatch 同步 delegate 启动 + 300ms 缓冲余量，消除跨 OS 调度时序差异。
+		// 注意：不能用 Thread.sleep(超时) 模拟阻塞——CompletableFuture.cancel(true)
+		// 不会中断正在执行的用户代码，sleep 任务会持续占用公共 ForkJoinPool worker；
+		// 在 2 核环境（commonPool 并行度 = availableProcessors()-1 = 1）下，唯一 worker
+		// 被滞留 5 秒会导致同测试类后续用例的 supplyAsync 排队而误触发超时分支
+		// （JDK25 升级实测暴露）。改用可释放 latch：测试结束 finally 立即释放，不滞留池资源。
 		java.util.concurrent.CountDownLatch started = new java.util.concurrent.CountDownLatch(1);
+		java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
 		ApprovalHandler blocking = new ApprovalHandler() {
 			@Override
 			public ApprovalDecision request(ApprovalRequest request) {
 				started.countDown();
 				try {
-					Thread.sleep(5000);
+					release.await();
 				} catch (InterruptedException e) {
 					Thread.currentThread().interrupt();
 				}
@@ -152,6 +158,9 @@ public class ApprovalEdgeTest {
 			assertEquals(ApprovalStatus.TIMEOUT, d.status());
 		} finally {
 			killer.interrupt();
+			// 释放 commonPool worker（delegate 阻塞的 latch），避免滞留池资源
+			// 污染同测试类后续用例的 supplyAsync 调度（见上方注释）。
+			release.countDown();
 			// 清除当前线程残留的中断标志：TimeoutApprovalHandler 捕获
 			// InterruptedException 时会 Thread.currentThread().interrupt() 重新置位，
 			// 残留标志会使 JUnit 同线程后续测试的 future.get 立即抛 InterruptedException，

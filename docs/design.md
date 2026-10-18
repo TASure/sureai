@@ -2,7 +2,7 @@
 
 ## 设计目标
 
-1. **零第三方依赖**：运行期仅依赖 `sure-core:0.2.0`，HTTP 用 JDK21 `HttpClient`，JSON 自研。
+1. **零第三方依赖**：运行期仅依赖 `sure-core:0.2.0`，HTTP 用 JDK `HttpClient`，JSON 自研。
 2. **模块级隔离**：每个平台一个独立 Maven 模块，平台间零相互依赖，引入单个平台不会传递拉入其他平台。
 3. **静态工具类开箱即用**：每个平台提供 `<Pla>Util` 静态入口，`init(apiKey)` 后直接 `chat(model, prompt)`。
 4. **协议复用**：OpenAI 兼容平台复用 `OpenAiCompatClient`，非兼容平台（Anthropic / Gemini / Baidu / Ollama）在 core 抽象之上自行实现协议映射。
