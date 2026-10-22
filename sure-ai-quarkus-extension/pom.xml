@@ -36,7 +36,7 @@
 
     <properties>
         <!-- 固定 Quarkus 版本（仅本扩展模块内部使用，不上提父 POM dependencyManagement） -->
-        <quarkus.version>3.27.5</quarkus.version>
+        <quarkus.version>3.40.1.1</quarkus.version>
         <!-- 自动装配骨架：无业务分支，跳过 JaCoCo 行覆盖率门禁（参考 spring-boot-starter 惯例） -->
         <jacoco.skip>true</jacoco.skip>
         <!-- 自动配置骨架类跳过 SpotBugs 深度扫描（理由见类 JavaDoc） -->
