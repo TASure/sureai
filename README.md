@@ -1,124 +1,87 @@
 # sureai
 
+> **零第三方依赖的 Java 大模型接入工具基础设施。** 每个主流 AI 平台一个独立模块、一个静态入口工具类，模块间互相隔离、按需引入，一行调用。
+
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.tasure/sure-ai-core)](https://central.sonatype.com/artifact/io.github.tasure/sure-ai-core)
 [![CI](https://github.com/TASure/sureai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/TASure/sureai/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/TASure/sureai)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platforms-23-blue)](docs/capabilities.md)
-[![JDK](https://img.shields.io/badge/JDK-21+-orange.svg)](https://openjdk.org/projects/jdk/21/)
+[![JDK](https://img.shields.io/badge/JDK-25+-orange.svg)](https://openjdk.org/projects/jdk/25/)
 [![GitHub Stars](https://img.shields.io/github/stars/TASure/sureai)](https://github.com/TASure/sureai/stargazers)
 [![GitHub Downloads](https://img.shields.io/github/downloads/TASure/sureai/total)](https://github.com/TASure/sureai/releases)
 
-> 上方 Stars / Downloads 为 [shields.io](https://shields.io/) 动态徽章：Stars 实时同步 GitHub 收藏数；Downloads 统计 Release 产物累计下载量（随发版自动更新，发版前显示 0 属正常）。
+> Stars / Downloads 为 shields.io 动态徽章：Stars 实时同步 GitHub 收藏数；Downloads 统计 Release 产物累计下载量（发版前显示 0 属正常）。最新发布版本以 Maven Central 徽章为准。
 
-**零第三方依赖的 Java 大模型接入工具基础设施。** 每个主流 AI 平台一个独立模块与静态入口工具类，模块间互相隔离，按需引入。
+## 为什么选择 sureai
 
-## 与同类框架的差异化
-
-| 维度 | sureai | langchain4j | Spring AI |
+| 维度 | sureai | LangChain4j | Spring AI |
 |------|--------|-------------|-----------|
-| 第三方依赖 | **零**（仅 JDK + 自研 JSON/HTTP） | 传递依赖链庞大 | 绑定 Spring 生态 |
-| 开箱即用 | **静态工具类一行调用** | 需 Builder 装配 | 需 @Configuration + Bean |
-| 国产平台覆盖 | **23 个平台全覆盖**（含百度、智谱、豆包、MiniMax、混元、星火等） | 部分覆盖 | 部分覆盖 |
+| 第三方运行期依赖 | **零**（仅 JDK + 自研 JSON/HTTP，唯一依赖 `sure-core`） | 传递依赖链庞大 | 绑定 Spring 生态 |
+| 开箱即用 | **静态工具类一行调用**（`OpenAiUtil.chat(...)`） | 需 Builder 装配 | 需 `@Configuration` + Bean |
+| 平台覆盖 | **23 个平台全覆盖**（含百度/智谱/豆包/MiniMax/混元/星火等国产） | 部分覆盖 | 部分覆盖 |
 | 模块隔离 | **模块级零依赖**，只引入需要的平台 | 整体引入 | 整体引入 |
-| JDK 要求 | 21+（record/pattern matching） | 17+ | 17+ |
+| JDK 要求 | **25+** | 17+ | 17+ |
 
-## 特性
+## 架构总览
 
-- **零第三方运行期依赖**：内置轻量 JSON 解析与 HTTP 客户端，不引入 OkHttp/Jackson/Netty
-- **静态工具类开箱即用**：`OpenAiUtil.chat(model, prompt)` 一行完成对话
-- **模块级隔离**：只引入需要的平台模块，不引入无关依赖
-- **国产平台全覆盖**：OpenAI / Azure / Anthropic / Gemini / DeepSeek / 通义千问 / 智谱 / Moonshot / 豆包 / 百度千帆 / Ollama / Grok / Mistral / Cohere / llama.cpp / AWS Bedrock；**v1.9.0 新增 7 个 OpenAI 兼容平台**：MiniMax（稀宇）/ 阶跃星辰 StepFun / 百川 Baichuan / 01.AI 零一万物 / 硅基流动 SiliconFlow / 腾讯混元 Hunyuan / 讯飞星火 Spark
-- **流式调用**：统一 SSE 流式接口，逐片回调
-- **Function Calling**：工具声明与调用闭环
-- **Embedding**：向量生成（支持平台见下表）
-- **图像生成**：`ImageClient` 统一抽象，支持 DALL·E / 通义万相 / CogView / 文心一格 / Gemini Imagen，异步平台内部轮询屏蔽，对外同步返回
-- **视频生成**：`VideoClient` 统一抽象，支持 Sora / 通义万相 Wan / CogVideoX / Seedance / Azure Sora 2，全平台异步任务轮询屏蔽，对外同步返回
-- **语音 TTS/STT**：`AudioClient` 统一抽象（TTS 合成 + STT 转录），支持 OpenAI / CosyVoice / GLM-TTS / 豆包 / 百度 / Azure Speech，二进制音频 / URL / Base64 三种响应形态
-- **RAG 检索增强问答**：`sure-ai-rag` 端到端管线（文档加载器：本地文件/URL；分块：递归字符/Markdown/固定大小/语义/父子；向量存储：内置 + Milvus/Chroma/Qdrant/Pinecone/Weaviate/Elasticsearch/OpenSearch/Redis/PGVector/Typesense/Cassandra/MongoDB/Neo4j 共 13 种外部适配（合计 14 种）；检索：向量 + BM25 关键词混合加权融合；Prompt 模板 + 查询改写；增强生成）。**高级检索策略（v1.8.0）**：HyDE / Multi-Query(RRF) / CRAG 纠正式 / 父子 Small-to-Big / 语义分块 / 多模态 RAG；**GraphRAG**（实体关系抽取→社区发现→逐社区摘要）；**RAG 评估**（faithfulness / context_precision / context_recall / answer_relevancy 四指标 + 阈值断言 + 轨迹回放回归）；**可移植 metadata filter**（FilterExpression 抽象 + 11 方言翻译器）。见 [docs/rag.md](docs/rag.md)、[docs/vector-stores.md](docs/vector-stores.md)、[docs/prompt-template.md](docs/prompt-template.md)
-- **文档导入器（v2.6.0）**：`sure-ai-ingest` 新模块（已进 `sure-ai-all`/`sure-ai-bom`）——`DocumentLoader` SPI（`FileSystemLoader` 本地文件 / `URLLoader` 网络 URL，按扩展名/Content-Type 路由）+ `DocumentParser` 格式解析 SPI。内置 **TXT/MD/HTML/PDF** 全 JDK 支持：PDF 为纯 JDK 有限文本层提取（`Tj`/`TJ` 流扫描，**不引 PDFBox**；扫描件/加密/字体映射/多栏不处理，损坏按空返回）、HTML 为最小正则剥标签；DOCX/XLSX/PPTX 由可选模块 `sure-ai-ingest-poi`（Apache POI 5.5.1 **provided** 不传递，需自行声明依赖）。产出直接复用 rag `Document`，无缝接入 `RagPipeline.ingest`。见 [docs/ingest.md](docs/ingest.md)
-- **Agent 编排（ReAct + Plan-and-Execute）**：`sure-ai-agent` 工具注册中心 + Function Calling 参数校验 + ReAct 编排器 + PlanExecuteAgent（规划→逐步执行→汇总，三级计划解析兜底）；多 Agent 编排（TaskSplitter/AgentOrchestrator/ResultAggregator 并行执行+异常隔离）；内置工具包（HttpTool/DateTimeTool/CalculatorTool 白名单四则）；会话记忆（ConversationMemory 环形窗口，可选注入）。任意 `AiClient` 可驱动，异常/超限/超时全防护。见 [docs/agent.md](docs/agent.md)
-- **生产级 Agent（v1.7.0）**：在 ReActAgent 之上可选注入四组生产能力——检查点持久化（`CheckpointStore`/`AgentCheckpointer` 重放式恢复，run 开头/每轮迭代/结束自动落盘）、流式事件（8 类 `AgentEvent` + `StreamingAgentListener` 桥接 + SSE 写出）、HITL 审批（`ApprovalPolicy` 4 预置策略 + `ApprovalHandler` 4 预置处理器，拒绝/超时回灌模型）、长期记忆（`LongTermMemory` 跨会话召回 Top-K 注入 system + 自动沉淀，向量/文本双路降级）。全部传 null 即关闭，行为与历史版本一致。见 [docs/agent-advanced.md](docs/agent-advanced.md)
-- **Agent 生态（v2.9.0，对标 LangChain4j AgenticServices / Anthropic Agent Skills）**：①**Agent Skills 规范实现**——`SKILL.md` frontmatter（name/description 必填，手写 YAML 子集零第三方依赖）+ L1 元数据/L2 正文/L3 资源三级渐进式加载，支持本地目录/classpath/显式 jar 加载，路径穿越防护，技能经 `SkillTool` 一键注册为工具（`scripts/` 不执行）；②**子 Agent 层级式委派**——`AgentAsTool`（子 Agent 作为工具、答案回灌父模型继续推理）/ `HandoffAgent`（控制权移交、`[HANDOFF]` 终答），委派上下文传递、默认深度 5、直接/间接环检测、子 Agent 事件冒泡、ISOLATED/SHARED 记忆策略、虚拟线程超时；③**工具注册中心市场**——`ToolCatalog` 标签/关键词/来源/风险发现，FAIL/OVERWRITE/RENAME 冲突策略，MCP 工具 `mcp.<server>.<tool>` 命名空间聚合，`ToolProvider` ServiceLoader 清单 SPI，不改 `ToolRegistry` API；④**MCP 无状态深度融合**——对齐 2026-07-28 规范（discover/resultType/CacheableResult/`MCP-Protocol-Version` 头 -32020/-32022/未知方法 404），实现官方 Skills 扩展 `io.modelcontextprotocol/skills`（SEP-2640 Final：skills/list 分页、skills/get、resources/read `skill://`、可选 directory/read），工具市场与技能经 examples 桥接适配器对外暴露。公共 API 只增不改。见 [docs/agent-skills.md](docs/agent-skills.md) 与 [docs/mcp-server.md](docs/mcp-server.md)
-- **声明式编排 AiService（v2.5.0）**：`sure-ai-framework` 新模块——`FrameworkUtil.create(接口.class, client)` 一行把带注解的 Java 接口经 JDK 动态代理变成 AI 服务。注解族 `@AiService`/`@SystemMessage`/`@UserMessage`/`@Tool`/`@Memory`/`@Param`（`{paramName}` 模板），返回映射 `String`/`ChatResponse`/`Stream`/`record`（结构化自动挂 json_schema）；`@Tool` 方法签名自动转 JSON Schema（直调拒绝、模型侧触发）。配套 **Advisor 链**三钩子（before 正序/around 嵌套/after 逆序）+ 四件套（`SemanticCacheAdvisor` 语义缓存短路 / `LoggingAdvisor` 日志 / `ToolCallingAdvisor` 自动工具循环 / `StructuredOutputValidationAdvisor` 校验自纠）；**`SemanticCache`** embedding 余弦阈值命中、可插拔 `CacheStore`（缺省 Lru，可接 `RedisCacheStore` 分布式共享）。仅依赖 core、零第三方运行期依赖。见 [docs/framework.md](docs/framework.md)
-- **MCP 客户端**：`sure-ai-mcp` Model Context Protocol JSON-RPC 2.0 客户端，stdio（ProcessBuilder 子进程）/ Streamable HTTP（JDK HttpClient + SSE 聚合）双传输，initialize 握手 + tools/resources/prompts 能力 API；**McpTool 适配器**把 MCP server 工具批量注册进 `ToolRegistry`，与 ReActAgent 无缝组合。见 [docs/mcp.md](docs/mcp.md)
-- **MCP Server**：`sure-ai-mcp-server` 把 sureai 多平台 `AiClient`/`EmbeddingClient`/`ImageClient` 反向暴露为标准 MCP Server，纯 JDK 协议引擎 + stdio/Streamable HTTP 双传输，注册式工具模型保证核心零平台依赖，兼容有状态 2025-06-18 与无状态 2026-07-28（v2.9.0 起补齐 discover/resultType/缓存提示/协议版本头/错误码，并实现官方 Skills 扩展 `io.modelcontextprotocol/skills`、动态工具来源 `McpToolSource` 暴露工具市场）。见 [docs/mcp-server.md](docs/mcp-server.md)
-- **AI Gateway**：`sure-ai-gateway` 多供应商统一网关，`GatewayClient` 实现 `AiClient` 对调用方透明；6 种路由策略（Explicit/Capability/RoundRobin/Weighted/LowestLatency/LowestCost，可组合）+ 自动故障转移（4xx 不转移/5xx 超时转移，不健康摘除冷却）+ 密钥池轮转（401/429 自动换 key）+ 租户配额预算。**生产化（v2.7.0）**：熔断（按 client 维度三态 + 路由过滤 OPEN）/ 健康探活（`HealthProbe` SPI + `HealthMonitor`）/ 请求超时装饰（`GatewayTimeoutDecorator` 可触发 failover）/ 流式首段前故障转移 / `GatewayMetrics`（p50/p95/p99 + 成本）/ `GatewayAuditLogger`（JUL 概要审计）/ 租户并发上限（`maxConcurrency`）/ `GatewayUtil` 静态入口。见 [docs/gateway.md](docs/gateway.md)
-- **成本计量**：`sure-ai-core com.sure.ai.cost` 价格目录（18 个内置模型）+ 单次成本计算（含缓存 token）+ 按租户/模型/时间窗汇总，线程安全内存实现。见 [docs/cost.md](docs/cost.md)
-- **OpenAI 兼容代理**：`sure-ai-proxy` 独立 HTTP 服务（LiteLLM proxy 模式，基于 JDK HttpServer 零新依赖），/v1/chat/completions（非流+SSE 流）、/v1/models、/v1/embeddings；虚拟密钥鉴权；ProxyConfig（properties 配置）。见 [docs/proxy.md](docs/proxy.md)
-- **可观测性（重试回调/指标/限流）**：`RetryListener` 重试事件回调 + `MetricsCollector` 指标埋点（内置零依赖 `AiMetrics`）+ 客户端 QPS 限流（sure-core 令牌桶），`sure-ai-micrometer` 可选 Micrometer/Prometheus 桥接，未挂载零开销。见 [docs/observability.md](docs/observability.md)
-- **响应缓存**：`ChatCacheKey` 请求归一化 SHA-256 + `CacheStore` SPI + 内置 `LruCacheStore`（LRU+TTL，纯 JDK），默认关闭零开销，命中不触发网络/指标/重试；**`RedisCacheStore`（v2.4.0）**基于共享 RESP2 编解码（零 Lettuce/Jedis 依赖）的外部 Redis 缓存，支持多实例共享、`SCAN` 非阻塞清空，LruCacheStore vs RedisCacheStore 选型见文档。见 [docs/cache.md](docs/cache.md)
-- **Spring Boot Starter**：`sure-ai-spring-boot-starter` 自动配置（`sure.ai.<platform>.api-key` 等属性绑定 + `@ConditionalOnProperty` 条件装配 + `@Autowired` 注入），仅 Spring Boot 工程使用，core/平台模块零 Spring 依赖。见 [docs/spring-boot.md](docs/spring-boot.md)
-- **Quarkus 扩展（v1.9.0）**：`sure-ai-quarkus-extension`（runtime + deployment 双模块）按 `sure.ai.<platform>.api-key` 条件把对应 `XxxClient` 注册为 Arc 合成 `@Singleton` Bean，注入即用；与 Spring Starter 配置同构，core/平台模块零 Quarkus 依赖。见 [docs/quarkus-extension.md](docs/quarkus-extension.md)
-- **全链路异步 / 虚拟线程（v1.9.0）**：`AiClient` 新增 `chatAsync`/`chatStreamAsync` default 方法族，`AsyncClients` 一行把任意同步 Client 包装为 `AsyncAiClient`/`AsyncEmbeddingClient`/`AsyncImageClient`/`AsyncVideoClient`/`AsyncAudioClient`，统一跑在 JDK 虚拟线程上（JDK 21+ API，基线 25）（`AsyncExecutors.virtualThreadExecutor()`），`CompletableFuture` 可取消、异常原样透传。见 [docs/async.md](docs/async.md)
-- **OpenTelemetry GenAI 桥接（v1.9.0）**：`sure-ai-otel` 把 `MetricsCollector`/`RetryListener`/`AgentEventSink` 桥接为 OTel GenAI 语义约定指标（`gen_ai.client.operation.duration` / `input_tokens` / `output_tokens`），仅依赖 OTel API（provided），SDK/导出器由使用方自备；传 null MeterProvider 即空操作无感降级。见 [docs/observability.md](docs/observability.md#opentelemetry-genai-桥接可选模块)
-- **Langfuse 原生导出（v2.4.0）**：`sure-ai-otel` 的 `langfuse` 子包零依赖直连 Langfuse Ingestion API——`LangfuseExporters.metricsCollectorFromEnv()` 一行把一次聊天调用上报为 `trace` + `generation`（耗时/model/token 用量，重试挂为 event），HTTP Basic `base64(pk:sk)` 认证，密钥缺失即空操作无感降级。见 [docs/observability.md](docs/observability.md#langfuse-原生导出v240)
-- **通用评估全链路（v2.8.0）**：`sure-ai-evals` 新模块（仅依赖 core、零第三方运行期依赖，已进 `sure-ai-all`/`sure-ai-bom`）——**LLM-as-judge 通用化**（`LlmJudgeMetric` 四模式：BINARY / 1~5 分量表 / 百分制 / pairwise，rubric 可配、裁判失败容错为 NaN）+ 确定性指标（exact_match / contains / regex / JSON Schema 合法性）+ 语义指标（embedding 余弦相似度）+ 运行指标（延迟 / token 成本）；**数据集** CSV/JSONL 手写加载器（引号/转义/BOM/坏行容错）；`EvalRunner` 批量并发执行（失败用例与指标双隔离，聚合 pass rate / p50 / p95 / 总 token）；**JSON/Markdown/HTML 三格式报告**（HTML 自包含无外链）；**CI 阈值断言**（`EvalThreshold`/`EvalAssertions` 不达标抛 AssertionError）；**录制回放与 TraceRegression**（`RecordingClient` JSONL 落盘、回放零网络、基线 vs 当前容差回归）；**A/B 对比**（`EvalComparison` 逐指标差值 + pairwise 胜平负）；可观测增量——OTel `eval.evaluation` span 与 Langfuse scores（score-create）。与 RAG 专用评估（faithfulness 等）互补不依赖。见 [docs/evals.md](docs/evals.md)
-- **命令行工具（v2.0.0）**：`sure-ai-cli` 零依赖终端直接问答——`chat` / `stream` / `rag`（本地文档）/ `list` / `repl` 五子命令，一键切换全部 23 个平台；可打 fat jar，亦可 GraalVM native-image 编译为单文件可执行。不写一行 Java 即可体验全库。见 [docs/cli.md](docs/cli.md)
-- **Maven 工程脚手架（v2.0.0）**：`sure-ai-archetype` 一条 `mvn archetype:generate` 生成带 BOM import、单平台 Client 调用、README 与 .gitignore 的 Hello World 工程，platform 属性可切换 23 平台。见 [docs/COOKBOOK.md](docs/COOKBOOK.md)
-- **GraalVM native-image AOT 加固（v2.0.0）**：全库补齐 `META-INF/native-image/**` 反射 / 资源 / 编译参数元数据（reflect-config 共 42 条：core 30 + agent 8 + mcp-server 4），fat jar 自动内联，native 编译免手写配置；`NativeImageMetadataTest` 守卫 core model 包不遗漏。见 [docs/native-image.md](docs/native-image.md)
-- **Cookbook 场景菜谱（v2.0.0）**：[docs/COOKBOOK.md](docs/COOKBOOK.md) 收录 9 个「照着抄」最小可运行场景（单平台 chat / 多平台网关 / RAG / Agent 工具调用 / 异步虚拟线程 / 可观测性 / CLI / archetype / native），附 3 个离线可跑示例应用（`sure-ai-examples` 的 `ExamplesRunner`）。
-- **熔断器**：`CircuitBreaker` 三态状态机（CLOSED→OPEN→HALF_OPEN），滑动窗口失败计数+OPEN超时+HALF_OPEN探测，`AiConfig.circuitBreaker` 可选注入，默认关闭零开销，与重试/限流嵌套协作。见 [docs/circuit-breaker.md](docs/circuit-breaker.md)
-- **Rerank 重排序**：`RerankClient` 统一抽象，通义千问 qwen3-rerank 接入，二阶段精排可无缝接入 RAG 检索链路
-- **结构化输出**：`response_format` 统一抽象（json_object / JSON Schema），`JsonMapper` 零依赖强类型 record 反序列化，8 平台适配
-- **多模态图像理解**：`MessagePart` 内容块架构（文本 + 图片），OpenAI 兼容 / Gemini / Anthropic / 百度 图片输入归一；**`VideoPart` 视频输入（v2.4.0，官方文档联网核实）**——Gemini `fileData`/`inlineData`、通义千问 `video_url`，Anthropic 已核实不支持视频输入。见 [docs/multimodal.md](docs/multimodal.md)
-- **PDF 文档输入**：`DocumentPart` 内容块，5 平台 PDF 文档理解适配
-- **Prompt 缓存**：Anthropic `cache_control` / Gemini `cachedContent` / OpenAI 自动缓存，降低长上下文重复前缀成本
-- **Batches 批处理**：`BatchClient` 统一抽象，OpenAI / Azure / 智谱 / Anthropic 异步批量推理，内置轮询
-- **Realtime 实时语音**：`RealtimeClient` 全双工 WebSocket 抽象，OpenAI / Gemini / 通义千问 / 智谱 / 豆包 5 平台接入，连接器可注入便于 mock；**连接韧性（v2.4.0）**——`RealtimeOptions` 自动重连（指数退避、可配上限/可关闭）、周期心跳 ping + 空闲判死、8 个生命周期回调、VAD（speech started/stopped）与中断（barge-in）事件标准化，Gemini 重连后自动重发 `setup`。见 [docs/realtime.md](docs/realtime.md)
-- **思考模式**：`reasoningEffort` / `thinkingConfig` 统一抽象 + 思维链 `reasoningContent` 解析，OpenAI / Azure / Gemini / Anthropic / 通义千问 5 平台适配
-- **Grounding 联网**：`grounding` 统一开关，工具式（web_search / googleSearch）与布尔式（enable_search）双范式，OpenAI / Azure / Gemini / 通义千问 / 智谱 / 豆包 6 平台接入，引用来源解析
-- **微调**：`FineTuneClient` 统一抽象（上传训练文件 + 创建/查询任务），OpenAI / Azure / 百度千帆 3 平台接入
-- **内容审核**：`ModerationClient` 统一抽象，类别与分数归一，OpenAI / Azure 接入
-- **模型列表**：`ModelsClient` 统一抽象，OpenAI / Azure / Gemini / Anthropic / 通义千问 5 平台接入
-- **平台能力面收口（v1.4.0）**：每个平台 Client 显式声明自身支持的能力集合，调用未支持的能力（如在 DeepSeek 上调 `embed()`）会在发请求前立即抛出 `AiException: deepseek does not support EMBED capability`，而非把请求发出去再吃上游 4xx。各平台能力清单见 [docs/capabilities.md](docs/capabilities.md)
-- **环境变量自动配置**：未显式 init 时自动从 `SURE_AI_*` 环境变量读取
-- **JDK 25**：record / pattern matching / switch 模式、虚拟线程、结构化并发（基线仅支持 JDK 25+）
+45 个 Maven 模块按「核心 → 平台 → 能力 → 应用」四层组织，核心零第三方依赖，平台模块两两隔离：
 
-## 模块与平台一览
+```mermaid
+flowchart TB
+    subgraph APP[应用层]
+        CLI[sure-ai-cli · 命令行问答]
+        ARCH[sure-ai-archetype · 工程脚手架]
+        SPRING[sure-ai-spring-boot-starter]
+        QUARKUS[sure-ai-quarkus-extension]
+    end
 
-| 平台 | artifactId | 默认 baseUrl | 鉴权方式 | 流式 | Embedding | 图像生成 | 视频生成 | TTS | STT | Function Calling | Rerank | 结构化输出 | 多模态 | PDF | 缓存 | Batches | Realtime | 思考 | Grounding | 微调 | 审核 | 模型列表 |
-|------|-----------|-------------|---------|------|-----------|---------|---------|-----|-----|-----------------|--------|-----------|--------|-----|------|---------|---------|------|-----------|------|------|---------|
-| OpenAI | `sure-ai-openai` | `https://api.openai.com/v1` | Bearer | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ tts-1 | ✅ whisper-1 | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ 自动 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Azure OpenAI | `sure-ai-azure` | `https://{resource}.openai.azure.com` | api-key 头 | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ Speech | ✅ Speech | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ 自动 | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Anthropic | `sure-ai-anthropic` | `https://api.anthropic.com/v1` | x-api-key 头 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ tool_use | ✅ | ✅ | ✅ cache_control | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ |
-| Google Gemini | `sure-ai-gemini` | `https://generativelanguage.googleapis.com/v1beta` | ?key= 查询参数 | ✅ | ✅ | ✅ Imagen | ❌ Veo(OAuth) | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ cachedContent | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
-| DeepSeek | `sure-ai-deepseek` | `https://api.deepseek.com` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| 通义千问 | `sure-ai-qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Bearer | ✅ | ✅ | ✅ 通义万相（异步） | ✅ Wan 2.6（异步） | ✅ CosyVoice | ✅ Qwen-ASR | ✅ | ✅ qwen3-rerank | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ 控制台 | ❌ | ✅ |
-| 智谱 GLM | `sure-ai-zhipu` | `https://open.bigmodel.cn/api/paas/v4` | JWT (HS256) | ✅ | ✅ | ✅ CogView | ✅ CogVideoX（异步） | ✅ GLM-TTS | ✅ GLM-ASR | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ 控制台 | ❌ | ❌ |
-| Moonshot | `sure-ai-moonshot` | `https://api.moonshot.cn/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| 豆包 | `sure-ai-doubao` | `https://ark.cn-beijing.volces.com/api/v3` | Bearer | ✅ | ✅ | ❌ | ✅ Seedance（异步） | ✅ seed-tts-2.0 | ✅ 录音文件识别 | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ 控制台 | ❌ | ❌ |
-| 百度千帆 | `sure-ai-baidu` | `https://aip.baidubce.com` | access_token（自动缓存） | ✅ | ✅ | ✅ 文心一格（异步） | ❌ | ✅ 度小美 | ✅ 短语音识别 | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| Ollama | `sure-ai-ollama` | `http://localhost:11434` | 无（本地服务） | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Grok (xAI) | `sure-ai-grok` | `https://api.x.ai/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ |
-| Mistral | `sure-ai-mistral` | `https://api.mistral.ai/v1` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Cohere | `sure-ai-cohere` | `https://api.cohere.com/v2` | Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ rerank-v3.5 | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| llama.cpp | `sure-ai-llamacpp` | `http://localhost:8080/v1` | 可选 Bearer | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| AWS Bedrock | `sure-ai-bedrock` | `https://bedrock-runtime.{region}.amazonaws.com` | SigV4 (AK/SK) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| MiniMax 稀宇科技 | `sure-ai-minimax` | `https://api.minimax.cn/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| 阶跃星辰 StepFun | `sure-ai-stepfun` | `https://api.stepfun.com/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| 百川 Baichuan | `sure-ai-baichuan` | `https://api.baichuan-ai.com/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| 01.AI 零一万物 | `sure-ai-lingyi` | `https://api.lingyiwanwu.com/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| 硅基流动 SiliconFlow | `sure-ai-siliconflow` | `https://api.siliconflow.cn/v1` | Bearer | ✅ | ✅ BAAI/bge-m3 | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| 腾讯混元 Hunyuan | `sure-ai-hunyuan` | `https://api.hunyuan.cloud.tencent.com/v1` | Bearer | ✅ | ✅ hunyuan-embedding | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| 讯飞星火 Spark | `sure-ai-spark` | `https://spark-api-open.xf-yun.com/v1` | Bearer | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+    subgraph CAP[能力层 · 与平台解耦]
+        RAG[sure-ai-rag · 检索增强]
+        AGENT[sure-ai-agent · Agent 编排]
+        FRAMEWORK[sure-ai-framework · 声明式 AiService]
+        EVALS[sure-ai-evals · 评估]
+        GATEWAY[sure-ai-gateway · 多供应商网关]
+        MCPC[sure-ai-mcp · MCP 客户端]
+        MCPS[sure-ai-mcp-server · MCP 服务端]
+        PROXY[sure-ai-proxy · OpenAI 兼容代理]
+        INGEST[sure-ai-ingest · 文档导入]
+        OBS[sure-ai-otel / sure-ai-micrometer · 可观测桥接]
+    end
 
-各平台专项文档：[AWS Bedrock](docs/bedrock.md) · [Cohere](docs/cohere.md) · [Grok](docs/grok.md) · [Mistral](docs/mistral.md) · [llama.cpp](docs/llamacpp.md)；其余平台（OpenAI / Azure / Anthropic / Gemini / DeepSeek / 通义千问 / 智谱 / Moonshot / 豆包 / 百度 / Ollama 及 v1.9.0 新增的 MiniMax / StepFun / Baichuan / Lingyi / SiliconFlow / Hunyuan / Spark）的逐平台文档见 `docs/platforms/`；各平台支持的能力清单见 [docs/capabilities.md](docs/capabilities.md)。
+    subgraph PLAT[平台层 · 23 个独立模块]
+        direction LR
+        OPENAI[openai · azure · anthropic · gemini · deepseek]
+        CN[qwen · zhipu · moonshot · doubao · baidu · ollama]
+        MORE[grok · mistral · llamacpp · cohere · bedrock]
+        CN2[minimax · stepfun · baichuan · lingyi · siliconflow · hunyuan · spark]
+    end
 
-聚合模块：`sure-ai-all`（一个依赖引入全部平台）、`sure-ai-bom`（版本统一管理）。
+    CORE[sure-ai-core · 公共模型/HTTP/JSON/SSE]
+    BOM[sure-ai-bom · 版本统一]
+    ALL[sure-ai-all · 一键聚合]
 
-编排层：`sure-ai-framework`（v2.5.0 声明式编排——`FrameworkUtil` 接口即服务 + Advisor 链四件套 + `SemanticCache` 语义缓存；仅依赖 core，已进 `sure-ai-all`/`sure-ai-bom` 聚合链，见 [docs/framework.md](docs/framework.md)）。
+    CORE --> PLAT
+    PLAT --> CAP
+    CAP --> APP
+    CORE --> OBS
+    BOM -. 版本管理 .-> PLAT
+    ALL -. 聚合 .-> PLAT
+    ALL -. 聚合 .-> RAG
+    ALL -. 聚合 .-> AGENT
+```
 
-数据导入层：`sure-ai-ingest`（v2.6.0 文档导入器——`FileSystemLoader`/`URLLoader` + `DocumentParser` SPI，内置 TXT/MD/HTML/PDF 全 JDK 支持，已进 `sure-ai-all`/`sure-ai-bom`；可选 `sure-ai-ingest-poi` 提供 DOCX/XLSX/PPTX，Apache POI 5.5.1 provided、仅进 bom 版本管理、不进运行期聚合链，见 [docs/ingest.md](docs/ingest.md)）。
-
-评估层：`sure-ai-evals`（v2.8.0 通用评估——CSV/JSONL 数据集 → 四类指标（确定性 / 语义 / LLM 裁判 / 运行指标）→ `EvalRunner` 批量并发 → JSON/Markdown/HTML 报告 → CI 阈值断言；`RecordingClient` 录制回放 + `TraceRegression` 基线回归；仅依赖 core、零第三方运行期依赖，与 RAG 专用评估互补，已进 `sure-ai-all`/`sure-ai-bom`，见 [docs/evals.md](docs/evals.md)）。
-
-应用层：`sure-ai-cli`（命令行直接问答：chat / stream / rag / list / repl，一键切换全部 23 个平台，可打 fat jar 并支持 [GraalVM native-image](docs/native-image.md)；不进入 `sure-ai-all` 聚合链，见 [docs/cli.md](docs/cli.md)）。
-
-工程脚手架：`sure-ai-archetype`（`mvn archetype:generate` 一键生成带 Hello World 的 Java 工程：pom import BOM + 单平台 Client 调用 + README + .gitignore；不进入 `sure-ai-all`/`sure-ai-bom` 聚合链）。
+**核心设计原则**：平台模块只依赖 `sure-ai-core`，模块间零依赖；内置自研 JSON 解析与 SSE 读取；静态工具类双检锁懒加载、未初始化自动读环境变量；平台特有鉴权（JWT / access_token 缓存 / SigV4 等）封装在各模块内。
 
 ## 快速开始（5 分钟入门）
 
-**1. 引入 BOM 统一版本，再选一个平台模块**（这里用 OpenAI；其余 22 个平台坐标见下方[模块与平台一览](#模块与平台一览)）：
+```mermaid
+flowchart LR
+    A[① 引入 BOM + 一个平台模块] --> B[② 配置 SURE_AI_* 环境变量]
+    B --> C[③ OpenAiUtil.chat 一行调用]
+    C --> D[④ 拿到 ChatResponse 打印结果]
+```
+
+**① 引入依赖**（BOM 统一版本，这里用 OpenAI；其余 22 个平台坐标见[平台矩阵](#平台支持矩阵)）：
 
 ```xml
 <dependencyManagement>
@@ -126,7 +89,7 @@
     <dependency>
       <groupId>io.github.tasure</groupId>
       <artifactId>sure-ai-bom</artifactId>
-      <version>1.4.0</version>
+      <version>2.9.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -141,9 +104,15 @@
 </dependencies>
 ```
 
-> 想一次引入全部 23 个平台 + RAG + Agent，把上面的平台依赖换成聚合模块 `sure-ai-all`（`type=pom`）。
+> 想一次引入全部平台 + RAG + Agent，把平台依赖换成聚合模块 `sure-ai-all`（`<type>pom</type>`）。
 
-**2. 一行调用**（先 `export SURE_AI_OPENAI_API_KEY=sk-xxx`）：
+**② 配置环境变量**：
+
+```bash
+export SURE_AI_OPENAI_API_KEY=sk-xxx
+```
+
+**③ 一行调用**：
 
 ```java
 import com.sure.ai.openai.OpenAiUtil;
@@ -152,245 +121,59 @@ String reply = OpenAiUtil.chat("gpt-4o-mini", "你好！").firstText();
 System.out.println(reply);
 ```
 
-**3. 跑通**：JDK 25+，IDE 直接运行该 main 方法，控制台即打印模型回复。
+**④ 跑通**：JDK 25+，直接运行 main 方法即可。更多「照着抄」场景见 [docs/COOKBOOK.md](docs/COOKBOOK.md)。
 
-更多「照着抄」场景（流式 / 多平台网关 / RAG / Agent 工具调用 / 异步虚拟线程 / 可观测性 / CLI / archetype / native 编译）见 [docs/COOKBOOK.md](docs/COOKBOOK.md)。
+## 核心能力一览
 
-### 图像生成
+| 能力 | 模块 | 一句话说明 | 文档 |
+|------|------|-----------|------|
+| 对话 / 流式 / Embedding | `sure-ai-*`（平台模块） | 23 平台统一协议引擎，SSE 流式逐片回调 | [capabilities.md](docs/capabilities.md) |
+| 图像 / 视频 / 语音 | `sure-ai-*` | `ImageClient`/`VideoClient`/`AudioClient`，异步平台内部轮询屏蔽、对外同步 | [images.md](docs/images.md) · [video.md](docs/video.md) · [audio.md](docs/audio.md) |
+| RAG 检索增强 | `sure-ai-rag` | 加载→分块→向量化→检索（向量+BM25 混合）→重排→增强生成 | [rag.md](docs/rag.md) |
+| Agent 编排 | `sure-ai-agent` | ReAct / Plan-Execute / 多 Agent 并行 / 检查点 / HITL / 记忆 / Skills / 子 Agent / 工具市场 | [agent.md](docs/agent.md) · [agent-skills.md](docs/agent-skills.md) |
+| 声明式 AiService | `sure-ai-framework` | 接口 + 注解 → JDK 动态代理即 AI 服务；Advisor 链 + 语义缓存 | [framework.md](docs/framework.md) |
+| 评估 | `sure-ai-evals` | 数据集 → 指标（确定性/语义/LLM 裁判）→ 报告 → CI 阈值断言 → 录制回放 | [evals.md](docs/evals.md) |
+| AI Gateway | `sure-ai-gateway` | 多供应商路由 / 故障转移 / 熔断 / 密钥池 / 配额 | [gateway.md](docs/gateway.md) |
+| MCP 客户端/服务端 | `sure-ai-mcp` / `sure-ai-mcp-server` | 接入 MCP 工具；把 sureai 能力反向暴露为 MCP Server | [mcp.md](docs/mcp.md) · [mcp-server.md](docs/mcp-server.md) |
+| 文档导入 | `sure-ai-ingest` | 本地文件/URL → `Document`，内置 TXT/MD/HTML/PDF（POI 可选） | [ingest.md](docs/ingest.md) |
+| 可观测性 | `sure-ai-otel` / `sure-ai-micrometer` | OTel GenAI 语义约定 / Micrometer / Langfuse 导出 | [observability.md](docs/observability.md) |
+| 生产韧性 | `sure-ai-core` | 重试回调 / 限流 / 熔断 / 响应缓存 / 成本计量 / CircuitBreaker | [observability.md](docs/observability.md) · [cache.md](docs/cache.md) |
 
-```java
-import com.sure.ai.openai.OpenAiUtil;
-import com.sure.ai.openai.OpenAiModels;
-import com.sure.ai.model.ImageRequest;
+## 平台支持矩阵
 
-// 同步返回（异步平台如通义万相/文心一格内部自动轮询）
-String imageUrl = OpenAiUtil.image(OpenAiModels.DALL_E_3, "一只可爱的小猫咪").firstUrl();
+23 个平台，每个一个独立模块与静态工具类（核心能力列，完整 22 项能力矩阵见 [docs/capabilities.md](docs/capabilities.md)）：
 
-// 或使用 Builder 配置尺寸/质量/数量
-ImageRequest req = ImageRequest.builder()
-    .model(OpenAiModels.DALL_E_3)
-    .prompt("赛博朋克风格的城市夜景")
-    .size("1024x1024")
-    .quality("hd")
-    .build();
-String url = OpenAiUtil.image(req).firstUrl();
-```
+| 平台 | artifactId | 流式 | Embedding | 图像 | 视频 | 语音 TTS/STT | Function Calling |
+|------|-----------|------|-----------|------|------|-------------|-----------------|
+| OpenAI | `sure-ai-openai` | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ / ✅ | ✅ |
+| Azure OpenAI | `sure-ai-azure` | ✅ | ✅ | ✅ DALL·E 3 | ✅ Sora 2 | ✅ / ✅ | ✅ |
+| Anthropic | `sure-ai-anthropic` | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Google Gemini | `sure-ai-gemini` | ✅ | ✅ | ✅ Imagen | ❌ Veo | ❌ | ✅ |
+| DeepSeek | `sure-ai-deepseek` | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| 通义千问 | `sure-ai-qwen` | ✅ | ✅ | ✅ 万相 | ✅ Wan | ✅ / ✅ | ✅ |
+| 智谱 GLM | `sure-ai-zhipu` | ✅ | ✅ | ✅ CogView | ✅ CogVideoX | ✅ / ✅ | ✅ |
+| Moonshot | `sure-ai-moonshot` | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| 豆包 | `sure-ai-doubao` | ✅ | ✅ | ❌ | ✅ Seedance | ✅ / ✅ | ✅ |
+| 百度千帆 | `sure-ai-baidu` | ✅ | ✅ | ✅ 文心一格 | ❌ | ✅ / ✅ | ✅ |
+| Ollama | `sure-ai-ollama` | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| Grok (xAI) | `sure-ai-grok` | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Mistral | `sure-ai-mistral` | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| Cohere | `sure-ai-cohere` | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| llama.cpp | `sure-ai-llamacpp` | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| AWS Bedrock | `sure-ai-bedrock` | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| MiniMax | `sure-ai-minimax` | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| 阶跃星辰 StepFun | `sure-ai-stepfun` | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| 百川 Baichuan | `sure-ai-baichuan` | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| 01.AI 零一万物 | `sure-ai-lingyi` | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| 硅基流动 SiliconFlow | `sure-ai-siliconflow` | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| 腾讯混元 Hunyuan | `sure-ai-hunyuan` | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| 讯飞星火 Spark | `sure-ai-spark` | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
 
-更多平台配置与异步轮询说明见 [docs/images.md](docs/images.md)。
+逐平台文档见 `docs/platforms/` 与 [bedrock.md](docs/bedrock.md) / [cohere.md](docs/cohere.md) / [grok.md](docs/grok.md) / [mistral.md](docs/mistral.md) / [llamacpp.md](docs/llamacpp.md)。
 
-### 视频生成
+## 关键流程示例
 
-```java
-import com.sure.ai.openai.OpenAiUtil;
-import com.sure.ai.openai.OpenAiModels;
-import com.sure.ai.model.VideoRequest;
-
-// 全平台异步任务，SDK 内部轮询，对外同步返回
-String videoUrl = OpenAiUtil.video(OpenAiModels.SORA_2, "一只猫咪在草地上奔跑").firstUrl();
-
-// 或使用 Builder 配置时长/分辨率/首尾帧
-VideoRequest req = VideoRequest.builder()
-    .model(OpenAiModels.SORA_2)
-    .prompt("赛博朋克风格的城市夜景，慢镜头")
-    .duration(8)
-    .size("1280x720")
-    .build();
-String url = OpenAiUtil.video(req).firstUrl();
-```
-
-更多平台配置与异步轮询说明见 [docs/video.md](docs/video.md)。
-
-### 语音 TTS / STT
-
-```java
-import com.sure.ai.openai.OpenAiUtil;
-import com.sure.ai.openai.OpenAiModels;
-import com.sure.ai.model.TtsResponse;
-import com.sure.ai.model.SttResponse;
-
-// TTS：文本 → 二进制音频
-TtsResponse tts = OpenAiUtil.tts(OpenAiModels.TTS_1, "你好，世界", "alloy");
-byte[] audio = tts.audio();  // 可直接保存为 mp3
-
-// STT：音频 → 转写文本
-SttResponse stt = OpenAiUtil.stt(OpenAiModels.WHISPER_1, audio);
-System.out.println(stt.text());
-```
-
-更多平台配置与响应形态说明见 [docs/audio.md](docs/audio.md)。
-
-### 结构化输出
-
-```java
-import com.sure.ai.internal.json.Json;
-import com.sure.ai.model.ChatMessage;
-import com.sure.ai.model.ChatRequest;
-import com.sure.ai.openai.OpenAiUtil;
-import com.sure.ai.util.JsonMapper;
-
-// 目标 record：字段名与模型输出 JSON 的 key 一致
-record CityInfo(String city, String country, int population) {}
-
-String text = OpenAiUtil.chat(ChatRequest.builder()
-    .model("gpt-4o-mini")
-    .messages(List.of(ChatMessage.user("提取城市信息，只输出 JSON：city/country/population。原文：东京是日本首都。")))
-    .responseFormat("json_object")
-    .build())
-    .firstText();
-
-// 零依赖强类型反序列化，避免手写字符串解析
-CityInfo info = JsonMapper.fromJson(Json.parse(text).getAsJsonObject(), CityInfo.class);
-```
-
-各平台 response_format 差异（Anthropic 自动 tool_use 模拟、Gemini responseSchema、百度字符串取值）见
-[docs/structured-output.md](docs/structured-output.md)。
-
-### 多模态图像理解
-
-```java
-import com.sure.ai.model.*;
-
-// 一条用户消息 = 文本片段 + 图片片段（URL 或 Base64）
-String desc = OpenAiUtil.chat(ChatRequest.builder()
-    .model("gpt-4o")
-    .messages(List.of(ChatMessage.user(List.of(
-        TextPart.of("请用一句话描述这张图片。"),
-        ImagePart.ofUrl("https://example.com/cat.jpg")
-    ))))
-    .build())
-    .firstText();
-```
-
-内容块架构、PDF 文档输入与 Prompt 缓存见 [docs/multimodal.md](docs/multimodal.md)；
-Rerank 见 [docs/rerank.md](docs/rerank.md)；Batches 见 [docs/batches.md](docs/batches.md)。
-
-### 内容审核
-
-```java
-import com.sure.ai.model.ModerationRequest;
-import com.sure.ai.model.ModerationResponse;
-import com.sure.ai.openai.OpenAiUtil;
-
-ModerationResponse resp = OpenAiUtil.client()
-    .moderate(ModerationRequest.of("待审核文本"));
-
-System.out.println("flagged=" + resp.flagged());   // 任一结果命中即 true
-resp.results().forEach(r -> r.categoryScores()
-    .forEach((k, v) -> System.out.printf("%s=%.4f%n", k, v)));
-```
-
-详见 [docs/moderation.md](docs/moderation.md)。
-
-### 模型列表
-
-```java
-import com.sure.ai.model.Model;
-import com.sure.ai.openai.OpenAiUtil;
-
-for (Model m : OpenAiUtil.client().listModels()) {
-    System.out.println(m.id() + "  owned_by=" + m.ownedBy());
-}
-```
-
-详见 [docs/models.md](docs/models.md)；Realtime 见 [docs/realtime.md](docs/realtime.md)，
-思考模式见 [docs/thinking.md](docs/thinking.md)，Grounding 见 [docs/grounding.md](docs/grounding.md)，
-微调见 [docs/fine-tuning.md](docs/fine-tuning.md)。
-
-## Maven 依赖
-
-按需引入单个平台模块：
-
-```xml
-<!-- OpenAI -->
-<dependency>
-    <groupId>io.github.tasure</groupId>
-    <artifactId>sure-ai-openai</artifactId>
-    <version>1.4.0</version>
-</dependency>
-
-<!-- Azure OpenAI -->
-<dependency>
-    <groupId>io.github.tasure</groupId>
-    <artifactId>sure-ai-azure</artifactId>
-    <version>1.4.0</version>
-</dependency>
-
-<!-- Anthropic Claude -->
-<dependency>
-    <groupId>io.github.tasure</groupId>
-    <artifactId>sure-ai-anthropic</artifactId>
-    <version>1.4.0</version>
-</dependency>
-
-<!-- Google Gemini -->
-<dependency>
-    <groupId>io.github.tasure</groupId>
-    <artifactId>sure-ai-gemini</artifactId>
-    <version>1.4.0</version>
-</dependency>
-
-<!-- DeepSeek -->
-<dependency>
-    <groupId>io.github.tasure</groupId>
-    <artifactId>sure-ai-deepseek</artifactId>
-    <version>1.4.0</version>
-</dependency>
-
-<!-- 通义千问 DashScope -->
-<dependency>
-    <groupId>io.github.tasure</groupId>
-    <artifactId>sure-ai-qwen</artifactId>
-    <version>1.4.0</version>
-</dependency>
-
-<!-- 智谱 GLM -->
-<dependency>
-    <groupId>io.github.tasure</groupId>
-    <artifactId>sure-ai-zhipu</artifactId>
-    <version>1.4.0</version>
-</dependency>
-
-<!-- Moonshot Kimi -->
-<dependency>
-    <groupId>io.github.tasure</groupId>
-    <artifactId>sure-ai-moonshot</artifactId>
-    <version>1.4.0</version>
-</dependency>
-
-<!-- 火山引擎豆包 -->
-<dependency>
-    <groupId>io.github.tasure</groupId>
-    <artifactId>sure-ai-doubao</artifactId>
-    <version>1.4.0</version>
-</dependency>
-
-<!-- 百度千帆 -->
-<dependency>
-    <groupId>io.github.tasure</groupId>
-    <artifactId>sure-ai-baidu</artifactId>
-    <version>1.4.0</version>
-</dependency>
-
-<!-- Ollama 本地模型 -->
-<dependency>
-    <groupId>io.github.tasure</groupId>
-    <artifactId>sure-ai-ollama</artifactId>
-    <version>1.4.0</version>
-</dependency>
-```
-
-引入全部平台：
-
-```xml
-<dependency>
-    <groupId>io.github.tasure</groupId>
-    <artifactId>sure-ai-all</artifactId>
-    <version>1.4.0</version>
-    <type>pom</type>
-</dependency>
-```
-
-## 流式调用
+### 流式调用
 
 ```java
 OpenAiUtil.chatStream(
@@ -398,22 +181,15 @@ OpenAiUtil.chatStream(
         .model("gpt-4o-mini")
         .messages(List.of(ChatMessage.user("用一句话介绍 Java。")))
         .build(),
-    chunk -> {
-        if (chunk.deltaText() != null) {
-            System.out.print(chunk.deltaText());
-        }
-    }
+    chunk -> { if (chunk.deltaText() != null) System.out.print(chunk.deltaText()); }
 );
 ```
 
-## Function Calling
+### Function Calling
 
 ```java
-ToolFunction weatherFn = ToolFunction.of(
-    "getWeather",
-    "查询指定城市的当前天气",
-    "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}"
-);
+ToolFunction weatherFn = ToolFunction.of("getWeather", "查询指定城市的当前天气",
+    "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}");
 
 ChatRequest req = ChatRequest.builder()
     .model("gpt-4o-mini")
@@ -422,28 +198,26 @@ ChatRequest req = ChatRequest.builder()
     .build();
 
 ChatResponse resp = OpenAiUtil.chat(req);
-List<ToolCall> calls = resp.choices().get(0).message().toolCalls();
-// 执行工具后将结果作为 ChatMessage.tool(toolCallId, result) 追加，再次请求
+// 执行工具后，将结果作为 ChatMessage.tool(toolCallId, result) 追加再次请求
 ```
 
-## Embedding
+### RAG 检索增强问答
 
-```java
-EmbeddingResponse resp = OpenAiUtil.embed("text-embedding-3-small", "测试文本");
-float[] vector = resp.embeddings().get(0);
-System.out.println("向量维度: " + vector.length);
+```mermaid
+flowchart LR
+    A[文档加载\nFileSystem/URL] --> B[分块\n递归/Markdown/语义/父子]
+    B --> C[向量化 Embedding]
+    C --> D[向量存储\n内置 + 14 种外部库]
+    D --> E[检索\n向量 + BM25 混合]
+    E --> F[重排 Rerank]
+    F --> G[增强生成\nPrompt 模板 + 上下文]
 ```
-
-## RAG 检索增强问答
-
-`sure-ai-rag` 提供端到端 RAG 管线（文本分块 → 向量化 → 相似度检索 → 增强生成），
-与平台解耦，任意支持对话 + Embedding 的平台客户端可直接组合：
 
 ```xml
 <dependency>
-    <groupId>io.github.tasure</groupId>
-    <artifactId>sure-ai-rag</artifactId>
-    <version>0.2.0</version>
+  <groupId>io.github.tasure</groupId>
+  <artifactId>sure-ai-rag</artifactId>
+  <version>2.9.0</version>
 </dependency>
 ```
 
@@ -451,119 +225,91 @@ System.out.println("向量维度: " + vector.length);
 OpenAiClient client = OpenAiClient.builder().apiKey("sk-xxx").build();
 
 RagPipeline pipeline = RagUtil.pipeline(client, client,
-        OpenAiModels.GPT_4O_MINI, OpenAiModels.TEXT_EMBEDDING_3_SMALL);
+    OpenAiModels.GPT_4O_MINI, OpenAiModels.TEXT_EMBEDDING_3_SMALL);
 
 pipeline.ingest("sureai-intro", "sureai 是一个零第三方依赖的 Java 大模型接入工具库……");
 ChatResponse answer = pipeline.ask("sureai 支持哪些能力？");
 ```
 
-内置进程内向量库（余弦相似度），并开箱适配 Milvus / Chroma / Qdrant / Pinecone /
-Weaviate / Elasticsearch / OpenSearch / Redis / PGVector / Typesense / Cassandra / MongoDB /
-Neo4j 共 13 种外部向量库（共 14 种实现）；亦可自行实现 `VectorStore` 接口接入 FAISS 等。
-v2.6.0 文档导入器（`sure-ai-ingest`）把本地文件 / 网络 URL 读为 rag `Document`（内置 TXT/MD/HTML/PDF，
-DOCX/XLSX/PPTX 由可选 POI 模块承载）。内置文档加载器（本地文件 / URL）、
-BM25 关键词检索与向量+关键词混合检索、Markdown / 固定大小 / 语义 / 父子分块器，
-以及 HyDE / Multi-Query / CRAG / GraphRAG / RAG 评估等高级能力。
-详见 [docs/rag.md](docs/rag.md)、[docs/vector-stores.md](docs/vector-stores.md)。
+高级能力：向量库已适配 Milvus / Chroma / Qdrant / Pinecone / Weaviate / Elasticsearch / OpenSearch / Redis / PGVector / Typesense / Cassandra / MongoDB / Neo4j 共 13 种外部实现（合计 14 种）；检索策略含 HyDE / Multi-Query(RRF) / CRAG / 父子分块 / 语义分块 / 多模态 RAG / GraphRAG / RAG 评估。见 [docs/rag.md](docs/rag.md)、[docs/vector-stores.md](docs/vector-stores.md)。
 
-## 性能基准
+### Agent 编排
 
-core 的序列化 / 反序列化 / 请求体构建 / SSE 解析等热点路径有 JMH 微基准（模块 `sure-ai-benchmark`，纯 CPU、零网络）。
-最近一次实测（2.3.0，JDK 21.0.12.1，AverageTime）：JSON 序列化 / 解析、ChatRequest 构建、OpenAI 请求体序列化、SSE 行解析均在亚微秒~数微秒量级。
-
-**v2.3.0 核心路径优化（JMH 前后对比）**：JSON 解析主路径延迟降低 **32.8%**（2.124 → 1.427 µs/op），JSON 序列化 −16.4%，SSE 行解析 −9.6%；未触及路径变化在 ±1% 噪声带内，无回退。
-
-完整结果与口径见 [docs/benchmark.md](docs/benchmark.md)，原始数据归档见 [docs/benchmarks/benchmark-2.3.0.json](docs/benchmarks/benchmark-2.3.0.json)（含 before/after 双 phase 与完整 rawData）。
-
-## 环境变量配置
-
-| 平台 | 环境变量 | 必填 | 说明 |
-|------|---------|------|------|
-| OpenAI | `SURE_AI_OPENAI_API_KEY` | ✅ | API Key |
-| | `SURE_AI_OPENAI_BASE_URL` | ❌ | 覆盖默认 baseUrl |
-| Azure | `SURE_AI_AZURE_API_KEY` | ✅ | API Key |
-| | `SURE_AI_AZURE_RESOURCE` | ❌ | Azure 资源名 |
-| | `SURE_AI_AZURE_BASE_URL` | ❌ | 完整 baseUrl |
-| Anthropic | `SURE_AI_ANTHROPIC_API_KEY` | ✅ | API Key |
-| | `SURE_AI_ANTHROPIC_BASE_URL` | ❌ | 覆盖默认 baseUrl |
-| Gemini | `SURE_AI_GEMINI_API_KEY` | ✅ | API Key |
-| | `SURE_AI_GEMINI_BASE_URL` | ❌ | 覆盖默认 baseUrl |
-| DeepSeek | `SURE_AI_DEEPSEEK_API_KEY` | ✅ | API Key |
-| | `SURE_AI_DEEPSEEK_BASE_URL` | ❌ | 覆盖默认 baseUrl |
-| 通义千问 | `SURE_AI_QWEN_API_KEY` | ✅ | DashScope API Key |
-| | `SURE_AI_QWEN_BASE_URL` | ❌ | 覆盖默认 baseUrl |
-| 智谱 | `SURE_AI_ZHIPU_API_KEY` | ✅ | `id.secret` 格式 |
-| | `SURE_AI_ZHIPU_BASE_URL` | ❌ | 覆盖默认 baseUrl |
-| Moonshot | `SURE_AI_MOONSHOT_API_KEY` | ✅ | API Key |
-| | `SURE_AI_MOONSHOT_BASE_URL` | ❌ | 覆盖默认 baseUrl |
-| 豆包 | `SURE_AI_DOUBAO_API_KEY` | ✅ | Ark API Key |
-| | `SURE_AI_DOUBAO_BASE_URL` | ❌ | 覆盖默认 baseUrl |
-| 百度千帆 | `SURE_AI_BAIDU_API_KEY` | ✅ | 千帆 API Key |
-| | `SURE_AI_BAIDU_SECRET_KEY` | ✅ | 千帆 Secret Key |
-| | `SURE_AI_BAIDU_BASE_URL` | ❌ | 覆盖默认 baseUrl |
-| Ollama | `SURE_AI_OLLAMA_BASE_URL` | ❌ | 覆盖 `localhost:11434` |
-| MiniMax | `SURE_AI_MINIMAX_API_KEY` | ✅ | API Key |
-| | `SURE_AI_MINIMAX_BASE_URL` | ❌ | 覆盖默认 `api.minimax.cn/v1`（可改国际站 `api.minimax.io/v1`） |
-| 阶跃星辰 | `SURE_AI_STEPFUN_API_KEY` | ✅ | API Key |
-| | `SURE_AI_STEPFUN_BASE_URL` | ❌ | 覆盖默认地址（国际站 `api.stepfun.ai/v1`） |
-| 百川 | `SURE_AI_BAICHUAN_API_KEY` | ✅ | API Key |
-| | `SURE_AI_BAICHUAN_BASE_URL` | ❌ | 覆盖默认地址 |
-| 01.AI 零一万物 | `SURE_AI_LINGYI_API_KEY` | ✅ | API Key |
-| | `SURE_AI_LINGYI_BASE_URL` | ❌ | 覆盖默认地址 |
-| 硅基流动 | `SURE_AI_SILICONFLOW_API_KEY` | ✅ | API Key |
-| | `SURE_AI_SILICONFLOW_BASE_URL` | ❌ | 覆盖默认地址（国际站 `api.siliconflow.com/v1`） |
-| 腾讯混元 | `SURE_AI_HUNYUAN_API_KEY` | ✅ | API Key |
-| | `SURE_AI_HUNYUAN_BASE_URL` | ❌ | 覆盖默认地址（可迁移至 TokenHub 端点） |
-| 讯飞星火 | `SURE_AI_SPARK_API_KEY` | ✅ | 控制台 `APIPath:APIKey` 整体作为 Bearer |
-| | `SURE_AI_SPARK_BASE_URL` | ❌ | 覆盖默认地址 |
-
-## 架构与隔离设计
-
-sureai 采用严格的模块级隔离架构：
-
-```
-sure-ai-core          ← 公共模型/接口/HTTP/JSON（所有平台依赖此模块）
-sure-ai-rag           ← RAG 检索增强生成（依赖 core，与平台解耦）
-sure-ai-agent         ← Agent 编排：ReAct 多工具循环 + Agent Skills（SKILL.md 渐进式加载）+ 子 Agent 层级委派（AgentAsTool/Handoff）+ 工具市场 ToolCatalog（依赖 core，与平台解耦）
-sure-ai-framework     ← 声明式编排 AiService 接口即服务 + Advisor 链 + SemanticCache（依赖 core，与平台解耦）
-sure-ai-evals         ← 通用评估：CSV/JSONL 数据集 + 指标 SPI（确定性/语义/LLM 裁判/运行指标）+ EvalRunner 批量执行 + 三格式报告 + CI 断言 + 录制回放回归（依赖 core，与平台解耦）
-sure-ai-micrometer    ← 可观测性 Micrometer 桥接（依赖 core，micrometer-core provided 不传递）
-sure-ai-otel          ← 可观测性 OpenTelemetry GenAI 桥接（依赖 core，otel-api provided 不传递）
-sure-ai-quarkus-extension(-deployment) ← Quarkus 自动装配扩展（双模块；core/平台零 Quarkus 依赖）
-  ├── sure-ai-openai
-  ├── sure-ai-azure
-  ├── sure-ai-anthropic
-  ├── sure-ai-gemini
-  ├── sure-ai-deepseek
-  ├── sure-ai-qwen
-  ├── sure-ai-zhipu
-  ├── sure-ai-moonshot
-  ├── sure-ai-doubao
-  ├── sure-ai-baidu
-  └── sure-ai-ollama
-sure-ai-bom           ← 版本统一管理（BOM）
-sure-ai-all           ← 聚合引入全部平台、RAG 与 Agent
-sure-ai-examples      ← 使用示例
-sure-ai-cli           ← 命令行直接问答（应用层，依赖 sure-ai-all，不进入聚合库链）
-sure-ai-archetype     ← mvn archetype:generate 一键生成 Hello World 工程（脚手架，不进入聚合库链）
+```mermaid
+flowchart LR
+    A[用户任务] --> B[ReAct / PlanExecute 循环]
+    B --> C{需要子 Agent?}
+    C -->|是| D[AgentAsTool / Handoff 委派]
+    C -->|否| E[工具执行\nToolRegistry / ToolCatalog]
+    D --> E
+    E --> B
+    B --> F[最终答案]
 ```
 
-**核心设计原则：**
+```java
+ToolRegistry registry = new ToolRegistry();
+registry.register(DateTimeTool.INSTANCE);
+registry.register(HttpTool.builder().ssrfGuard(...).build());
 
-- 每个平台模块与 RAG 模块只依赖 `sure-ai-core`，模块间**零依赖**
-- 核心模块内置自研 JSON 解析器与 SSE 行读取器，不引入第三方库
-- 静态工具类双检锁懒加载，未初始化时从环境变量自动读取
-- 各平台特有鉴权逻辑（JWT / access_token 缓存 / 自定义请求头）封装在各自模块内
-- RAG 管线与平台解耦：任意平台的对话 + Embedding 客户端可直接组合
+ReActAgent agent = ReActAgent.builder()
+    .client(client)
+    .model("gpt-4o-mini")
+    .registry(registry)
+    .build();
 
-## 构建指南
+String answer = agent.run("今天是星期几？");
+```
+
+更多：多 Agent 并行（`AgentOrchestrator`）、检查点持久化、HITL 审批、长期记忆、Agent Skills（SKILL.md 渐进式加载）、子 Agent 层级委派、工具市场 `ToolCatalog`、MCP 工具接入。见 [docs/agent.md](docs/agent.md)、[docs/agent-advanced.md](docs/agent-advanced.md)、[docs/agent-skills.md](docs/agent-skills.md)、[docs/mcp.md](docs/mcp.md)。
+
+## 生态与工具
+
+| 工具 | 模块 | 说明 | 文档 |
+|------|------|------|------|
+| Spring Boot Starter | `sure-ai-spring-boot-starter` | 自动配置 + `@Autowired` 注入 | [spring-boot.md](docs/spring-boot.md) |
+| Quarkus 扩展 | `sure-ai-quarkus-extension` | Arc 合成 Bean 条件装配 | [quarkus-extension.md](docs/quarkus-extension.md) |
+| 命令行 | `sure-ai-cli` | `chat / stream / rag / list / repl`，不写 Java 即可体验 | [cli.md](docs/cli.md) |
+| 工程脚手架 | `sure-ai-archetype` | `mvn archetype:generate` 一键生成工程 | [COOKBOOK.md](docs/COOKBOOK.md) |
+| 示例 | `sure-ai-examples` | 离线可跑 demo（`ExamplesRunner`） | [COOKBOOK.md](docs/COOKBOOK.md) |
+| 原生编译 | 全库元数据 | GraalVM native-image 免手写配置 | [native-image.md](docs/native-image.md) |
+| OpenAI 兼容代理 | `sure-ai-proxy` | LiteLLM proxy 模式独立 HTTP 服务 | [proxy.md](docs/proxy.md) |
+| 成本计量 | `sure-ai-core` | 价格目录 + 单次/汇总成本 | [cost.md](docs/cost.md) |
+| 全链路异步 | `sure-ai-core` | `AsyncClients` 虚拟线程包装 | [async.md](docs/async.md) |
+
+## 环境变量约定
+
+统一规则：**`SURE_AI_<平台>_API_KEY`**（必填，Ollama 除外）+ **`SURE_AI_<平台>_BASE_URL`**（可选，覆盖默认地址）。特例：
+
+- **百度千帆**：还需 `SURE_AI_BAIDU_SECRET_KEY`（access_token 自动缓存）
+- **智谱**：`SURE_AI_ZHIPU_API_KEY` 为 `id.secret` 格式（SDK 生成 JWT）
+- **讯飞星火**：`SURE_AI_SPARK_API_KEY` 为控制台 `APIPath:APIKey` 整体
+- **Azure**：`SURE_AI_AZURE_RESOURCE`（资源名）或 `SURE_AI_AZURE_BASE_URL`（完整地址）
+
+完整对照见 [docs/platforms/](docs/platforms/) 各平台文档。
+
+## 文档索引
+
+| 主题 | 文档 |
+|------|------|
+| 快速入门 / 场景 | [COOKBOOK.md](docs/COOKBOOK.md) · [faq.md](docs/faq.md) |
+| 架构设计 | [design.md](docs/design.md) · [capabilities.md](docs/capabilities.md) · [comparison.md](docs/comparison.md) · [strategy-comparison.md](docs/strategy-comparison.md) |
+| 对话能力 | [thinking.md](docs/thinking.md) · [structured-output.md](docs/structured-output.md) · [multimodal.md](docs/multimodal.md) · [grounding.md](docs/grounding.md) · [batches.md](docs/batches.md) · [prompt-template.md](docs/prompt-template.md) · [realtime.md](docs/realtime.md) |
+| 媒体生成 | [images.md](docs/images.md) · [video.md](docs/video.md) · [audio.md](docs/audio.md) · [rerank.md](docs/rerank.md) |
+| RAG / 向量库 | [rag.md](docs/rag.md) · [vector-stores.md](docs/vector-stores.md) · [ingest.md](docs/ingest.md) |
+| Agent / MCP | [agent.md](docs/agent.md) · [agent-advanced.md](docs/agent-advanced.md) · [agent-skills.md](docs/agent-skills.md) · [mcp.md](docs/mcp.md) · [mcp-server.md](docs/mcp-server.md) |
+| 框架 / 网关 | [framework.md](docs/framework.md) · [gateway.md](docs/gateway.md) · [proxy.md](docs/proxy.md) |
+| 评估 / 可观测 | [evals.md](docs/evals.md) · [observability.md](docs/observability.md) · [cost.md](docs/cost.md) · [cache.md](docs/cache.md) · [circuit-breaker.md](docs/circuit-breaker.md) |
+| 平台专项 | [bedrock.md](docs/bedrock.md) · [cohere.md](docs/cohere.md) · [grok.md](docs/grok.md) · [mistral.md](docs/mistral.md) · [llamacpp.md](docs/llamacpp.md) |
+| 工程化 | [benchmark.md](docs/benchmark.md) · [native-image.md](docs/native-image.md) · [cli.md](docs/cli.md) · [RELEASING.md](docs/RELEASING.md) · [trust.md](docs/trust.md) |
+
+## 构建
 
 ```bash
 # 需要 JDK 25+ 和 Maven 3.9+
 mvn -B clean verify
 ```
 
-此命令执行：编译 → 单元测试 → checkstyle → spotbugs → jacoco 覆盖率门禁 → license 头校验。
+执行：编译 → 单元测试（3200+ 用例，零真实网络）→ checkstyle → spotbugs → jacoco 覆盖率门禁（≥98%）→ license 头校验。
 
 ## 贡献指南
 
@@ -571,11 +317,10 @@ mvn -B clean verify
 
 ## 讨论与支持
 
-- **使用疑问 / 想法交流 / 路线图探讨**：请到 [GitHub Discussions](https://github.com/TASure/sureai/discussions) 发帖，避免 Issue 队列被非 actionable 的讨论淹没。
-  - **怎么用 Discussions**：问答类（Q&A）找答案前先看置顶帖（📌 Pinned）；路线图 / 版本规划讨论放 *Roadmap* 分类；新想法先用 *Ideas* 分类聊清楚再决定是否转 Issue。
+- **使用疑问 / 想法交流 / 路线图探讨**：请到 [GitHub Discussions](https://github.com/TASure/sureai/discussions) 发帖（问答类先看置顶帖；路线图/版本规划放 *Roadmap* 分类）。
 - **Bug 与功能请求**：用 [Issues](https://github.com/TASure/sureai/issues) 并按模板提交。
 - **安全漏洞**：**不要**公开 Issue 或 Discussions，按 [SECURITY.md](SECURITY.md) 的私下渠道邮件报告。
-- **供应链完整性 / 如何校验发布产物**：见 [docs/trust.md](docs/trust.md)。
+- **供应链完整性 / 校验发布产物**：见 [docs/trust.md](docs/trust.md)。
 
 ## 开发与治理团队
 
