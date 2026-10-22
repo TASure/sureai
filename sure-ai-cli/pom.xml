@@ -39,6 +39,12 @@
             <version>${project.version}</version>
             <type>pom</type>
         </dependency>
+        <!-- sure-ai-templates（v3.0.0）：sureai new <模板> 模板应用库生成入口 -->
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-templates</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 
     <build>
