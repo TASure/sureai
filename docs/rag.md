@@ -113,7 +113,7 @@ pipeline.ingestDocuments(docs);
 - `UrlDocumentLoader`：连接超时默认 10s、请求超时默认 30s，可注入自定义 `HttpClient`
   便于测试；HTTP 非 2xx 抛 `IllegalStateException`（含状态码）。
 - HTML 去标签为正则实现：移除 `<script>`/`<style>` 块、剥离标签、解码常用与数字实体、
-  合并空白。**JDK 21 无内置 HTML 解析器**，仅适用于简单静态页面，不处理 JS 渲染页面。
+  合并空白。**JDK 无内置 HTML 解析器**，仅适用于简单静态页面，不处理 JS 渲染页面。
 
 ## 混合检索
 

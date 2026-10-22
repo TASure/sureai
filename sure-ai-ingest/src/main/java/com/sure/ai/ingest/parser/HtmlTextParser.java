@@ -39,7 +39,7 @@ import com.sure.ai.rag.model.Document;
  *   <li>合并多余空白。</li>
  * </ol>
  *
- * <p><b>支持子集与限制</b>：JDK 21 无内置 HTML DOM 解析器，本实现基于正则，
+ * <p><b>支持子集与限制</b>：JDK 无内置 HTML DOM 解析器，本实现基于正则，
  * 不处理复杂嵌套、畸形标签、JS 渲染页面与 CSS 布局还原，仅适合简单静态 HTML。</p>
  *
  * @author sureai

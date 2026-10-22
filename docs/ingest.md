@@ -135,7 +135,7 @@ List<Document> pages = loader.load(URI.create("https://example.com/guide.pdf"));
 
 依次：移除 `<script>...</script>` 与 `<style>...</style>` 块（含内容）→ 剥离所有 HTML 标签
 → 解码常用实体（`&nbsp;`/`&lt;`/`&amp;`…）与数字实体 → 合并空白。
-JDK 21 无内置 HTML DOM 解析器，本实现基于正则：**不处理复杂嵌套、畸形标签、JS 渲染页面与
+JDK 无内置 HTML DOM 解析器，本实现基于正则：**不处理复杂嵌套、畸形标签、JS 渲染页面与
 CSS 布局还原，仅适合简单静态 HTML。**
 
 ### Office 文档（可选 POI 模块 `sure-ai-ingest-poi`）
