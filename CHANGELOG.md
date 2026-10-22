@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- （待填）
+
 ## [2.9.0] - 2026-10-22
 
 本版本线为「Agent 生态」专项（对标 LangChain4j AgenticServices / Anthropic Agent Skills）：在既有 ReAct / PlanExecute 与任务拆分并行编排之上，补齐四块能力——①**Agent Skills 规范实现**（`SKILL.md` frontmatter + 三级渐进式加载 + 技能作为工具）；②**子 Agent 层级式委派**（AgentAsTool / Handoff、嵌套深度与环检测、事件冒泡）；③**工具注册中心市场**（ToolCatalog：标签/关键词发现、MCP 聚合、命名空间、SPI 贡献）；④**MCP 无状态深度融合**（对齐 2026-07-28 无状态规范与官方 Skills 扩展 `io.modelcontextprotocol/skills`，把工具市场与技能经 MCP 暴露）。全部为新增包 / 新增类 / 公共 API 只增不改，零第三方运行期依赖、零真实网络测试红线不变。协议细节均联网核实 modelcontextprotocol.io 官方规范（核实日 2026-10-19），仍处 draft 无法落地的面（OAuth 完整授权流程、MRTR 服务端发起等）如实标注实验性。
