@@ -268,7 +268,9 @@ String answer = agent.run("今天是星期几？");
 |------|------|------|------|
 | Spring Boot Starter | `sure-ai-spring-boot-starter` | 自动配置 + `@Autowired` 注入 | [spring-boot.md](docs/spring-boot.md) |
 | Quarkus 扩展 | `sure-ai-quarkus-extension` | Arc 合成 Bean 条件装配 | [quarkus-extension.md](docs/quarkus-extension.md) |
-| 命令行 | `sure-ai-cli` | `chat / stream / rag / list / repl`，不写 Java 即可体验 | [cli.md](docs/cli.md) |
+| 命令行 | `sure-ai-cli` | `chat / stream / rag / list / repl / new / config / doctor / version`，不写 Java 即可体验 | [cli.md](docs/cli.md) |
+| 模板应用库 | `sure-ai-templates` | `sureai new <template>` 一键生成 RAG/客服/代码助手工程 | [templates.md](docs/templates.md) |
+| 文档站 | `sure-ai-docsite` | 把 docs/ Markdown 生成可发布静态站点（纯 JDK） | [docsite.md](docs/docsite.md) |
 | 工程脚手架 | `sure-ai-archetype` | `mvn archetype:generate` 一键生成工程 | [COOKBOOK.md](docs/COOKBOOK.md) |
 | 示例 | `sure-ai-examples` | 离线可跑 demo（`ExamplesRunner`） | [COOKBOOK.md](docs/COOKBOOK.md) |
 | 原生编译 | 全库元数据 | GraalVM native-image 免手写配置 | [native-image.md](docs/native-image.md) |
@@ -300,7 +302,7 @@ String answer = agent.run("今天是星期几？");
 | 框架 / 网关 | [framework.md](docs/framework.md) · [gateway.md](docs/gateway.md) · [proxy.md](docs/proxy.md) |
 | 评估 / 可观测 | [evals.md](docs/evals.md) · [observability.md](docs/observability.md) · [cost.md](docs/cost.md) · [cache.md](docs/cache.md) · [circuit-breaker.md](docs/circuit-breaker.md) |
 | 平台专项 | [bedrock.md](docs/bedrock.md) · [cohere.md](docs/cohere.md) · [grok.md](docs/grok.md) · [mistral.md](docs/mistral.md) · [llamacpp.md](docs/llamacpp.md) |
-| 工程化 | [benchmark.md](docs/benchmark.md) · [native-image.md](docs/native-image.md) · [cli.md](docs/cli.md) · [RELEASING.md](docs/RELEASING.md) · [trust.md](docs/trust.md) |
+| 工程化 | [benchmark.md](docs/benchmark.md) · [native-image.md](docs/native-image.md) · [cli.md](docs/cli.md) · [templates.md](docs/templates.md) · [docsite.md](docs/docsite.md) · [RELEASING.md](docs/RELEASING.md) · [trust.md](docs/trust.md) |
 
 ## 构建
 

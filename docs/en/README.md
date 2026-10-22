@@ -15,7 +15,7 @@ New here? Follow this order and you will have a first working call in minutes:
 
 1. **[Quick Start](./quickstart.md)** — BOM dependency, a minimal chat, streaming, and how to switch platforms.
 2. **[CLI](./cli.md)** — no Java at all: chat / stream / local-doc RAG from the terminal.
-3. **[Cookbook scenarios](../COOKBOOK.md)** — copy-paste recipes (Chinese; code is universal).
+3. **[Cookbook scenarios](./COOKBOOK.md)** — copy-paste recipes (English; code is universal).
 
 Then branch into the capability you need.
 
@@ -32,6 +32,8 @@ Then branch into the capability you need.
 | AI Gateway (routing / failover / key pool / tenant quota) | [gateway.md](./gateway.md) | [../gateway.md](../gateway.md) |
 | MCP Server (expose sureai as a Model Context Protocol server) | [mcp-server.md](./mcp-server.md) | [../mcp-server.md](../mcp-server.md) |
 | Command-line tool | [cli.md](./cli.md) | [../cli.md](../cli.md) |
+| Template application library (v3.0.0) | [templates.md](./templates.md) | [../templates.md](../templates.md) |
+| Documentation site generator (v3.0.0) | [docsite.md](./docsite.md) | [../docsite.md](../docsite.md) |
 | Structured output (JSON / records) | [structured-output.md](./structured-output.md) | [../structured-output.md](../structured-output.md) |
 | Observability (metrics / retry / Micrometer / OpenTelemetry) | [observability.md](./observability.md) | [../observability.md](../observability.md) |
 | Supply-chain trust (GPG / SBOM / SLSA / CVE / fuzz) | [trust.md](./trust.md) | [../trust.md](../trust.md) |

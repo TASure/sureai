@@ -70,11 +70,16 @@ sureai [全局选项] <子命令> [子命令选项] [问题]
 
 | 子命令 | 作用 | 示例 |
 |---|---|---|
-| `chat "问题"` | 一次性同步问答，打印完整回答 | `sureai chat "用一句话解释 RAG"` |
+| `chat "问题" [--once]` | 多轮问答（v3.0.0：会话内上下文，纯内存滚动 40 条；`--once` 单次；`exit`/`quit` 退出） | `sureai chat "用一句话解释 RAG"` |
 | `stream "问题"` | 流式逐片打印增量文本 | `sureai stream "写一首短诗"` |
 | `rag "问题" --doc <文件>` | 本地纯文本文档 RAG 问答 | `sureai rag "公司成立于哪年？" --doc ./company.txt` |
 | `list` | 列出全部平台与默认模型 | `sureai list` |
 | `repl` | 交互式多轮会话（`exit`/`quit` 退出） | `sureai --provider deepseek repl` |
+| `new <模板> [--name 目录] [--group g] [--artifact a]` | 模板应用库生成（v3.0.0），见 docs/templates.md | `sureai new rag-kb --name my-kb` |
+| `new --list` | 列出可用模板 | `sureai new --list` |
+| `config [--check] [--export]` | 查看 / 校验 / 导出 `SURE_AI_*` 环境变量与平台可用性（v3.0.0） | `sureai config --check` |
+| `doctor` | 环境体检：JDK 版本 / Maven / 本地制品 / 平台密钥就绪度（v3.0.0） | `sureai doctor` |
+| `version` | 打印 CLI 与 JDK 版本（v3.0.0） | `sureai version` |
 
 RAG 专属选项：
 
@@ -83,6 +88,46 @@ RAG 专属选项：
 
 RAG 流程：读取本地文档 → 递归字符分块 → 进程内向量库（`InMemoryVectorStore`）入库 →
 检索 topK=4 → 把命中文档拼入系统提示词 → 调用对话模型生成。**全程不发起文档网络下载。**
+
+
+## 2.5 v3.0.0 新命令
+
+### `new` — 模板应用库生成
+
+```bash
+sureai new --list                 # rag-kb / customer-service / code-assistant
+sureai new rag-kb                  # 生成到 ./rag-kb（工程名 = 目录名）
+sureai new rag-kb --name my-kb --group com.acme --artifact kb-app
+```
+
+生成工程含 pom + 主类 + 最小单元测试 + README，可直接 `mvn test` / `mvn exec:java`（零网络）。
+
+### `config` — 环境变量管理
+
+```bash
+sureai config                  # 概览：列出全部 SURE_AI_* 变量（值脱敏）+ 平台就绪统计
+sureai config --check          # 校验：缺 Key 的平台列表（有缺失返回退出码 1）
+sureai config --export         # 导出：输出 export 行，可重定向为 .env
+```
+
+### `doctor` — 环境体检
+
+```bash
+sureai doctor
+# === sureai doctor ===
+# JDK 版本：25.0.4.1（满足 25 基线）
+# Maven：Apache Maven 3.9.9 (...)
+# 本地 sure-ai-all 制品：2.10.0-SNAPSHOT
+# 平台密钥就绪：2/23，缺失 21 个：[openai, ...]
+```
+
+### `version` — 版本信息
+
+```bash
+sureai version
+# sureai CLI 2.10.0-SNAPSHOT
+# JDK 25.0.4.1
+```
 
 ## 3. 平台切换示例
 
@@ -109,6 +154,10 @@ sureai --provider ollama --model llama3.1 --base-url http://localhost:11434 chat
 ```
 
 ## 4. 环境变量表
+
+| 变量 | 用途 |
+|---|---|
+| `SURE_AI_<平台>_API_KEY` | 平台密钥（`sureai config` / `sureai doctor` 可诊断） |
 
 凭证优先级：`--api-key` 命令行 > 平台对应环境变量。
 

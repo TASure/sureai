@@ -270,7 +270,9 @@ More: parallel multi-agent (`AgentOrchestrator`), checkpoint persistence, HITL a
 |------|--------|-------------|------|
 | Spring Boot Starter | `sure-ai-spring-boot-starter` | Auto-configuration + `@Autowired` injection | [spring-boot.md](docs/spring-boot.md) |
 | Quarkus extension | `sure-ai-quarkus-extension` | Arc synthetic beans, conditional assembly | [quarkus-extension.md](docs/quarkus-extension.md) |
-| CLI | `sure-ai-cli` | `chat / stream / rag / list / repl` — use the library without Java | [cli.md](docs/cli.md) |
+| CLI | `sure-ai-cli` | `chat / stream / rag / list / repl / new / config / doctor / version` — use the library without Java | [cli.md](docs/cli.md) |
+| Templates | `sure-ai-templates` | `sureai new <template>` scaffolds RAG / customer-service / code-assistant apps | [templates.md](docs/templates.md) |
+| Doc site | `sure-ai-docsite` | Generates a publishable static site from `docs/` Markdown (pure JDK) | [docsite.md](docs/docsite.md) |
 | Archetype | `sure-ai-archetype` | One `mvn archetype:generate` to scaffold a project | [COOKBOOK.md](docs/COOKBOOK.md) |
 | Examples | `sure-ai-examples` | Offline runnable demos (`ExamplesRunner`) | [COOKBOOK.md](docs/COOKBOOK.md) |
 | Native image | all modules | GraalVM metadata, no hand-written config | [native-image.md](docs/native-image.md) |
@@ -302,7 +304,7 @@ Full mapping: per-platform docs in `docs/platforms/`.
 | Framework / gateway | [framework.md](docs/framework.md) · [gateway.md](docs/gateway.md) · [proxy.md](docs/proxy.md) |
 | Evaluation / observability | [evals.md](docs/evals.md) · [observability.md](docs/observability.md) · [cost.md](docs/cost.md) · [cache.md](docs/cache.md) · [circuit-breaker.md](docs/circuit-breaker.md) |
 | Platform specifics | [bedrock.md](docs/bedrock.md) · [cohere.md](docs/cohere.md) · [grok.md](docs/grok.md) · [mistral.md](docs/mistral.md) · [llamacpp.md](docs/llamacpp.md) |
-| Engineering | [benchmark.md](docs/benchmark.md) · [native-image.md](docs/native-image.md) · [cli.md](docs/cli.md) · [RELEASING.md](docs/RELEASING.md) · [trust.md](docs/trust.md) |
+| Engineering | [benchmark.md](docs/benchmark.md) · [native-image.md](docs/native-image.md) · [cli.md](docs/cli.md) · [templates.md](docs/templates.md) · [docsite.md](docs/docsite.md) · [RELEASING.md](docs/RELEASING.md) · [trust.md](docs/trust.md) |
 
 ## Building
 

@@ -7,9 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+本版本线为「开发者体验终极」（路线图最后里程碑）：**模板应用库（一键生成工程） + CLI 增强（new/config/doctor/version + chat 多轮记忆） + 文档站（docs/ → 可发布静态站点，纯 JDK） + 示例/文档全中英**。三个新模块全部零第三方运行期与构建期依赖（不引 Jekyll/npm/commonmark/freemarker/picocli），公共 API 只增不改，版本保持 2.10.0-SNAPSHOT（发布待用户显式指令）。
 
-- （待填）
+### Added
+- **模板应用库（新模块 `sure-ai-templates`）**：`Templates`（`rag-kb` 知识库问答 RAG 端到端 / `customer-service` 客服机器人 ReAct+工具+记忆 / `code-assistant` 代码助手结构化输出+工具，`of/list/slug`）+ `TemplateGenerator.generate(template, targetDir, placeholders[, loader])`（复制 + 占位符替换，支持 file:/jar: 资源协议，目标目录防覆盖）；三套模板工程（pom import sure-ai-bom + sure-ai-all + JUnit + exec 插件 + 最小单元测试），生成即 `mvn test` 零网络可跑。
+- **CLI 增强（`sure-ai-cli`）**：新增 `new <template>`（接线模板应用库，`--list/--name/--group/--artifact`）、`config`（查看/`--check` 校验缺失返回退出码 1/`--export` 导出 SURE_AI_* 变量）、`doctor`（JDK 25 版本判定/Maven 探测/本地制品版本/平台密钥就绪度诊断）、`version`（版本信息）；`chat` 升级为多轮会话（纯内存上下文，滚动 40 条，`exit`/`quit`/EOF 退出，`--once` 单次）；仍手写参数解析零框架依赖。
+- **文档站（新模块 `sure-ai-docsite`）**：`MarkdownRenderer`（手写 Markdown 子集：标题锚点/围栏含 mermaid/表格/引用/列表/行内 code-粗斜体-链接-图片/hr/转义，行内渲染先保护 code 再转义防二次转义）+ `DocSiteGenerator.generate(docs, out)`（分类导航取自 README「## 文档索引」表、内链换算、search.json 检索、内嵌样式/脚本），`main` 入口缺省 `docs → target/docs-site`，输出可直接 push gh-pages。
+
+### Changed
+- `sure-ai-cli` 新增对 `sure-ai-templates` 依赖；`ArgsParser` 改为按命令白名单校验选项。
+- 父 pom `<modules>` 追加 `sure-ai-templates`、`sure-ai-docsite`（均不进 `sure-ai-all`/BOM，与 cli/archetype 同原则）。
+- README 生态/文档索引、docs/en、CHANGELOG 同步；docs 新增 `templates.md`、`docsite.md`，`cli.md` 补 v3.0.0 新命令（中英）。
+
+### 测试
+- 新增 sure-ai-templates 21 用例（生成器单测 11 + 覆盖分支 7 + 生成→编译→测试 E2E 3）、sure-ai-docsite 30 用例（渲染 12 + 生成 4 + 覆盖分支 14）、sure-ai-cli 14 用例（多轮历史/--once/EOF/new/config 三态/doctor/version/白名单）；修复 docsite 渲染器非法表格行死循环（OOM）、`getFileName()`/`getParent()` 潜在 NPE、printf 换行语义、模板 pom 缺 `<type>pom</type>` 等真实缺陷。全量 `mvn -B clean verify -Dgpg.skip=true` 0 失败 0 错误 0 跳过，jacoco 行覆盖门禁 ≥0.98 全过。
 
 ## [2.9.0] - 2026-10-22
 
