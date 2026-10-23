@@ -36,4 +36,24 @@
         工具/应用层模块，不进入 sure-ai-all 聚合链与 BOM（与 sure-ai-cli / sure-ai-archetype 同例）。</description>
 
     <!-- 本模块零编译期依赖（纯 JDK 实现生成器）；junit 由父工程统一注入 -->
+
+    <!-- 资源过滤：仅对 sureai-version.properties 注入 @project.version@（模板目录 {{...}} 占位符不受 Maven filtering 影响） -->
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>sureai-version.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>sureai-version.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
+    </build>
 </project>

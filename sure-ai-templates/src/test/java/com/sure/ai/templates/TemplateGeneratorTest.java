@@ -95,7 +95,7 @@ public class TemplateGeneratorTest {
 		String pom = Files.readString(target.resolve("pom.xml"), StandardCharsets.UTF_8);
 		assertTrue(pom.contains("<artifactId>my-kb</artifactId>"));
 		assertTrue(pom.contains("<groupId>com.example</groupId>"));
-		assertTrue(pom.contains("<version>2.10.0-SNAPSHOT</version>"));
+		assertTrue(pom.contains("<version>" + TemplateGenerator.DEFAULT_SUREAI_VERSION + "</version>"));
 
 		Path main = target.resolve("src/main/java/com/example/mykb/Main.java");
 		assertTrue("Main 按 mainPackagePath 生成", Files.exists(main));
