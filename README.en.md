@@ -91,7 +91,7 @@ flowchart LR
     <dependency>
       <groupId>io.github.tasure</groupId>
       <artifactId>sure-ai-bom</artifactId>
-      <version>2.9.0</version>
+      <version>3.0.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -219,7 +219,7 @@ flowchart LR
 <dependency>
   <groupId>io.github.tasure</groupId>
   <artifactId>sure-ai-rag</artifactId>
-  <version>2.9.0</version>
+  <version>3.0.0</version>
 </dependency>
 ```
 
