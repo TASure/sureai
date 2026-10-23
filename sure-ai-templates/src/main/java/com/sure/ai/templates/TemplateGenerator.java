@@ -70,19 +70,38 @@ public final class TemplateGenerator {
 	static final String FALLBACK_SUREAI_VERSION = "3.0.0";
 
 	private static String loadDefaultVersion() {
-		try (InputStream in = TemplateGenerator.class.getResourceAsStream("/sureai-version.properties")) {
-			if (in != null) {
-				Properties p = new Properties();
-				p.load(in);
-				String v = p.getProperty("sureai.version");
-				if (v != null && !v.isBlank()) {
-					return v.trim();
-				}
-			}
-		} catch (IOException ignored) {
-			// 属性文件不可读时回退兜底版本
+		return resolveDefaultVersion(
+			TemplateGenerator.class.getResourceAsStream("/sureai-version.properties"));
+	}
+
+	/**
+	 * 从属性输入流解析 sure-ai 版本（包可见，供测试注入各类分支）。
+	 *
+	 * @param in 属性输入流；{@code null} 视为缺失
+	 * @return 解析出的版本号；输入为 null / 键缺失 / 值为空白 / 读取失败时返回
+	 * {@link #FALLBACK_SUREAI_VERSION}
+	 */
+	static String resolveDefaultVersion(InputStream in) {
+		if (in == null) {
+			return FALLBACK_SUREAI_VERSION;
 		}
-		return FALLBACK_SUREAI_VERSION;
+		try {
+			Properties p = new Properties();
+			p.load(in);
+			String v = p.getProperty("sureai.version");
+			if (v != null && !v.isBlank()) {
+				return v.trim();
+			}
+			return FALLBACK_SUREAI_VERSION;
+		} catch (IOException ignored) {
+			return FALLBACK_SUREAI_VERSION;
+		} finally {
+			try {
+				in.close();
+			} catch (IOException ignored) {
+				// 流关闭失败可忽略
+			}
+		}
 	}
 
 	private TemplateGenerator() {
