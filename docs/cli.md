@@ -117,7 +117,7 @@ sureai doctor
 # === sureai doctor ===
 # JDK 版本：25.0.4.1（满足 25 基线）
 # Maven：Apache Maven 3.9.9 (...)
-# 本地 sure-ai-all 制品：2.10.0-SNAPSHOT
+# 本地 sure-ai-all 制品：3.0.0
 # 平台密钥就绪：2/23，缺失 21 个：[openai, ...]
 ```
 
@@ -125,7 +125,7 @@ sureai doctor
 
 ```bash
 sureai version
-# sureai CLI 2.10.0-SNAPSHOT
+# sureai CLI 3.0.0
 # JDK 25.0.4.1
 ```
 
