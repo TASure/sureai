@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (c) 2026 sureai contributors
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.tasure</groupId>
+        <artifactId>sureai</artifactId>
+        <version>3.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>sure-ai-evals</artifactId>
+    <packaging>jar</packaging>
+    <name>sureai-evals</name>
+    <description>通用 LLM 评估模块（LLM-as-judge 全链路）：数据集（CSV/JSONL）→ 指标 SPI
+        （确定性 / 语义 / LLM 裁判 / 运行指标）→ 批量并发执行与聚合 → JSON/Markdown/HTML 报告
+        → CI 阈值断言 → 录制回放与指标回归。仅依赖 sure-ai-core，零运行期第三方依赖，
+        不依赖 sure-ai-rag，与 RAG 专用评估互补。注册进 sure-ai-bom 与 sure-ai-all。</description>
+
+    <dependencies>
+        <!-- 唯一编译期依赖：core（不依赖任何平台模块、不依赖 rag） -->
+        <dependency>
+            <groupId>io.github.tasure</groupId>
+            <artifactId>sure-ai-core</artifactId>
+        </dependency>
+    </dependencies>
+</project>

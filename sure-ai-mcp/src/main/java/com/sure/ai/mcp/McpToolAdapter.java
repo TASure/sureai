@@ -16,10 +16,14 @@
 
 package com.sure.ai.mcp;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.sure.ai.agent.tool.ToolHandler;
 import com.sure.ai.agent.tool.ToolRegistry;
+import com.sure.ai.agent.tool.catalog.ConflictStrategy;
+import com.sure.ai.agent.tool.catalog.ImportedMcpTool;
+import com.sure.ai.agent.tool.catalog.ToolCatalog;
 import com.sure.ai.internal.json.Json;
 import com.sure.ai.internal.json.JsonElement;
 import com.sure.ai.internal.json.JsonObject;
@@ -60,6 +64,40 @@ public final class McpToolAdapter {
 			registry.register(toFunction(tool), toHandler(client, tool.name()));
 		}
 		return tools.size();
+	}
+
+	/**
+	 * 把 MCP server 全部 tools 聚合进工具市场 {@link ToolCatalog}。
+	 *
+	 * <p><b>来源标识说明（如实标注）</b>：当前 {@code McpClient} 在 initialize 握手后
+	 * 未保留 serverInfo，{@code McpTool} 本身也不带 server 标识，因此框架无法自动
+	 * 提供服务端身份；调用方须通过 {@code serverLabel} 显式传入（通常由连接配置给出，
+	 * 如 stdio 命令名 / http url 别名），该标签同时作为 {@code mcp.<server>.<tool>}
+	 * 命名空间前缀来源。</p>
+	 *
+	 * @param client      已握手的 MCP 客户端
+	 * @param catalog     目标工具市场
+	 * @param serverLabel 服务端标识 / 命名空间（非空）
+	 * @param strategy    同名冲突策略（null 用市场默认）
+	 * @param namespace   是否加 {@code mcp.<server>.} 前缀
+	 * @return 实际聚合的工具数
+	 */
+	public static int registerAllTools(McpClient client, ToolCatalog catalog, String serverLabel,
+			ConflictStrategy strategy, boolean namespace) {
+		Assert.notNull(client, "client must not be null");
+		Assert.notNull(catalog, "catalog must not be null");
+		Assert.notBlank(serverLabel, "serverLabel must not be blank");
+		List<McpTool> tools = client.toolsList();
+		List<ImportedMcpTool> imported = new ArrayList<>(tools.size());
+		for (McpTool tool : tools) {
+			String schema;
+			JsonElement inputSchema = tool.inputSchema();
+			schema = inputSchema == null ? "{}" : Json.stringify(inputSchema);
+			String desc = tool.description() == null ? "" : tool.description();
+			imported.add(new ImportedMcpTool(tool.name(), desc, schema,
+					toHandler(client, tool.name())));
+		}
+		return catalog.registerMcpTools(imported, serverLabel, strategy, namespace);
 	}
 
 	/** 把 McpTool 转为 ToolFunction（inputSchema 序列化为 JSON Schema 字符串）。 */

@@ -34,13 +34,16 @@ import com.sure.ai.model.TokenUsage;
  * @author sureai
  * @since 1.6.0
  */
-final class FakeClient implements AiClient {
+class FakeClient implements AiClient {
 
 	/** 客户端名。 */
 	final String name;
 
 	/** chat() 调用计数。 */
 	int chatCalls;
+
+	/** chatStream() 调用计数（含入口即抛异常的情况）。 */
+	int streamCalls;
 
 	/** 是否被 close()。 */
 	boolean closed;
@@ -107,6 +110,7 @@ final class FakeClient implements AiClient {
 
 	@Override
 	public void chatStream(ChatRequest request, Consumer<ChatStreamChunk> consumer) {
+		this.streamCalls++;
 		if (this.throwOnCall != null) {
 			throw this.throwOnCall;
 		}

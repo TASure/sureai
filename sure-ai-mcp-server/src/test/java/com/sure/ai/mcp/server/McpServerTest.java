@@ -114,14 +114,15 @@ public class McpServerTest {
 	}
 
 	@Test
-	public void toolsCallUnknownToolIsError() {
+	public void toolsCallUnknownToolIsInvalidParams() {
+		// 2026-07-28：未知工具属于 JSON-RPC -32602 InvalidParams，不再是 isError 工具结果
 		JsonObject params = Json.object();
 		params.put("name", "nope");
 		params.set("arguments", Json.object());
 		String resp = this.server.dispatch(req(4, "tools/call", params));
-		JsonObject r = resultOf(resp);
-		assertTrue(r.getBoolean("isError"));
-		assertTrue(r.getJsonArray("content").get(0).getAsJsonObject().getString("text").contains("unknown tool"));
+		JsonObject error = Json.parse(resp).getAsJsonObject().getJsonObject("error");
+		assertEquals(-32602, error.getInt("code"));
+		assertTrue(error.getString("message").contains("Unknown tool"));
 	}
 
 	@Test

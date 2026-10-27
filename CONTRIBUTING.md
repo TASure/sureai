@@ -4,7 +4,7 @@
 
 ## 环境要求
 
-- JDK 21+（推荐 Temurin 21）
+- JDK 25+（推荐 Temurin 25）
 - Maven 3.9+
 - Git
 

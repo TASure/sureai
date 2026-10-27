@@ -18,6 +18,7 @@ package com.sure.ai.zhipu;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -183,5 +184,35 @@ public class ZhipuUtilTest {
 			throw new AssertionError("expected AiException when env not set");
 		}
 		assertNotNull(ZhipuUtil.client());
+	}
+
+	/** image/video/batch/tts/stt 便捷方法委托对应客户端（dead server 触发异常，行仍执行）。 */
+	@Test
+	public void testDelegatesThrow() {
+		com.sure.ai.zhipu.EnvVars env = com.sure.ai.zhipu.EnvVars.begin();
+		try {
+			env.set(ZhipuUtil.ENV_API_KEY, "zhipu-key");
+			ZhipuUtil.init(com.sure.ai.client.AiConfig.builder()
+				.apiKey("k").baseUrl("http://127.0.0.1:1").build());
+			assertThrows(Exception.class, () -> ZhipuUtil.image("cog", "a cat"));
+			assertThrows(Exception.class, () -> ZhipuUtil.image(
+				com.sure.ai.model.ImageRequest.builder().model("cog").prompt("a cat").build()));
+			assertThrows(Exception.class, () -> ZhipuUtil.video("v", "a cat"));
+			assertThrows(Exception.class, () -> ZhipuUtil.video(
+				com.sure.ai.model.VideoRequest.of("v", "a cat")));
+			assertThrows(Exception.class, () -> ZhipuUtil.tts("tts", "你好", "spk"));
+			assertThrows(Exception.class, () -> ZhipuUtil.tts(
+				com.sure.ai.model.TtsRequest.of("tts", "你好", "spk")));
+			assertThrows(Exception.class, () -> ZhipuUtil.stt("asr", new byte[] { 1 }));
+			assertThrows(Exception.class, () -> ZhipuUtil.stt(
+				com.sure.ai.model.SttRequest.of("asr", new byte[] { 1 })));
+			assertThrows(Exception.class, () -> ZhipuUtil.batch(null));
+			assertThrows(Exception.class, () -> ZhipuUtil.getBatch("bid"));
+			assertNotNull(ZhipuUtil.videoClient());
+			assertNotNull(ZhipuUtil.batchClient());
+		}
+		finally {
+			env.restore();
+		}
 	}
 }

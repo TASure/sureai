@@ -221,7 +221,7 @@ System.out.println(answer);
 
 ## 场景 5：异步 / 虚拟线程（v1.9.0 AsyncClients）
 
-**目标**：把阻塞式调用放到 JDK 21 虚拟线程上并发打多家平台。
+**目标**：把阻塞式调用放到 JDK 虚拟线程（JDK 21+ API，基线 25）上并发打多家平台。
 
 ```java
 import com.sure.ai.model.ChatRequest;
@@ -627,6 +627,440 @@ for (MultimodalDocument md : retriever.retrieveMultimodal("架构核心是什么
 
 ---
 
+## 场景 16：Langfuse 原生观测接入（LangfuseExporters）
+
+**目标**：把每次聊天调用以 trace + generation 直接上报到 Langfuse（LLM 观测平台），零依赖、无需自备 OTel SDK 或 Langfuse 官方 SDK。
+
+```java
+import com.sure.ai.client.AiConfig;
+import com.sure.ai.deepseek.DeepSeekClient;
+import com.sure.ai.deepseek.DeepSeekModels;
+import com.sure.ai.otel.langfuse.LangfuseExporters;
+
+// 前置：
+//   export LANGFUSE_PUBLIC_KEY=pk-lf-...
+//   export LANGFUSE_SECRET_KEY=sk-lf-...
+//   export SURE_AI_DEEPSEEK_API_KEY=sk-xxx
+// （可选 LANGFUSE_HOST=自托管地址，默认 https://cloud.langfuse.com）
+
+// 关键一行：从环境变量构建 Langfuse 导出器并挂到 client
+AiConfig config = AiConfig.builder()
+        .apiKey(System.getenv("SURE_AI_DEEPSEEK_API_KEY"))
+        .metricsCollector(LangfuseExporters.metricsCollectorFromEnv())
+        .build();
+
+DeepSeekClient client = new DeepSeekClient(config);
+var resp = client.chat(DeepSeekModels.DEEPSEEK_CHAT, "用一句话回答：1+1等于几？");
+System.out.println(resp.firstText());
+client.close();
+```
+
+显式配置（自托管实例或指定环境标签）：
+
+```java
+import com.sure.ai.otel.langfuse.LangfuseConfig;
+import com.sure.ai.otel.langfuse.LangfuseExporters;
+
+AiConfig config = AiConfig.builder()
+        .apiKey(key)
+        .metricsCollector(LangfuseExporters.metricsCollector(
+                LangfuseConfig.of("https://cloud.langfuse.com", "pk-lf-...", "sk-lf-...", "production")))
+        .build();
+```
+
+**关键点**：
+- `LangfuseExporters.metricsCollectorFromEnv()` / `metricsCollector(LangfuseConfig)` 返回标准 `MetricsCollector`，挂到 `AiConfig.metricsCollector(...)` 即可；一次逻辑调用 = 一个 `trace` + 一个 `generation`（含耗时、model、token 用量），重试追加为 `event-create`。
+- 认证为 HTTP Basic `base64(pk:sk)`，POST 到 `/api/public/ingestion`；环境变量官方名优先、sureai 前缀（`SURE_AI_LANGFUSE_*`）兜底。
+- **无感降级**：`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` 任一缺失时导出器为空操作，不发起任何网络请求、不影响正常对话；发送失败仅记 warning、绝不抛出。
+
+**离线可跑性**：导出器本身本地可测（未配密钥即空操作、不报错）；真实上报需可用 Langfuse 项目密钥。
+
+**进阶**：环境变量表、事件映射表与认证说明见 [docs/observability.md](observability.md) 的「Langfuse 原生导出（v2.4.0）」小节；OTel GenAI 指标桥接见场景 13，内置零依赖 `AiMetrics` 见场景 6。
+
+---
+
+## 场景 17：声明式 AiService + Advisor 链装配（v2.5.0）
+
+**目标**：用一个带注解的 Java 接口当 AI 服务（接口即服务），并把「语义缓存 → 日志 → 工具循环 → 结构化校验」四件套按序装配到一条 Advisor 链上。
+
+```java
+import java.util.List;
+
+import com.sure.ai.client.AiClient;
+import com.sure.ai.framework.FrameworkUtil;
+import com.sure.ai.framework.advisor.Advisor;
+import com.sure.ai.framework.advisor.LoggingAdvisor;
+import com.sure.ai.framework.advisor.SemanticCacheAdvisor;
+import com.sure.ai.framework.advisor.ToolCallingAdvisor;
+import com.sure.ai.framework.advisor.StructuredOutputValidationAdvisor;
+import com.sure.ai.framework.annotation.AiService;
+import com.sure.ai.framework.annotation.Tool;
+import com.sure.ai.framework.annotation.UserMessage;
+import com.sure.ai.framework.cache.SemanticCache;
+
+// 结构化输出目标 record
+record Product(String name, int stock) {}
+
+@AiService(model = "gpt-4o-mini")
+interface Catalog {
+
+    @UserMessage("{q}")
+    Product lookup(String q);
+
+    @Tool(description = "查库存")
+    default int stockOf(String item) {
+        return queryStockDb(item);   // 你的真实库存查询
+    }
+}
+
+// 1) 语义缓存：embedding 相似度阈值命中（embedder 为任意 core EmbeddingClient）
+SemanticCache cache = SemanticCache.builder()
+        .embedder(embeddingClient)
+        .threshold(0.85)                 // 默认 0.85，[0,1]
+        .build();
+
+// 2) Advisor 链顺序：缓存短路 → 日志 → 工具循环 → 结构化自纠
+List<Advisor> advisors = List.of(
+        new SemanticCacheAdvisor(cache),
+        new LoggingAdvisor(),
+        new ToolCallingAdvisor(),                 // 默认 maxIterations=5
+        new StructuredOutputValidationAdvisor());  // 默认 maxRetries=2
+
+// 3) 一行装配
+Catalog ai = FrameworkUtil.builder(Catalog.class, client)
+        .advisors(advisors)
+        .build();
+
+// 4) 调用：模型可自动调 stockOf；输出不合规会自纠重写；问过的同义问题走缓存
+Product p = ai.lookup("查一下《深入理解计算机系统》的库存");
+System.out.println(p.name() + " 库存=" + p.stock());
+```
+
+最小版（不要 Advisor、不要工具）也能跑：
+
+```java
+@AiService(model = "gpt-4o-mini")
+interface Assistant {
+    @SystemMessage("你是一个{role}助手")
+    @UserMessage("请总结：{text}")
+    String summarize(String role, String text);
+}
+
+Assistant ai = FrameworkUtil.create(Assistant.class, client);
+String out = ai.summarize("法务", "合同正文……");
+```
+
+**关键点**：
+- **接口即服务**：`@AiService`（接口级模型/温度）+ `@SystemMessage`/`@UserMessage`（`{paramName}` 模板占位符）+ `@Tool`（方法签名自动转 JSON Schema 挂 `ChatRequest.tools`）；`FrameworkUtil.create(Class, client)` 一行生成 JDK 动态代理。
+- **返回映射**：`String` 阻塞文本 / `ChatResponse` 原始响应 / `Stream<ChatStreamChunk>` 流式（不经过 Advisor 链）/ `record` 结构化（自动挂 `responseFormat=json_schema`）；`void` 与不支持的返回类型在创建代理期即报错。
+- **工具直调拒绝、模型侧触发**：业务代码直接调 `@Tool` 方法会抛 `IllegalStateException`；模型返回 `tool_calls` 后由 `ToolCallingAdvisor` 闭环（执行→回填→再问模型），内置 `ReflectionToolExecutor` 反射执行。
+- **Advisor 三钩子**：`before` 正序 / `around` 嵌套（可多次 `proceed` 实现工具循环与校验重试）/ `after` 逆序 finally；顺序即执行顺序，推荐「缓存→日志→工具→校验」。
+- **SemanticCache**：`SemanticCache.builder().embedder(...)`（必填）+ `threshold/maxEntries/defaultTtlMillis/store/model`；内存向量索引顺序扫描 + 可插拔 `CacheStore` 载荷后端（缺省 `LruCacheStore`，传 rag 的 `RedisCacheStore` 即分布式共享）。
+- **记忆**：`@Memory` + `builder.memory(new InMemoryChatMemory(20))` 自动注入历史并回写阻塞轮（流式不回写）。
+
+**离线可跑性**：Advisor 链与代理逻辑本地可单测（注入假 `AiClient` / 假 `SemanticCache`，零真实网络）；真实对话与语义相似度需可用平台 client + embedding client（**需 API key**）。
+
+**进阶**：注解族、Advisor 四件套构造参数、语义缓存原理与 Redis 组合见 [docs/framework.md](framework.md)；精确缓存 vs Redis 选型见 [docs/cache.md](cache.md)；结构化输出底层见 [docs/structured-output.md](structured-output.md)。
+
+---
+
+## 场景 18：文档导入 + 向量入库 + 检索（v2.6.0）
+
+**目标**：用 v2.6.0 的文档导入器把本地 Markdown / PDF 读成 `Document`，切块、向量化入库，
+再基于检索问答——覆盖 `FileSystemLoader` → `TextSplitter` → `RagPipeline.ingest` → 检索一条完整链路。
+
+```java
+import java.net.URI;
+import java.nio.file.Path;
+import java.util.List;
+
+import com.sure.ai.ingest.FileSystemLoader;
+import com.sure.ai.ingest.URLLoader;
+import com.sure.ai.ingest.poi.PoiParsers;
+import com.sure.ai.client.AiConfig;
+import com.sure.ai.openai.OpenAiClient;
+import com.sure.ai.openai.OpenAiModels;
+import com.sure.ai.rag.RagUtil;
+import com.sure.ai.rag.model.Document;
+import com.sure.ai.rag.pipeline.RagPipeline;
+import com.sure.ai.rag.splitter.MarkdownTextSplitter;
+
+OpenAiClient client = new OpenAiClient(
+        AiConfig.builder().apiKey(System.getenv("SURE_AI_OPENAI_API_KEY")).build());
+
+// 1) 导入：本地文件 → 带元数据的 Document（format=md/pdf，source=路径）
+FileSystemLoader loader = FileSystemLoader.createDefault();   // 内置 TXT/MD/HTML/PDF
+List<Document> files = loader.load(Path.of("docs/guide.md"));
+
+// 2) 管线：对话与向量化复用同一 client；Markdown 源用 MarkdownTextSplitter 结构化切分
+RagPipeline pipeline = RagPipeline.builder()
+        .chatClient(client)
+        .chatModel(OpenAiModels.GPT_4O_MINI)
+        .embeddingClient(client)
+        .embeddingModel(OpenAiModels.TEXT_EMBEDDING_3_SMALL)
+        .splitter(new MarkdownTextSplitter(800, 100))
+        // .vectorStore(PgVectorStore.builder().table("docs").dimension(1024).build()) // 换外部库
+        .build();
+
+// 3) 入库：按 doc.id()#i 切块命名，原文元数据随分块一并写入
+for (Document f : files) {
+    int chunks = pipeline.ingest(f);
+    System.out.println(f.id() + " → " + chunks + " 块");
+}
+
+// 4) 检索：召回 topK 相关块（不含得分），或 retrieveWithScores(...) 含相似度
+List<Document> hits = pipeline.retrieve("如何接入外部向量库？", 4);
+System.out.println("命中 " + hits.size() + " 块");
+
+client.close();
+```
+
+接入网络文档 / Office 文档的变体：
+
+```java
+// 网页 / 在线 PDF：URLLoader（无扩展名时按 Content-Type 兜底）
+List<Document> pages = URLLoader.createDefault()
+        .load(URI.create("https://example.com/spec.pdf"));
+
+// DOCX/XLSX/PPTX：可选 POI 模块（poi-ooxml 5.5.1 provided，需自行声明依赖）
+FileSystemLoader office = FileSystemLoader.builder()
+        .register(PoiParsers.docx())
+        .register(PoiParsers.xlsx())
+        .register(PoiParsers.pptx())
+        .build();
+List<Document> reports = office.load(Path.of("docs/report.docx"));
+```
+
+**关键点**：
+- **导入器只解析、不切块**：`FileSystemLoader.load(Path)` / `URLLoader.load(URI)` 返回
+  `List<com.sure.ai.rag.model.Document>`，metadata 含 `source`/`loaded_at`/`format`（URL 另含 `content_type`）。
+- **格式路由**：默认内置 TXT/MD/HTML/PDF；按扩展名（URL 无后缀时按 Content-Type）自动选解析器；
+  不支持的格式抛 `IllegalStateException`，空文件 / 无文本层 PDF 返回空列表（不中断批量）。
+- **PDF 为有限文本层提取**：纯 JDK 手写、不引 PDFBox，仅覆盖标准单字节字体的 `Tj`/`TJ`；
+  扫描件 / 加密 / 非 ASCII 字体映射 / 多栏阅读顺序均不处理（损坏 PDF 返回空而非报错）。
+- **入库两条重载**：`pipeline.ingest(Document)` 保留文档元数据（按 `id#i` 命名分块）；
+  `pipeline.ingest(sourceId, text)` 为纯文本快速入库。分块器经 `RagPipeline.builder().splitter(...)` 覆盖。
+- **检索入口**：管线级 `retrieve(query, topK)` / `retrieveWithScores(query, topK)`；
+  `VectorStore.similaritySearch(...)` 是库级别低层接口。换外部向量库（PGVector/Typesense/
+  Cassandra/MongoDB/Neo4j 等 14 种）只需改 `.vectorStore(...)`，导入与切块代码不变。
+
+**离线可跑性**：导入器 / 分块 / `InMemoryVectorStore` 本地可单测（解析逻辑纯 JDK，零真实网络）；
+真实向量化与问答需可用 OpenAI（或兼容平台）client（**需 API key**）。
+
+**进阶**：导入器定位、各格式限制与 `DocumentParser` 扩展点见 [docs/ingest.md](ingest.md)；
+14 种向量库协议子集与鉴权限制见 [docs/vector-stores.md](vector-stores.md)；RAG 全链路见
+[docs/rag.md](rag.md)。
+
+---
+
+## 场景 19：用 golden dataset 做离线质量回归（v2.8.0）
+
+**目标**：把真实后端的一轮响应录成 JSONL 基线，之后**零网络**回放重跑，用 `TraceRegression`
+挡住「改 prompt / 升级模型后答案悄悄变差」。全程可用脚本化 fake client 离线跑通。
+
+```java
+import java.nio.file.Path;
+import java.util.List;
+
+import com.sure.ai.evals.EvalRunner;
+import com.sure.ai.evals.dataset.EvalCase;
+import com.sure.ai.evals.dataset.EvalDataset;
+import com.sure.ai.evals.metric.EvalContext;
+import com.sure.ai.evals.metric.EvalMetric;
+import com.sure.ai.evals.metric.EvalOutcome;
+import com.sure.ai.evals.metric.MetricResult;
+import com.sure.ai.evals.report.EvalReport;
+import com.sure.ai.evals.trace.RecordingClient;
+import com.sure.ai.evals.trace.TraceRegression;
+
+EvalDataset dataset = EvalDataset.of("golden", List.of(
+        EvalCase.of("c1", "法国首都是哪里？", "巴黎"),
+        EvalCase.of("c2", "1+1等于几？", "2")));
+
+// 占位指标：本场景只验证「回放结果与录制一致」，不纠结文本内容
+EvalMetric passthrough = new EvalMetric() {
+    public String name() { return "passthrough"; }
+    public MetricResult evaluate(EvalCase c, EvalOutcome o, EvalContext ctx) {
+        return MetricResult.pass("ok");
+    }
+};
+
+Path golden = Path.of("target/golden.jsonl");
+
+// ① 录制当次：真实（或脚本）后端包一层 RecordingClient，请求/响应成对追加一行 JSONL
+EvalReport baseline;
+try (RecordingClient recording = RecordingClient.record(realClient, golden);
+        EvalRunner runner = EvalRunner.builder(recording, "my-model")
+                .addMetric(passthrough).build()) {
+    baseline = runner.run(dataset);
+}
+
+// ② 回放当次：零网络，按请求匹配（兜底录制顺序）返回录制响应
+EvalReport current;
+try (RecordingClient replay = RecordingClient.replay(golden);
+        EvalRunner runner = EvalRunner.builder(replay, "my-model")
+                .addMetric(passthrough).build()) {
+    current = runner.run(dataset);
+}
+
+// ③ 回归：基线 vs 当前，均值退化超容差（默认 0.02）即判退化，CI 里直接 assertPassed
+TraceRegression.RegressionResult result = TraceRegression.compare(baseline, current);
+System.out.println(result.summary());
+result.assertPassed();
+```
+
+**关键点**：`RecordingClient.record(delegate, path)` 每次 `chat()` 后把请求/响应序列化为一行
+JSONL（UTF-8 追加落盘）；`RecordingClient.replay(path)` 不持有委托客户端、**全程零网络**。
+`TraceRegression` 按指标聚合均值比较，`baseline - current > tolerance` 才判退化（恰好相等不判），
+容差可 `TraceRegression.builder().tolerance(0.01).tolerance("latency", 0.05).build()` 全局或按指标配。
+
+**离线可跑性**：把 `realClient` 换成脚本化 `AiClient`（队列返回预设文本）即可单测；见
+`sure-ai-examples` 的 `RegressionDemo`（`java com.sure.ai.examples.ExamplesRunner regression`）。
+
+---
+
+## 场景 20：用 LLM-as-judge 给问答打分并接 CI（v2.8.0）
+
+**目标**：一批问答既跑确定性指标，又请一个更强的裁判模型按 rubric 打分，最后用
+`EvalThreshold` 把质量门禁挂进 CI。
+
+```java
+import java.util.List;
+
+import com.sure.ai.evals.EvalUtil;
+import com.sure.ai.evals.assertion.EvalAssertions;
+import com.sure.ai.evals.assertion.EvalThreshold;
+import com.sure.ai.evals.dataset.EvalCase;
+import com.sure.ai.evals.dataset.EvalDataset;
+import com.sure.ai.evals.metric.ContainsMetric;
+import com.sure.ai.evals.metric.ExactMatchMetric;
+import com.sure.ai.evals.metric.JudgeMode;
+import com.sure.ai.evals.metric.LlmJudgeMetric;
+import com.sure.ai.evals.report.EvalReport;
+import com.sure.ai.evals.report.EvalMarkdownReportWriter;
+
+EvalDataset dataset = EvalDataset.of("qa", List.of(
+        EvalCase.of("c1", "法国首都是哪里？", "巴黎"),
+        EvalCase.of("c2", "用一句话介绍 Java", "Java 是一门面向对象的编程语言")));
+
+// 裁判模型用任意 AiClient（这里是离线脚本客户端，真实环境换成 OpenAiClient 等）
+LlmJudgeMetric judge = LlmJudgeMetric.builder(judgeClient, "judge-model")
+        .mode(JudgeMode.BINARY)                 // 或 SCALE_1_TO_5 / SCORE_100 / PAIRWISE
+        .rubric("答案是否正确、简洁、无幻觉")
+        .passThreshold(0.8)                      // 默认 0.6
+        .build();
+
+EvalReport report = EvalUtil.run(chatClient, "candidate-model", dataset,
+        ExactMatchMetric.builder().build(),
+        ContainsMetric.builder().ignoreCase(true).build(),
+        judge);
+
+System.out.println(new EvalMarkdownReportWriter().render(report));
+
+// CI 门禁：均分 / 通过率任一不达标抛 AssertionError
+EvalAssertions.assertMeets(report, EvalThreshold.builder()
+        .putMean("exact_match", 0.8)
+        .putPassRate("llm_judge", 0.8)
+        .build());
+```
+
+**关键点**：裁判失败 / 返回空文本 / 输出不可解析时默认记 `notApplicable`（NaN，聚合剔除），
+不中断批量；需要确定性时改 `.onUnparseableDefaultScore(0.5)` 给固定默认分。报告三格式写出：
+`EvalJsonReportWriter` / `EvalMarkdownReportWriter` / `EvalHtmlReportWriter`（HTML 自包含无外链）。
+
+**离线可跑性**：确定性指标纯 JDK 可单测；LLM 裁判用脚本化 `AiClient`（队列返回 YES/NO）即可离线，
+见 `sure-ai-examples` 的 `EvalsDemo`（`java com.sure.ai.examples.ExamplesRunner evals`）。
+
+---
+
+## 场景 21：A/B 对比两个模型（v2.8.0）
+
+**目标**：同一数据集跑两个模型（或两版 prompt），用 `EvalComparison` 量化「到底谁更好」。
+
+```java
+import com.sure.ai.evals.EvalComparison;
+import com.sure.ai.evals.EvalRunner;
+import com.sure.ai.evals.dataset.EvalDataset;
+import com.sure.ai.evals.metric.ExactMatchMetric;
+import com.sure.ai.evals.report.EvalReport;
+
+EvalDataset dataset = ...;   // 同一数据集
+ExactMatchMetric exact = ExactMatchMetric.builder().build();
+
+EvalReport reportA;
+try (EvalRunner runner = EvalRunner.builder(clientA, "model-A")
+        .addMetric(exact).build()) {
+    reportA = runner.run(dataset);
+}
+EvalReport reportB;
+try (EvalRunner runner = EvalRunner.builder(clientB, "model-B")
+        .addMetric(exact).build()) {
+    reportB = runner.run(dataset);
+}
+
+EvalComparison cmp = EvalComparison.of(reportA, reportB);
+System.out.println("每指标均分差(A-B): " + cmp.meanDiffs());
+System.out.println("pairwise 胜 A / 平 / 胜 B = "
+        + cmp.winsA() + " / " + cmp.ties() + " / " + cmp.winsB());
+```
+
+**关键点**：`meanDiffs()` 是每指标均分差（A−B）；`winsA/ties/winsB` 是逐用例逐指标的 pairwise
+胜负（按 `caseId` 对齐，NaN 跳过）。配合 LLM 裁判指标即可对两个模型的答案质量做成对比较。
+
+---
+
+## 场景 22：Agent Skills / 子 Agent 委派 / 工具市场（v2.9.0）
+
+**目标**：把领域知识沉淀成 `SKILL.md` 技能包、把专职 Agent 挂成可委派的工具、用工具市场
+按标签/风险发现并选型，最后一键导出给 ReAct 运行。完整设计见 [agent-skills.md](agent-skills.md)。
+
+```java
+// 1) 加载技能（本地目录 / classpath / 显式 jar），技能即工具
+List<Skill> skills = SkillLoader.loadFromClasspath("skills");
+ToolRegistry registry = new ToolRegistry();
+SkillTool.registerAll(skills, registry);   // 无参→L2 正文，{"resource":"..."}→L3 资源
+
+// 2) 工具市场：注册带元数据的工具，按标签/关键词/风险发现
+ToolCatalog catalog = new ToolCatalog(registry);
+catalog.register(
+    ToolFunction.of("refund", "发起退款",
+        "{\"type\":\"object\",\"required\":[\"orderId\"],"
+        + "\"properties\":{\"orderId\":{\"type\":\"string\"}}}"),
+    args -> refundService.refund(args.getString("orderId")),
+    ToolMetadata.builder("refund").addTag("order").addTag("money")
+        .riskLevel(RiskLevel.HIGH).build());
+List<ToolEntry> safe = catalog.filterByRiskLevel(RiskLevel.LOW);
+catalog.exportTo(registry, e -> e.metadata().riskLevel() != RiskLevel.CRITICAL);
+
+// 3) 子 Agent 委派：把一个专职 ReActAgent 挂成父 Agent 的工具
+ReActAgent specialist = new ReActAgent(specialistClient, base, new ToolRegistry());
+AgentRunner runner = AgentRunner.of(specialist, "specialist", "专职处理子任务");
+AgentAsTool.builder("specialist", "需要专业子任务时委派",
+        ChildAgentFactory.fixed(runner))
+    .maxDepth(5)
+    .memoryPolicy(MemoryPolicy.ISOLATED)
+    .build()
+    .register(registry);
+
+// 4) 父 Agent 照常 ReAct 循环，技能与子 Agent 都作为普通工具被调用
+ReActAgent supervisor = new ReActAgent(superClient, base, registry);
+String answer = supervisor.run("按技能包指引处理，并把专业部分交给专员");
+```
+
+**关键点**：
+- 技能构造期只解析 L1 元数据，正文（L2）/资源（L3）按需读，`SkillPaths.safeRelative` 防路径穿越；
+  同名冲突与非法 frontmatter 严格抛错不静默跳过。
+- 子 Agent 委派默认最大深度 5，同链重复委派抛 `DelegationCycleException`、超深抛
+  `DelegationDepthExceededException`；子 Agent 事件经 `ForwardingDelegationListener` 冒泡。
+- 把工具市场与技能经 MCP 对外暴露（`server/discover` + `skills/list` + `skills/get` +
+  `resources/read`）可直接运行离线 demo：
+
+```bash
+java com.sure.ai.examples.ExamplesRunner agentmarket   # Agent 生态 MCP 全链路（离线）
+```
+
+---
+
 ## 附：示例运行器
 
 `sure-ai-examples` 模块内置 `ExamplesRunner`，离线即可跑（无 Key 自动走 Fake 分支）：
@@ -637,5 +1071,8 @@ mvn -pl sure-ai-examples -am package -DskipTests
 java com.sure.ai.examples.ExamplesRunner knowledgebase   # 知识库 RAG（可传本地 txt 路径）
 java com.sure.ai.examples.ExamplesRunner gateway-multi   # 三平台同问对比
 java com.sure.ai.examples.ExamplesRunner code-assistant  # 流式 + 工具调用
+java com.sure.ai.examples.ExamplesRunner evals           # 通用评估：数据集→指标→报告→阈值断言（离线）
+java com.sure.ai.examples.ExamplesRunner regression     # 录制→回放→TraceRegression golden 回归（离线）
+java com.sure.ai.examples.ExamplesRunner agentmarket    # Agent 生态：工具市场+技能经 MCP 暴露（离线）
 java com.sure.ai.examples.ExamplesRunner                 # 打印全部可用 case
 ```

@@ -1,0 +1,11 @@
+# 赞助渠道配置：本文件生效后，仓库主页右侧将显示 "Sponsor" 按钮。
+#
+# 当前状态：GitHub Sponsors 尚未激活。用户名（TASure）为真实 GitHub 账号，
+# 未激活期间 GitHub 不会展示 Sponsor 按钮，开通后自动生效，无需改本文件。
+#
+# 开通入口：https://github.com/sponsors/account（个人账号申请，审核制）
+# 若后续开通 OpenCollective 等渠道，可在此追加对应字段，例如：
+#   open_collective: 你的组织名
+# 详细格式参考：https://docs.github.com/zh/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+
+github: TASure

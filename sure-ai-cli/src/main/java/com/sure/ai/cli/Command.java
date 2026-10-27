@@ -39,14 +39,30 @@ public enum Command {
 	LIST("list"),
 
 	/** 交互式多轮会话。 */
-	REPL("repl");
+	REPL("repl"),
+
+	/** 模板应用库生成入口（v3.0.0）：从内置模板一键生成独立工程。 */
+	NEW("new"),
+
+	/** 查看 / 导出 / 校验 SURE_AI_* 环境变量与平台可用性（v3.0.0）。 */
+	CONFIG("config"),
+
+	/** 环境体检：JDK / Maven / 依赖 / 平台密钥就绪度（v3.0.0）。 */
+	DOCTOR("doctor"),
+
+	/** 打印版本信息（v3.0.0）。 */
+	VERSION("version");
 
 	private static final Map<String, Command> BY_NAME = Map.of(
 		"chat", CHAT,
 		"stream", STREAM,
 		"rag", RAG,
 		"list", LIST,
-		"repl", REPL
+		"repl", REPL,
+		"new", NEW,
+		"config", CONFIG,
+		"doctor", DOCTOR,
+		"version", VERSION
 	);
 
 	private final String token;

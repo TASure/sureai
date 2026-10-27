@@ -33,6 +33,7 @@ import com.sure.ai.internal.json.JsonArray;
 import com.sure.ai.internal.json.JsonElement;
 import com.sure.ai.internal.json.JsonObject;
 import com.sure.ai.internal.json.JsonPrimitive;
+import com.sure.ai.mcp.message.McpError;
 import com.sure.ai.mcp.transport.McpHeaders;
 
 /**
@@ -186,6 +187,9 @@ public final class HttpMcpServerTransport implements AutoCloseable {
 			}
 			if (resp == null) {
 				reply(exchange, 202, null, null);
+			} else if (isMethodNotFound(resp)) {
+				// 2026-07-28：未知方法 HTTP 404 + JSON-RPC -32601
+				reply(exchange, 404, "application/json", resp);
 			} else {
 				reply(exchange, 200, "application/json", resp);
 			}
@@ -212,7 +216,8 @@ public final class HttpMcpServerTransport implements AutoCloseable {
 	private String validateHeaders(HttpExchange exchange, String body) {
 		String mcpMethod = exchange.getRequestHeaders().getFirst(McpHeaders.HEADER_MCP_METHOD);
 		String mcpName = exchange.getRequestHeaders().getFirst(McpHeaders.HEADER_MCP_NAME);
-		if (mcpMethod == null && mcpName == null) {
+		String mcpVersion = exchange.getRequestHeaders().getFirst(McpHeaders.HEADER_PROTOCOL_VERSION);
+		if (mcpMethod == null && mcpName == null && mcpVersion == null) {
 			return null;
 		}
 		JsonObject req;
@@ -224,6 +229,23 @@ public final class HttpMcpServerTransport implements AutoCloseable {
 		}
 		if (req == null) {
 			return null;
+		}
+		// MCP-Protocol-Version：须与 _meta 声明一致（-32020），取值须为支持版本（-32022）
+		if (mcpVersion != null) {
+			String version = McpHeaders.decode(mcpVersion);
+			JsonObject params = req.has("params") && req.get("params").isObject()
+				? req.get("params").getAsJsonObject() : null;
+			JsonObject meta = params != null && params.has("_meta") && params.get("_meta").isObject()
+				? params.get("_meta").getAsJsonObject() : null;
+			String metaVersion = meta == null ? null
+				: meta.optString(McpServer.META_PROTOCOL_VERSION, null);
+			if (metaVersion != null && !version.equals(metaVersion)) {
+				return headerMismatch(req,
+					"MCP-Protocol-Version header '" + version + "' != _meta '" + metaVersion + "'");
+			}
+			if (!isSupportedVersion(version)) {
+				return unsupportedVersion(req, version);
+			}
 		}
 		String bodyMethod = req.optString("method", null);
 		if (mcpMethod != null && !mcpMethod.equals(bodyMethod)) {
@@ -238,6 +260,45 @@ public final class HttpMcpServerTransport implements AutoCloseable {
 			}
 		}
 		return null;
+	}
+
+	/** 版本是否为服务端支持的协议版本。 */
+	private static boolean isSupportedVersion(String version) {
+		return McpServer.PROTOCOL_VERSION_STATEFUL.equals(version)
+			|| McpServer.PROTOCOL_VERSION_STATELESS.equals(version);
+	}
+
+	/** 构造 -32022 UnsupportedProtocolVersion 错误帧（data 含 supported/requested）。 */
+	private static String unsupportedVersion(JsonObject req, String requested) {
+		JsonObject resp = Json.object();
+		resp.put("jsonrpc", "2.0");
+		resp.set("id", req.has("id") ? req.get("id") : JsonPrimitive.jsonNull());
+		JsonObject err = Json.object();
+		err.put("code", (long) McpError.UNSUPPORTED_PROTOCOL_VERSION);
+		err.put("message", "Unsupported protocol version: " + requested);
+		JsonObject data = Json.object();
+		data.put("requested", requested);
+		JsonArray supported = Json.array();
+		supported.add(McpServer.PROTOCOL_VERSION_STATEFUL);
+		supported.add(McpServer.PROTOCOL_VERSION_STATELESS);
+		data.set("supported", supported);
+		err.set("data", data);
+		resp.set("error", err);
+		return Json.stringify(resp);
+	}
+
+	/** 响应帧是否为 -32601 MethodNotFound（HTTP 层映射为 404）。 */
+	private static boolean isMethodNotFound(String resp) {
+		try {
+			JsonElement el = Json.parse(resp);
+			if (el == null || !el.isObject() || !el.getAsJsonObject().has("error")) {
+				return false;
+			}
+			JsonObject error = el.getAsJsonObject().get("error").getAsJsonObject();
+			return error.optLong("code", 0L) == McpError.METHOD_NOT_FOUND;
+		} catch (RuntimeException ex) {
+			return false;
+		}
 	}
 
 	/** 构造 -32020 HeaderMismatch JSON-RPC 错误帧。 */

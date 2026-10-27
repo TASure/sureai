@@ -19,7 +19,7 @@ native-image 在编译期做封闭世界分析，只保留可达类/成员；运
 
 ## 快速开始
 
-> 前置：本机安装 GraalVM for JDK 21+ 并确保 `native-image` 在 PATH。
+> 前置：本机安装 GraalVM for JDK 25+ 并确保 `native-image` 在 PATH。
 
 ```bash
 # 1) 打 fat jar（sure-ai-cli 已交付，见 docs/cli.md）
@@ -86,7 +86,7 @@ Args = -H:+AddAllCharsets --enable-url-protocols=https,http
 `.github/workflows/ci.yml` 中的 `native` job 对 sure-ai-cli 做真实 native-image 编译 + 冒烟：
 
 - **触发时机**：与 build / dependency-check 并行，每次 push / PR 自动运行；
-- **环境**：`graalvm/setup-graalvm@v1`（JDK 21 + graalvm-community 发行版 + `components: native-image` + Maven 缓存）；
+- **环境**：`graalvm/setup-graalvm@v1`（JDK 25 + graalvm-community 发行版 + `components: native-image` + Maven 缓存）；
 - **步骤**：打 fat jar → `native-image -jar sure-ai-cli/target/sure-ai-cli-2.2.0-SNAPSHOT.jar -H:Name=sure-ai-cli -H:Path=sure-ai-cli/target/native-image` → `./sure-ai-cli/target/native-image/sure-ai-cli list` 冒烟；
 - **不阻塞主构建**：`continue-on-error: true`——native 编译慢（5–10 分钟）且 GraalVM 版本更新频繁，失败仅显示为 warning，不阻塞 build 矩阵门禁；
 - **冒烟内容**：`list` 子命令零网络、零 API key，验证 native 二进制可启动、ProviderRegistry 静态初始化、record 访问器反射均正常。

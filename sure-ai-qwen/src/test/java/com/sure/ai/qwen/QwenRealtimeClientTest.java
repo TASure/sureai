@@ -238,6 +238,39 @@ public class QwenRealtimeClientTest {
 		assertEquals("qwen-realtime", this.client.name());
 	}
 
+	/** 公开生产构造（DefaultRealtimeConnector）可实例化且命名正确（不触发连接）。 */
+	@Test
+	public void testPublicConstructor() {
+		AiConfig cfg = AiConfig.builder().apiKey("k").baseUrl("https://dashscope.aliyuncs.com/api-ws/v1").build();
+		QwenRealtimeClient c = new QwenRealtimeClient(cfg, "omni", this.collector);
+		assertEquals("qwen-realtime", c.name());
+	}
+
+	/** baseUrl 带尾斜杠时 buildUri 去重斜杠并由 https 改写为 wss。 */
+	@Test
+	public void testBuildUriWithBaseAndTrailingSlash() {
+		AiConfig cfg = AiConfig.builder().apiKey("k").baseUrl("https://dashscope.aliyuncs.com/api-ws/v1/").build();
+		QwenRealtimeClient c = new QwenRealtimeClient(cfg, "omni", this.connector, this.collector);
+		c.connect();
+		assertEquals("wss://dashscope.aliyuncs.com/api-ws/v1/inference?model=omni", this.connector.uri.toString());
+	}
+
+	/** error 为字符串时，onError 取该字符串。 */
+	@Test
+	public void testErrorAsString() {
+		this.client.connect();
+		deliver("{\"type\":\"error\",\"error\":\"string-boom\"}");
+		assertEquals("string-boom", this.collector.error);
+	}
+
+	/** error 字段缺失时，onError 回退为 message 字段或原始报文。 */
+	@Test
+	public void testErrorFallbackToMessage() {
+		this.client.connect();
+		deliver("{\"type\":\"error\",\"message\":\"fallback-msg\"}");
+		assertEquals("fallback-msg", this.collector.error);
+	}
+
 	/** 投递文本帧。 */
 	private void deliver(String json) {
 		CompletionStage<?> cs = this.connector.listener.onText(this.connector.socket, json, true);

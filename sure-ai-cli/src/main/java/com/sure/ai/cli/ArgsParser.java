@@ -36,12 +36,26 @@ import java.util.Map;
  *
  *   子命令：chat | stream | rag | list | repl
  *   rag 专属：--doc &lt;本地文本文件&gt;  --embedding-model &lt;嵌入模型&gt;
+ *   chat 专属：--once（单次问答，不进入多轮）
+ *   new 专属：--list | --name &lt;目录名&gt; --group &lt;groupId&gt; --artifact &lt;artifactId&gt;
+ *   config 专属：--export（导出 env 文件）--check（校验必填变量）
  * </pre>
  *
  * @author sureai
  * @since 2.0.0
  */
 public final class ArgsParser {
+
+	/** 各子命令允许的专属选项（v3.0.0 起按命令白名单校验）。 */
+	private static final Map<Command, java.util.Set<String>> COMMAND_FLAGS = Map.of(
+		Command.RAG, java.util.Set.of("doc", "embedding-model"),
+		Command.CHAT, java.util.Set.of("once"),
+		Command.NEW, java.util.Set.of("list", "name", "group", "artifact"),
+		Command.CONFIG, java.util.Set.of("export", "check"));
+
+	/** 无值开关（出现即 true）。 */
+	private static final java.util.Set<String> NO_VALUE_FLAGS =
+		java.util.Set.of("list", "export", "check", "once");
 
 	private ArgsParser() {
 		throw new AssertionError("No instances");
@@ -95,11 +109,18 @@ public final class ArgsParser {
 			String arg = args[i];
 			if (arg.startsWith("--")) {
 				String name = arg.substring(2);
-				switch (name) {
-					case "doc", "embedding-model" -> flags.put(name, requireValue(args, i, name));
-					default -> throw new CliException(CliException.EXIT_USAGE, "未知选项: --" + name);
+				java.util.Set<String> allowed = COMMAND_FLAGS.getOrDefault(command,
+					java.util.Set.of());
+				if (!allowed.contains(name)) {
+					throw new CliException(CliException.EXIT_USAGE, "未知选项: --" + name);
 				}
-				i += 2;
+				if (NO_VALUE_FLAGS.contains(name)) {
+					flags.put(name, "true");
+					i++;
+				} else {
+					flags.put(name, requireValue(args, i, name));
+					i += 2;
+				}
 			} else {
 				positional.add(arg);
 				i++;

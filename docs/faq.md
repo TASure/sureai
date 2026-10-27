@@ -55,7 +55,7 @@ ChatResponse resp = OpenAiUtil.chat(ChatRequest.builder()
 
 ## 支持哪些 Java 版本？
 
-sureai 要求 **JDK 21+**，使用 `maven.compiler.release=21` 编译。CI 在 JDK 21 和 25 上验证。
+sureai 要求 **JDK 25+**，使用 `maven.compiler.release=25` 编译。CI 仅在 JDK 25 上验证（2026-10 起放弃 JDK21 兼容）。
 
 ## 为什么 Ollama 用 ndjson 而不是 SSE？
 

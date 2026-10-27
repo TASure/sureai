@@ -42,9 +42,18 @@ public final class Main {
 	 * @param args 命令行参数
 	 */
 	public static void main(String[] args) {
+		System.exit(runCli(args));
+	}
+
+	/**
+	 * 供测试直接调用的入口（不触发 System.exit）。
+	 *
+	 * @param args 命令行参数
+	 * @return 退出码
+	 */
+	static int runCli(String[] args) {
 		CliRunner runner = new CliRunner(System.out,
 			new DefaultClientFactory(Environment.SYSTEM));
-		int exitCode = runner.run(args);
-		System.exit(exitCode);
+		return runner.run(args);
 	}
 }

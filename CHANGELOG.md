@@ -5,6 +5,194 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+（3.0.1-SNAPSHOT 待定）
+
+## [3.0.0] - 2026-10-23
+
+本版本线为「开发者体验终极」（路线图最后里程碑）：**模板应用库（一键生成工程） + CLI 增强（new/config/doctor/version + chat 多轮记忆） + 文档站（docs/ → 可发布静态站点，纯 JDK） + 示例/文档全中英**。三个新模块全部零第三方运行期与构建期依赖（不引 Jekyll/npm/commonmark/freemarker/picocli），公共 API 只增不改。
+
+### Added
+- **模板应用库（新模块 `sure-ai-templates`）**：`Templates`（`rag-kb` 知识库问答 RAG 端到端 / `customer-service` 客服机器人 ReAct+工具+记忆 / `code-assistant` 代码助手结构化输出+工具，`of/list/slug`）+ `TemplateGenerator.generate(template, targetDir, placeholders[, loader])`（复制 + 占位符替换，支持 file:/jar: 资源协议，目标目录防覆盖）；三套模板工程（pom import sure-ai-bom + sure-ai-all + JUnit + exec 插件 + 最小单元测试），生成即 `mvn test` 零网络可跑。
+- **CLI 增强（`sure-ai-cli`）**：新增 `new <template>`（接线模板应用库，`--list/--name/--group/--artifact`）、`config`（查看/`--check` 校验缺失返回退出码 1/`--export` 导出 SURE_AI_* 变量）、`doctor`（JDK 25 版本判定/Maven 探测/本地制品版本/平台密钥就绪度诊断）、`version`（版本信息）；`chat` 升级为多轮会话（纯内存上下文，滚动 40 条，`exit`/`quit`/EOF 退出，`--once` 单次）；仍手写参数解析零框架依赖。
+- **文档站（新模块 `sure-ai-docsite`）**：`MarkdownRenderer`（手写 Markdown 子集：标题锚点/围栏含 mermaid/表格/引用/列表/行内 code-粗斜体-链接-图片/hr/转义，行内渲染先保护 code 再转义防二次转义）+ `DocSiteGenerator.generate(docs, out)`（分类导航取自 README「## 文档索引」表、内链换算、search.json 检索、内嵌样式/脚本），`main` 入口缺省 `docs → target/docs-site`，输出可直接 push gh-pages。
+
+### Changed
+- `sure-ai-cli` 新增对 `sure-ai-templates` 依赖；`ArgsParser` 改为按命令白名单校验选项。
+- 父 pom `<modules>` 追加 `sure-ai-templates`、`sure-ai-docsite`（均不进 `sure-ai-all`/BOM，与 cli/archetype 同原则）。
+- README 生态/文档索引、docs/en、CHANGELOG 同步；docs 新增 `templates.md`、`docsite.md`，`cli.md` 补 v3.0.0 新命令（中英）。
+
+### 测试
+- 新增 sure-ai-templates 21 用例（生成器单测 11 + 覆盖分支 7 + 生成→编译→测试 E2E 3）、sure-ai-docsite 30 用例（渲染 12 + 生成 4 + 覆盖分支 14）、sure-ai-cli 14 用例（多轮历史/--once/EOF/new/config 三态/doctor/version/白名单）；修复 docsite 渲染器非法表格行死循环（OOM）、`getFileName()`/`getParent()` 潜在 NPE、printf 换行语义、模板 pom 缺 `<type>pom</type>` 等真实缺陷。全量 `mvn -B clean verify -Dgpg.skip=true` 0 失败 0 错误 0 跳过，jacoco 行覆盖门禁 ≥0.98 全过。
+
+## [2.9.0] - 2026-10-22
+
+本版本线为「Agent 生态」专项（对标 LangChain4j AgenticServices / Anthropic Agent Skills）：在既有 ReAct / PlanExecute 与任务拆分并行编排之上，补齐四块能力——①**Agent Skills 规范实现**（`SKILL.md` frontmatter + 三级渐进式加载 + 技能作为工具）；②**子 Agent 层级式委派**（AgentAsTool / Handoff、嵌套深度与环检测、事件冒泡）；③**工具注册中心市场**（ToolCatalog：标签/关键词发现、MCP 聚合、命名空间、SPI 贡献）；④**MCP 无状态深度融合**（对齐 2026-07-28 无状态规范与官方 Skills 扩展 `io.modelcontextprotocol/skills`，把工具市场与技能经 MCP 暴露）。全部为新增包 / 新增类 / 公共 API 只增不改，零第三方运行期依赖、零真实网络测试红线不变。协议细节均联网核实 modelcontextprotocol.io 官方规范（核实日 2026-10-19），仍处 draft 无法落地的面（OAuth 完整授权流程、MRTR 服务端发起等）如实标注实验性。
+
+### Added
+- **Agent Skills 规范实现（`sure-ai-agent`，新包 `com.sure.ai.agent.skill`）**：
+  - `SkillManifest` 不可变记录（name/description/license/compatibility/allowedTools/metadata/extraProperties，紧凑构造做规范校验：name ≤64 字符、仅小写字母数字连字符、保留词 `anthropic`/`claude` 拒绝；description ≤1024、禁 XML 尖括号；规范无 `version` 字段故不提供）；`SkillFrontmatterParser` 手写 YAML 子集解析（零第三方依赖、不引 snakeyaml：标量 / 单双引号与 `\n`/`\\` 转义 / 块列表 / 嵌套 `metadata` 标量表 / 注释；锚点、折叠标量、流数组、行内注释不支持并在 JavaDoc 注明边界）；`Skill` / `SkillContent` 三级按需模型——构造期只解析 L1 manifest，`loadBody()` 读 L2 正文、`loadResource(path)` 读 L3 资源；`LocalSkillContent` / `ClasspathSkillContent` / `JarEntrySkillContent` 三种来源；`SkillPaths.safeRelative` 路径穿越防护（拒 `..`、绝对路径、反斜杠、NUL）。
+  - `SkillLoader`：`load(Path)`（本地目录单技能直挂或子目录集合）、`loadFromClasspath(base[,loader])`（file 展开目录两种布局）、`loadJar(Path,base)`（显式 jar 入口，加载期把条目读入内存映射；标准 URLClassLoader 不回吐 jar 根 URL，故不做 jar 自动发现）；同名冲突、frontmatter 非法严格抛 `SkillLoadException` 不静默跳过。
+  - `SkillTool`：技能工具化——`toToolFunction`（工具名=技能名、描述=manifest.description）+ `toHandler`（无参返回 L2 正文回灌模型，可选 `resource` 参数返回指定文本资源）；`register`/`registerAll` 一键注册进既有 `ToolRegistry`，ReAct 循环经现有 `getToolSpecs()` 自动可用。`scripts/` 不执行（避免任意脚本执行的安全边界，规范中脚本经宿主 bash 执行，需独立沙箱，留待后续）。
+- **子 Agent 层级式编排（`sure-ai-agent`，新包 `com.sure.ai.agent.delegation`）**：
+  - `AgentRunner` 最小抽象（`run(task)`/`id()`/`description()`，静态适配 `ReActAgent`/`PlanExecuteAgent`/自定义句柄，不改既有 final 类）；`AgentAsTool`（子 Agent 包装为工具，子答案作为 observation 回灌父模型继续推理）；`HandoffAgent` + `HandoffTool`（结果带 `[HANDOFF]` 前缀 + 目标 id，语义=目标答案即最终答案、父不再继续推理，与 AgentAsTool 明确区分）。
+  - `DelegationContext`（chainId/depth/sourceAgentId/parentTask/ancestorIds/memoryPolicy/timeout，`child()` 递进）；`DelegationScope` 线程局部祖先栈 + try-finally 出栈（默认最大深度 5 可配，未用 ScopedValue 避免预览参数）；同 agentId 同链重复抛 `DelegationCycleException`（直接/间接环），超限抛 `DelegationDepthExceededException`；`ForwardingDelegationListener` + `DelegatedAgentEvent` 把全部子 Agent 回调/事件冒泡到父监听者（父 sink 可空、父监听器异常隔离）；`ChildAgentFactory` 按冒泡 sink 现场构造子 Agent。
+  - 记忆策略 `MemoryPolicy`：默认 ISOLATED（专职子 Agent 中间历史不污染父上下文），SHARED 由调用方构造时传同一实例；子异常包装 `DelegationException` 保留 cause；可选单次委派超时，虚拟线程执行、到期取消抛 `DelegationTimeoutException`（超时仅用于叶子级单次委派，JavaDoc 已注明）。
+- **工具注册中心市场（`sure-ai-agent`，新包 `com.sure.ai.agent.tool.catalog`）**：
+  - `RiskLevel`（LOW/MEDIUM/HIGH/CRITICAL，静态标注不替代高风险审批策略）、`ToolSource`（LOCAL/MCP）、`ConflictStrategy`（FAIL/OVERWRITE/RENAME 自动 `__n` 唯一名，默认 OVERWRITE 与底层注册中心覆盖语义一致、可统一调整或单次注册指定）；`ToolMetadata` Builder（name/description/tags 归一化去重/version/riskLevel/source/server/docUrl）；`ToolEntry`（function+handler+metadata 三合一）；`ToolCatalog`（ConcurrentHashMap，可选委托 `ToolRegistry`：注册成功镜像写入、`clear()` 不清委托；`findByTag` 大小写不敏感 / `findByKeyword` 命中名/描述/标签 / `filterBySource` / `filterByRiskLevel` / `list()` 按名排序快照；`registerMcpTools` 批量聚合，`namespace=true` 生成 `mcp.<server>.<tool>` 并自动标注 MCP 来源与 server；`exportTo`/谓词筛选/`exportNames`；冲突解析在锁内原子完成）。
+  - 远程工具清单注册 SPI：`ToolProvider` + `ToolContribution` + `ToolProviders`（ServiceLoader，`load()`/`loadInto`），内置零网络本地示例 `BuiltinSampleToolProvider`（`sample.echo`/`sample.ping`，经 `META-INF/services` 登记）；远程仅提供注册接入点，不发真实网络请求。`sure-ai-mcp` 的 `McpToolAdapter` 新增 `registerAllTools(client,ToolCatalog,serverLabel,strategy,namespace)` 重载，旧方法原样保留。
+- **MCP 无状态深度融合（`sure-ai-mcp-server` / `sure-ai-mcp`，对齐 2026-07-28 无状态基线）**：
+  - 协议帧：`server/discover`（返回 `resultType:"complete"`、`supportedVersions`、`capabilities`、`_meta[io.modelcontextprotocol/serverInfo]`、`ttlMs`/`cacheScope`）；每个 Result 必填 `resultType`（核心枚举仅 `complete`/`input_required`，缺省按 complete）；`CacheableResult` 缓存提示（`ttlMs`/`cacheScope` 在 tools/list、prompts/list、resources/*、skills/list、skills/get 上提供）；`subscriptions/listen` 首条发 `notifications/subscriptions/acknowledged`（`_meta[io.modelcontextprotocol/subscriptionId]`）。
+  - **官方 Skills 扩展 `io.modelcontextprotocol/skills`（SEP-2640，2026-09-13 Final）**：`McpSkillSource` SPI（listSkills/getSkill/readResource + 可选 `directoryRead()`/`listDirectory()`）、`McpSkillInfo`（uri/frontmatter/resources 静态清单或 `"dynamic"`）、`McpSkillResource`（uri/digest `sha256:`/size）；`skills/list`（Base64 URL 游标分页，页大小可配，非法/越界 cursor -32602）、`skills/get`、正文经标准 `resources/read`（`skill://.../SKILL.md` 为 text/markdown，其余 text/plain）、可选 `resources/directory/read`；discover 同时声明 `resources` 能力与 `capabilities.extensions["io.modelcontextprotocol/skills"]`（不冒充核心能力）；未知 URI -32602、内部错误 -32603、未注册来源 -32601。
+  - 工具市场暴露：`McpToolSource` 动态工具来源 SPI（静态表与动态来源合并，按名去重、静态优先、来源间先注册优先）；`McpServerTool` 新增 title/`McpToolAnnotations`（readOnlyHint/destructiveHint/idempotentHint/openWorldHint，序列化为标准 `annotations`）/`_meta` 私有元数据（tags/来源/风险等非标准字段一律入 `_meta`，不伪造核心字段）；旧四参构造保留。
+  - 错误码对齐重编号：`McpError` 新增 `-32020 HeaderMismatch`、`-32021 MissingRequiredClientCapability`、`-32022 UnsupportedProtocolVersion`（data 含 supported/requested）；未知工具/资源/技能统一 `-32602 InvalidParams`（不再以 isError 工具结果返回未知工具），工具执行失败仍为 `isError=true`；Streamable HTTP 层新增 `MCP-Protocol-Version` 头与 `_meta` 一致性校验（不一致 400/-32020，不支持版本 400/-32022）、未知方法响应 HTTP 404。
+  - **示例桥接**：`sure-ai-examples` 新增 `CatalogMcpToolSource`（ToolCatalog→McpToolSource，市场元数据入 `_meta`，处理异常映射 isError）、`SkillMcpSkillSource`（SkillLoader→McpSkillSource，sha256 摘要/字节数、SKILL.md 与 L3 引用资源）两个适配器与可运行 demo `AgentEcosystemMcpDemo`（`agentmarket` case，注册进 `ExamplesRunner`），离线串起 discover→tools/list→tools/call→skills/list→skills/get→resources/read 全链路。
+- **文档**：新建 `docs/agent-skills.md`（Agent Skills / 子 Agent 委派 / 工具市场三章中文全量）；`docs/mcp-server.md` 增补「无状态深化（2.9.0）」与「Skills over MCP 扩展」章节（含官方规范链接）；README 中英文特性区与模块树同步；`docs/COOKBOOK.md` 续场景。
+
+### Changed
+- `sure-ai-mcp` 的 `McpError` 仅新增常量（-32020/-32021/-32022），既有错误码不变；`McpServerTool` 由四参扩展为七参全量构造（旧构造保留）、新增 Builder；`McpServer`/`HttpMcpServerTransport` 仅新增方法与新分支（动态工具源、skills 路由、协议版本头校验、404 映射）。所有改动公共 API 只增不改，二进制向后兼容；既有 `toolsCallUnknownToolIsError` 等两个旧测试断言随「未知工具→-32602」标准化同步更新。
+- `config/spotbugs/exclude-filter.xml` 新增 `McpServerTool`(_meta 字段)/`McpServerTool$Builder`/`McpSkillInfo`(frontmatter) 的 EI_EXPOSE_REP(2) 豁免（自研零依赖 JsonObject 按引用读写的既有惯例，附注释）。
+
+### 测试
+- 测试基线 **2996**（2.8.0 发布点全量 surefire 实测口径）。
+- 全工程合计 **3204** 个测试（较基线 **+208**：Agent Skills +69、工具市场 +49、子 Agent 委派 +37（含后续 2 个嵌套/兄弟用例）、MCP 融合 +53；0 失败 / 0 错误 / 0 跳过）。
+- 新增覆盖：frontmatter 解析边界/非法 frontmatter、classpath/jar/本地目录加载与路径穿越、技能经 ReAct 完整调用；委派 2/3 级嵌套、超深/直接环/间接环、上下文传递、事件冒泡（含空父与父异常隔离）、memory 隔离/SHARED、超时与中断、Handoff 语义、PlanExecute 组合；市场标签/关键词/来源/风险发现、三策略冲突、命名空间、SPI 并发注册/发现；MCP 动态工具源聚合去重、skills 分页/frontmatter/资源/directoryRead、错误码、discover 扩展声明、缓存提示、HTTP 协议版本头（-32020/-32022）与未知方法 404、帧级版本校验。
+- `mvn -B clean verify -Dgpg.skip=true` **BUILD SUCCESS**（JDK25，checkstyle / spotbugs / license / jacoco 门禁零违规）；`sure-ai-mcp-server` 行覆盖 **0.9922**（895/902）、`sure-ai-mcp` 0.9820、`sure-ai-agent` 0.98+（skill/catalog/delegation 新包达标），全模块均 ≥0.98（ollama 例外 0.97）。
+
+## [2.8.0] - 2026-10-18
+
+本版本线为「评估与可观测」专项：新增通用评估模块 `sure-ai-evals`（对标 Spring AI 2.0 / LangChain4j 评估能力），把「数据集 → 指标 → 批量执行 → 报告 → CI 阈值断言 → 录制回放回归」收口为一条链；并在 `sure-ai-otel` 增量补齐评估 run 的 OTel span 与 Langfuse scores 上报。新模块仅依赖 `sure-ai-core`、零第三方运行期依赖，与 RAG 专用评估（`com.sure.ai.rag.evaluation`）互补、互不依赖。全部为新增模块 / 新增路径，未改动任何既有模块公开签名，无既有行为破坏。
+
+### Added
+- **新模块 `sure-ai-evals`（包 `com.sure.ai.evals`，仅依赖 core，已注册进 parent / bom / all）**：
+  - **数据集**：`EvalCase`（id / 多轮 input / expected / tags / metadata / expectedTools）与 `EvalDataset` 不可变模型；`DatasetLoader` 接口（`load(Reader/InputStream/Path)`，UTF-8 含 BOM 容错）；`CsvDatasetLoader`（手写字符级解析：双引号包裹、字段内逗号/换行、`""` 转义、CRLF、空行跳过；表头别名 `input|question|prompt` / `expected|answer|reference` / `id` / `tags` / `expectedTools`，未识别列并入 metadata；坏行 `SKIP`/`FAIL` 策略）；`JsonlDatasetLoader`（逐行 JSON，input 字符串或消息数组，`metadata` 递归转 Map，坏行 `SKIP`/`FAIL`）。
+  - **指标 SPI**：`EvalMetric`（`name` / `evaluate(case,outcome,context)` / `passThreshold` 默认 1.0）；`MetricResult`（分数 clamp 到 [0,1]，NaN 表示不适用并在聚合中剔除）；`EvalContext`（run 级共享元数据）；`EvalOutcome`（实际响应 / 文本 / 耗时 / 异常）。
+  - **内置指标**：`LlmJudgeMetric`（四 `JudgeMode`——BINARY / SCALE_1_TO_5→`(n-1)/4` / SCORE_100→`/100` / PAIRWISE→A 胜 1.0/平 0.5/B 胜 0.0；rubric 模板占位符 `{input}/{expected}/{actual}`；裁判失败/空文本/不可解析默认 NaN，可 `onUnparseableDefaultScore` 给固定分）；`ExactMatchMetric`（空白归一化 + 可选忽略大小写）；`ContainsMetric`（子串 / 分隔切多子串 / allRequired / 忽略大小写）；`RegexMetric`（FIND/MATCHES，非法正则判 0 不抛出）；`JsonSchemaValidityMetric`（按目标类 Schema 结构化子集校验：required 存在 + 类型/枚举匹配，得分=通过数/应检数）；`EmbeddingSimilarityMetric`（cosine，默认阈值 0.8，零范数/空向量/调用失败→NaN）；`LatencyMetric`（≤target=1、≥limit=0、线性衰减，默认 1000/3000ms）；`TokenCostMetric`（total token 代理成本，默认 500/2000，缺 usage→NaN）。
+  - **执行与聚合**：`EvalRunner`（默认顺序、`concurrency(n)` 自建固定池随 close 关闭、`executorService` 注入外部池不关；单用例模型异常与单指标异常双重隔离；聚合每指标 mean/min/max/passRate/applicable/NaN、总 token、失败用例数、延迟 p50/p95）；`EvalUtil` 一站式静态入口（`dataset`/`csvLoader`/`jsonlLoader`/`runner`/`run`/`assertMeets`/`assertNoRegression` + 默认 runner 单例）；`EvalComparison`（两份报告逐指标均分差 + 逐用例逐指标 pairwise 胜/平/负）；`EvalRunListener` 用例级钩子扩展点；`EvalException` 统一运行期异常。
+  - **报告**：不可变 `EvalReport` / `CaseDetail` / `MetricStats`；三种写出器 `EvalJsonReportWriter`（NaN→JSON null）/ `EvalMarkdownReportWriter`（汇总表+失败清单+逐用例表，`|` 转义）/ `EvalHtmlReportWriter`（自包含单文件，内联 CSS、无外链、全量 HTML 转义）。
+  - **CI 断言**：`EvalThreshold`（`putMean` / `putPassRate` 双维阈值表）+ `EvalAssertions.assertMeets`（不达标抛 `AssertionError`，消息含指标名/实际值/期望值/失败用例；缺失或全 NaN 指标按不达标处理）。
+  - **录制回放与回归（`trace` 子包）**：`EvalTrace`（单次请求⇄响应成对 JSON 快照，往返保留消息/toolCalls/采样参数/候选/usage，刻意不落多模态二进制与平台透传对象）；`RecordingClient`（装饰 `AiClient`：`record(delegate, path)` 每次 chat 追加一行 JSONL，`replay(path)` 零网络按「请求匹配优先、录制顺序兜底」回放，录制耗尽抛异常；流式分片聚合后落盘）；`TraceRegression`（基线 vs 当前按指标均值比较，`delta > tolerance` 判退化、`delta == tolerance` 不判、`delta < -tolerance` 记改善；默认容差 0.02，可全局或按指标配；用例按 caseId 对齐，逐用例分数跌幅/失败数增加同判退化；`RegressionResult.assertPassed()` 接 CI）。
+- **`sure-ai-otel` 增量（评估 run 观测桥接）**：
+  - `OtelEvalTracing`：把一次 `EvalReport` 映射为 `eval.evaluation` span，属性遵循 GenAI evaluation 语义约定扩展（`gen_ai.evaluation.dataset.name` / `case_count` / `failed_case_count` / `total_tokens` / `latency_p50/p95` / 每指标均值 `gen_ai.evaluation.metric.<name>`，指标名经合法字符清洗、均值 NaN 跳过）；存在失败用例或任一适用指标通过率<1 时 span 置 ERROR 并写低基数 `error.type`（`eval.execution_failure` / `eval.assertion_failure`）；不按用例展开子 span 防高基数；null provider 全空操作无感降级。门面 `OtelSupport.evalTracing(TracerProvider|OpenTelemetry)`。
+  - `langfuse/EvalReportLangfuseExporter`：把一次评估 run 导出为 Langfuse 一个 trace + 若干 `score-create`（`dataType=NUMERIC`）——每指标均值一个 score，另补 `pass_rate` / `total_tokens` / `failed_case_count` 三个数值 score；整批经 `LangfuseBatchSender` 单次发送；密钥缺失即空操作，发送异常只记 warning 不抛出。门面 `LangfuseExporters.evalReportExporter(LangfuseConfig)`。
+- **文档与示例**：新建 `docs/evals.md`（中文全量）+ 英文精简镜像 `docs/en/evals.md`；`docs/COOKBOOK.md` 新增场景 19（golden dataset 离线回归）/ 20（LLM-as-judge 打分接 CI）/ 21（A/B 对比两模型）；README 中英文特性区与模块树补 `sure-ai-evals`；`sure-ai-examples` 新增离线 `EvalsDemo`（`evals` case）与 `RegressionDemo`（`regression` case）并注册进 `ExamplesRunner`。
+
+### Changed
+- **JDK 基线升级 21 → 25（仅支持 JDK 25+，破坏性变更）**：`maven.compiler.release` 21 → 25（根 pom 与 sure-ai-archetype 模板同步）；CI 矩阵收敛为 `java: [25]`（ubuntu/macos + windows 可选），`dependency-check` 与 GraalVM native job 同步升级到 JDK 25；覆盖率门禁由 ubuntu 主环境统一把关（macos/windows 跳过 jacoco 插桩以避免跨 OS 探测差异误报）。JDK25 下 HttpClient 在协议层拦截短报文，`sure-ai-ollama` 两个错误体读取 catch 分支不可达（边界测试已存在），该模块行覆盖率门禁为 0.97。运行期零第三方依赖红线不变。
+- `sure-ai-otel` 新增对 `sure-ai-evals` 的依赖（`OtelEvalTracing` / `EvalReportLangfuseExporter` 需消费 `EvalReport`）；`sure-ai-evals` 注册进 parent pom `<modules>`、`sure-ai-bom` 依赖管理与 `sure-ai-all` 聚合链。均为**新增模块 / 新增依赖边**，不修改任何既有模块公开 API，未装配评估能力时现有行为与 2.7.0 完全一致。
+
+### 测试
+- 测试基线 **2814**（2.7.0 全量 `mvn -B clean verify -Dgpg.skip=true` 逐模块 surefire 实测口径）。
+- 全工程合计 **2996** 个测试（较基线 **+182**，增量全部来自 `sure-ai-evals` 新模块、`sure-ai-otel` 评估桥接用例与 `sure-ai-examples` 示例；0 失败 / 0 错误 / 0 跳过）。
+- `mvn -B clean verify -Dgpg.skip=true` **BUILD SUCCESS**（checkstyle / spotbugs / jacoco / license 门禁零违规）；`sure-ai-evals` 行覆盖 **98.44%**（≥98% 门禁），`sure-ai-otel` 行覆盖 **100.00%**，全模块均 ≥98%。
+
+## [2.7.0] - Unreleased
+
+本版本线为「网关生产化」专项：在 `sure-ai-gateway` 既有「多供应商注册 → 路由 → 故障转移 → 租户配额」之上，补齐上线生产环境所需的横切能力——按 client 维度的三态熔断、健康探活 SPI、请求级超时装饰、流式故障转移边界、网关指标与概要审计、租户并发上限，以及一个对标各平台 `XxxUtil` 的静态装配入口 `GatewayUtil`。全部为可选装配，未注入这些组件时行为与既有版本完全一致；网关模块只依赖 core + cost，零第三方运行期依赖不变。
+
+### Added
+- **熔断器（`com.sure.ai.gateway`）**：`CircuitBreakerConfig` record（`failureThreshold`/`windowSize`/`openTimeoutMs`/`halfOpenPermittedCalls`，`defaults()`=3/5/10000/1，`builder()`）+ `CircuitBreakerRegistry`（`allowRequest`/`onSuccess`/`onFailure`/`snapshot`/`snapshots`/`size`/`reset`/`defaults()`），按 `(platform,instanceId)` 维度懒创建 core 三态熔断器。
+- **健康探活**：`HealthProbe` SPI（`boolean isHealthy(AiClient,String,String)`）+ `DefaultHealthProbe`（恒 true，默认不额外探活）；`HealthMonitor`（`start`/`stop` 幂等、`runOnce` 同步一轮、`healthView()`，probe false 或抛异常 → `markUnhealthy` 冷却）；`ClientHealthView` record（`platform`/`instanceId`/`healthy`/`circuitState`/`probeHealthy`/`lastProbeAtMs`）。
+- **请求超时装饰**：`GatewayTimeoutDecorator`（构造 `(delegate, timeoutMs)`；per-request 覆盖键 `EXTRA_TIMEOUT_MS="timeoutMs"` 在 extra；超时抛 `AiTimeoutException`，`FailoverConfig` 默认可转移 → 自动触发 failover；流式超时丢弃迟到分片；`close()` 先关 delegate 再 `shutdownNow`）。
+- **流式故障转移边界**：`GatewayClient.chatStream` 首段投递前异常可正常转移下一候选；首段已投递后异常原样透传不转移（避免内容重复）。
+- **观测与审计**：`GatewayMetrics`（`onRequestStart`/`onRequestSuccess`/`onRequestFailure`/`onCircuitTrip`/`onCircuitReject`/`recordCost`/`snapshot`/`reset`；快照含 totalRequests/successCount/failureCount/circuitBreakerTrips/circuitBreakerRejections/avgLatencyMs/p50Ms/p95Ms/p99Ms/estimatedCostUsd，与 core `AiMetrics`/`MetricsCollector` 体系同构）；`AuditEvent`（requestId/method/model/tenantId/platform/instanceId/status(SUCCESS|FAILED|FAILED_OVER|REJECTED|TIMEOUT)/durationMs/estimatedCostUsd/detail/timestampMs）+ `GatewayAuditLogger`（JUL 一行概要、不落全文、`log(event)`/`log(List)`）。
+- **租户并发限流**：`TenantConfig` 新增第 5 组件 `maxConcurrency`（0=不限）+ `limitedConcurrency()`；`BudgetEnforcer.tryAcquireConcurrency(tenantId)`/`releaseConcurrency(tenantId)`（每租户公平 `Semaphore`，超上限返回 false 由调用方抛 `AiBudgetExceededException`）；QPS 复用 core `RateLimiter` 令牌桶（`checkBeforeCall` 既有）；`TenantAwareGatewayClient` 自动配对 acquire/release（chat 与 chatStream 均 finally 释放）。
+- **静态入口 `GatewayUtil`**：final 类 + `SingletonHolder` 懒加载单例（对标 `OpenAiUtil`）：`getInstance()`/`init(GatewayUtil)`/`reset()`；`registry()`（注册 client）、`gateway()`（复合 `AiClient`，装配租户层时包 `TenantAwareGatewayClient`）、`metrics()`（观测快照）、`startHealthMonitor()`/`stopHealthMonitor()`（幂等）。Builder：`registry`/`strategy`/`failoverConfig`/`circuitBreakers`/`circuitBreakerConfig`/`metrics`/`auditLogger`/`costCalculator`/`tenant(TenantManager,CostAggregator,BudgetEnforcer)`/`healthProbe`+`healthIntervalMs`，`build()`→`GatewayUtil`。
+- **文档**：`docs/gateway.md` 新增「生产化能力（v2.7.0 新增）」章节（熔断 / 探活 / 超时 / 流式 failover / 观测审计 / 租户并发 / GatewayUtil 快速上手 / 健康视图示例 8 小节），README 中英文特性区同步生产化能力清单。
+
+### Changed
+- `GatewayClient` 构造器扩展为 7 参全量版（`registry, strategy, failoverConfig, circuitBreakers, metrics, auditLogger, costCalculator`）；旧 3 参（`registry, strategy, failoverConfig`）与 1 参（`registry`）构造器行为不变，不传熔断 / 指标 / 审计 / 成本时等价于既有版本。
+- 路由候选过滤叠加 OPEN 熔断过滤（被剔除者不调用、计 `onCircuitReject`，全部 OPEN → 快速失败异常消息含 `circuit breaker`）；流式 failover 以「首段是否已投递」为界——均为新增路径，不改变既有同步调用语义。
+- `TenantConfig` 由 4 组件扩为 5 组件（新增 `maxConcurrency`，默认 0=不限）：向后兼容——旧构造器 / Builder 行为不变，`maxConcurrency` 默认 0 不改变既有租户配置；未配置并发上限时 `tryAcquireConcurrency` 恒返回 true、不建闸门。
+
+### 测试
+- gateway 模块测试 **100 → 194（+94）**。
+- 全工程合计 **2814** 个测试（按 `mvn -B clean verify -Dgpg.skip=true` 逐模块 surefire 实测口径；较 2.6.0 发布点 commit 80ffa50 的源码 `@Test` 基线 **2720** 增 **+94**，增量全部来自网关模块）。
+- `mvn -B clean verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 门禁零违规）；gateway 模块行覆盖 **98.97%（1062/1073）**，全模块均 ≥98%（最低 rag 98.09%）。
+
+## [2.6.0] - Unreleased
+
+本版本线为「文档导入器 + 向量库追平」专项：新增 `sure-ai-ingest` 文档导入模块（对标 LangChain4j 数据导入，已进 `sure-ai-all`/`sure-ai-bom` 聚合链），把「来源（本地文件 / 网络 URL）→ 纯文本 + 元数据」一站式收口；同时把 rag 外部向量库从 9 种追到 14 种（新增 PGVector / Typesense / Cassandra / MongoDB / Neo4j）。全部为 JDK 原生协议客户端、零第三方运行期依赖；各库鉴权与查询能力的支持子集在文档中如实标注。
+
+### Added
+- **文档导入器（`sure-ai-ingest` 新模块，`com.sure.ai.ingest`）**：
+  - **`DocumentLoader` SPI**：`List<Document> load(Path)` / `load(URI)` 以「来源」为入参，按扩展名 / Content-Type 路由到对应 `DocumentParser`；元数据常量 `META_SOURCE`(`source`) / `META_LOADED_AT`(`loaded_at`) / `META_FORMAT`(`format`) / `META_CONTENT_TYPE`(`content_type`)。加载失败抛 `IllegalStateException`，空文件 / 无文本层返回空列表（不中断批量管线）。
+  - **`FileSystemLoader`**：`createDefault()` / `builder().register(DocumentParser).build()`，按扩展名路由；`load(URI)` 仅支持 `file:` scheme。
+  - **`URLLoader`**：JDK `HttpClient` GET，仅 `http`/`https`；默认连接超时 10s、请求超时 30s、跟随重定向；无扩展名时按响应 `Content-Type` 兜底推断（html/pdf/markdown/text-plain）；非 2xx 抛异常；`Builder.httpClient(...)` / `requestTimeout(...)` 可覆盖。
+  - **`DocumentParser` SPI + 内置解析器**：`parse(byte[], source, metadata)` + `extensions()`。内置 `PlainTextParser`（`.txt/.md/.markdown`，UTF-8；Markdown 按纯文本直读、不剥标记，交由 rag `MarkdownTextSplitter` 结构化切分）、`HtmlTextParser`（`.html/.htm/.xhtml`，正则剥 `<script>/<style>` 块 + 标签 + 实体解码，仅适用简单静态 HTML）、`PdfTextParser`（`.pdf`，**纯 JDK 手写有限文本层提取**——扫描 `stream...endstream`、`Inflater` 解压 FlateDecode、收集 `Tj`/`TJ` 字面串与十六进制串；**不引 PDFBox**）。
+  - **PDF 支持子集与限制（如实标注）**：仅标准单字节字体、顺序排布的文本操作符；不做字体编码 / ToUnicode CMap / CID 映射（非 ASCII 可能乱码）、不处理扫描件 / 加密 PDF、不还原多栏 / 旋转阅读顺序、不解析 xref/trailer（全流扫描宽容策略）；损坏 PDF 按「无文本层」返回空列表而非报错。
+  - **可选 Office 模块 `sure-ai-ingest-poi`（`com.sure.ai.ingest.poi`）**：`PoiParsers.docx()/xlsx()/pptx()/all()` 工厂；**Apache POI 5.5.1 以 `provided` 引入、不向下游传递、不进 `sure-ai-all` 运行期聚合链**（仅进 `sure-ai-bom` 版本管理），使用方须自行显式声明 `org.apache.poi:poi-ooxml` 依赖。产出统一复用 `com.sure.ai.rag.model.Document`，可直接进入 `RagPipeline.ingest(...)`。
+  - 配套文档：新建 `docs/ingest.md` + 英文精简镜像 `docs/en/ingest.md`、`docs/COOKBOOK.md` 新增场景 18、`docs/capabilities.md` 增补注记、README 中英文特性区与模块树补 `sure-ai-ingest` / `sure-ai-ingest-poi`。
+- **向量库 9 → 14（`sure-ai-rag` `com.sure.ai.rag.store.*`，均 JDK 原生协议、零官方驱动）**：
+  - **`PgVectorStore`（`store.pgvector`）**：JDK `Socket` 实现 PG 前端/后端协议最小子集（StartupMessage + 认证 + Simple Query `'Q'`）。认证仅 `trust` / 明文密码（`md5`/`scram-sha-256` 抛明确异常）；**不支持参数化查询**，SQL 字面量单引号翻倍转义内联；每次操作短连接。建表约定 `(id text PK, text, metadata jsonb, embedding vector(d))`，检索 `embedding <=> '[...]'` 余弦距离还原 `1-distance`。Builder：`host/port/database/user/password/table/dimension/autoCreate/timeout`。来源：[PG Message Formats](https://www.postgresql.org/docs/current/protocol-message-formats.html)、[pgvector](https://github.com/pgvector/pgvector)。
+  - **`TypesenseVectorStore`（`store.typesense`）**：JDK `HttpClient` 走 REST，鉴权 `X-TYPESENSE-API-KEY`；检索 `GET /collections/{coll}/documents/search?q=*&vector_query=vec:([...],k:n)`，`vector_distance` 还原 `1-distance`。Builder：`baseUrl/apiKey/collectionName/vectorField/textField/dimension/autoCreateCollection/httpClient/timeout`。来源：[Typesense Vector Search](https://typesense.org/docs/0.24.0/api/vector-search.html)。
+  - **`CassandraVectorStore`（`store.cassandra`）**：JDK `Socket` 实现 [CQL 二进制协议 v4](https://cassandra.apache.org/doc/latest/cassandra/_attachments/native_protocol_v4.html) 最小子集（9 字节大端帧 + STARTUP/AUTHENTICATE/QUERY/RESULT）。认证仅无认证 / SASL PLAIN（多轮 SCRAM 抛异常）；**不支持 PREPARE/EXECUTE 绑定变量**；短连接。建表 `vector<float,d>` + SAI（cosine），检索 `embedding ANN OF [...]` + `similarity_cosine`。Builder：`host/port/keyspace/table/user/password/dimension/autoCreate/timeout`。
+  - **`MongoDbVectorStore`（`store.mongodb`）**：JDK `Socket` 实现 [OP_MSG（opcode 2011）](https://www.mongodb.com/docs/v8.0/reference/mongodb-wire-protocol/) + 最小 BSON 编解码（`Bson`）。**未实现 SCRAM-SHA-1/256**，需 `--noauth` 部署；仅 hello + `update(upsert)/delete/count/aggregate` 命令；向量检索用 `$vectorSearch` 聚合阶段（要求自管 7.0+ / Atlas 已建向量索引）。Builder：`host/port/database/collection/vectorIndex/dimension/autoCreate/timeout`。
+  - **`Neo4jVectorStore`（`store.neo4j`）**：JDK `HttpClient` 走官方 HTTP 事务性端点 `POST /db/{db}/tx/commit`（JSON），HTTP Basic 鉴权；向量检索 `CALL db.index.vector.queryNodes($index,$k,$embedding) YIELD node, score`。**Bolt/packstream 为后续路径，本批不实现**（协议事实如实标注）。Builder：`baseUrl/database/user/password/vectorIndex/label/dimension/autoCreateIndex/httpClient/timeout`。来源：[Neo4j Vector indexes](https://neo4j.com/docs/cypher-manual/current/indexes/semantic-indexes/vector-indexes/)。
+  - 配套新增 5 个 metadata filter 方言翻译器（`PgVectorFilterTranslator` / `TypesenseFilterTranslator` / `CassandraFilterTranslator` / `MongoDbFilterTranslator` / `Neo4jFilterTranslator`，可移植翻译器 6 → 11）。`docs/vector-stores.md` 增量 5 库小节并把总览 / 选型表 9 → 14。
+
+### Changed
+- 无破坏性变更：`sure-ai-ingest` 为新增独立模块（产出复用既有 rag `Document`）；5 个新向量库为 `VectorStore` SPI 的新增实现，未改动任何既有向量库或 `VectorStore` 接口签名；POI 为 provided 可选，不声明依赖则不影响主库运行期零第三方依赖特性。
+
+### 测试
+- 本迭代新增测试 **64** 个（ingest 模块 24 + poi 模块 5 + PGVector/Typesense 17 + Cassandra/MongoDB/Neo4j 三库 18）；全工程合计 **1461** 个测试，`mvn -B verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 零违规）。测试基线自 2.3.0 的 **1299** 演进：2.4.0 平台能力核实/Redis/Realtime/Langfuse（+53 → **1352**）→ 2.5.0 声明式编排（+45 → **1397**）→ 2.6.0 文档导入器 + 向量库追平（+64 → **1461**）。
+
+## [2.5.0] - Unreleased
+
+本版本线为「声明式编排层」专项：在 `sure-ai-core` 对话原语之上新增 `sure-ai-framework` 模块（已进 `sure-ai-all`/`sure-ai-bom` 聚合链），把「手写 `client.chat(request)`」升级为「接口即服务 + 可装配 Advisor 链」，补齐 sureai 对标 LangChain4j `AiServices` / Spring AI Advisor 链的编排短板。模块仅依赖 core，零第三方运行期依赖。
+
+### Added
+- **AiService 声明式接口（`sure-ai-framework` 新模块，`com.sure.ai.framework`）**：
+  - **`FrameworkUtil` 静态入口**：`create(Class<T>, AiClient)` 一行创建代理、`create(Class<T>, AiClient, String model)` 显式模型、`builder(Class<T>, AiClient)` 流式 Builder（`.model(x)` 覆盖 `@AiService.model()`、`.temperature(x)`、`.memory(ChatMemory)`、`.advisors(List<Advisor>)`、`.build()`）；底层为 JDK 动态代理 `FrameworkProxy`。
+  - **注解族**（`com.sure.ai.framework.annotation`）：`@AiService(model, temperature=-1)`（接口级默认模型/温度）、`@SystemMessage(value)`、`@UserMessage(value="")`、`@Tool(name="", description="")`、`@Memory`（接口/方法级开关）、`@Param(value)`；`{paramName}` 模板占位符按形参名（或 `@Param`）渲染。
+  - **返回类型映射**：`String`（阻塞文本 `firstText()`）/ `ChatResponse`（原始响应）/ `Stream<ChatStreamChunk>`（流式，不经过 Advisor 链）/ `record`（结构化：自动挂 `responseFormat=json_schema` 并反序列化）；`void` 与不支持类型在创建代理期即 fail-fast。
+  - **`@Tool` schema 注册与直调拒绝**：接口 `@Tool` 方法签名自动转 `ToolSpec`（方法名/参数名 → JSON Schema）挂 `ChatRequest.tools`；业务代码直调 `@Tool` 方法抛 `IllegalStateException`（工具方法由模型侧调用）。
+  - **会话记忆**：`ChatMemory` SPI（`add`/`history`/`clear`/`size`）+ 内置 `InMemoryChatMemory`（环形窗口，默认 20 条，FIFO 淘汰、`synchronized` 可共享）；`@Memory` 开启历史注入与阻塞轮回写（流式不回写）。
+- **SemanticCache 语义缓存（`com.sure.ai.framework.cache`）**：
+  - **原理**：把 query 文本经 `EmbeddingClient` 编码为向量，与内存索引条目逐条算**余弦相似度**，≥ 阈值（默认 `0.85`）且未过期即命中——让同义改写复用同一条 `ChatResponse`，区别于 core 的精确 `ChatCacheKey`。
+  - **双层存储模型**：内存向量索引（query + 向量 + 过期时间戳，顺序线性扫描）+ 可插拔 core `CacheStore` 载荷后端（缺省进程内 `LruCacheStore`，传 rag 的 `RedisCacheStore` 即分布式共享）；条目以 `sha256(query)` 为 entryId。
+  - **Builder**：`SemanticCache.builder().embedder(...)`（必填）+ `.threshold(0~1)` / `.store(CacheStore)` / `.maxEntries(1000)`（超 LRU 淘汰）/ `.defaultTtlMillis(600_000)`（10 分钟）/ `.model(String)`；`get/put/remove/clear`，过期条目惰性剔除。
+- **Advisor 链（`com.sure.ai.framework.advisor`）**：
+  - **三钩子语义**：`before(AdvisorContext)` **正序**执行、`around(AdvisorChain, AdvisorContext)` **嵌套**包裹终端（可零次 `proceed` 短路 / 一次改写 / 多次触发多轮）、`after(AdvisorContext)` **逆序** finally 语义；`AdvisorContext` 暴露可变消息列表 / `toolExecutor()` / `expectedType()` / `response()` / `attribute(...)`，终端经 `rebuildRequest()` 重建。`proceed` 视图不可重排，工具循环/校验重试反复调用不会重跑外层 before/after。
+  - **四件套**：`SemanticCacheAdvisor`（命中即短路不调模型、miss 回填，推荐最外层）/ `LoggingAdvisor`（JUL 记录请求概要/耗时/响应摘要，不落全文）/ `ToolCallingAdvisor`（自动工具循环：`tool_calls`→反射执行→回填→再问模型，默认 `maxIterations=5`，单工具失败收敛为错误文本回灌）/ `StructuredOutputValidationAdvisor`（record 返回时校验 JSON 形状，不合规把错误原因作为修正指令回灌重写，默认 `maxRetries=2`）。
+  - **`ToolExecutor` SPI + `ReflectionToolExecutor`**：按工具名找 `@Tool` 方法、按形参名（`@Param` 优先）绑定 JSON 参数（String/基本类型及包装），`default` 方法在代理实例上 `invokeDefault`；任何异常收敛为错误文本不向外抛。四件套均无状态、可并发共享。推荐装配顺序：语义缓存 → 日志 → 工具循环 → 结构化校验。
+  - 配套文档：`docs/framework.md` + 英文镜像 `docs/en/framework.md`、`docs/COOKBOOK.md` 新增场景 17、`docs/capabilities.md` 增补编排能力注记、README 中英文特性区与模块树补 `sure-ai-framework`。
+
+### Changed
+- 无破坏性变更：`sure-ai-framework` 为新增独立模块，未触碰任何既有模块公开 API；未装配 Advisor 链时每次调用等价于直接 `client.chat`，行为与历史版本一致。
+
+### 测试
+- 本迭代新增测试 **45** 个（AiService 声明式代理 14 + SemanticCache 语义缓存 13 + Advisor 链四件套 18）；全工程合计 **1397** 个测试，`mvn -B verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 零违规）。测试基线自 2.3.0 的 **1299** 演进：2.4.0 平台能力核实/Redis/Realtime/Langfuse（+53 → **1352**）→ 2.5.0 声明式编排（+45 → **1397**）。
+
+## [2.4.0] - Unreleased
+
+本版本线为「实时韧性、外部缓存与 LLM 观测」专项：在保持对外 API 完全向后兼容（新回调全部 `default`、新能力默认开启但可关闭）的前提下，收口 Realtime 连接韧性、新增零依赖 Redis 外部缓存，并直连 Langfuse 原生 Ingestion 导出；同时对多模态输入面按 2026 年官方文档逐项联网核实与补全。
+
+### Added
+- **平台多模态输入面联网核实与补全（2026-10 官方文档依据）**：
+  - **`VideoPart` 视频理解输入**（新增 sealed 内容块）：`VideoPart.ofUrl(url)` / `VideoPart.ofBase64(base64, mimeType)`；Gemini 序列化为 `fileData`/`inlineData`（依据 [ai.google.dev/gemini-api/docs/video-understanding](https://ai.google.dev/gemini-api/docs/video-understanding)），通义千问 Qwen-VL 序列化为 `{"type":"video_url","video_url":{"url":resolvedUrl()}}`（依据 [help.aliyun.com Qwen OpenAI 兼容](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)），Anthropic 经官方文档核实**不支持视频输入**（依据 [platform.claude.com vision](https://platform.claude.com/docs/en/build-with-claude/vision)）。
+  - **Anthropic 图像/文档 `source.type=url` 来源**补齐；**并行工具结果合并**——模型单轮并行产出的多个 `tool_use` 结果合并为单条 user 消息内的多个 `tool_result` 块，符合 Anthropic Message API 语义。
+  - **Gemini 函数调用往返**：`functionCall`（模型侧）与 `functionResponse`（回灌侧）双向序列化对齐 Live/Chat 协议。
+  - 本批未改动任何平台的**生成**能力声明（受 guard 的 IMAGE/VIDEO 仍指生成接口）；`docs/capabilities.md` 增补澄清注记，明确「生成 vs 输入」分野并交叉引用 [docs/multimodal.md](docs/multimodal.md)。
+- **Redis 外部缓存 `RedisCacheStore`（sure-ai-rag `com.sure.ai.rag.store.cache`）**：实现 core 的 `CacheStore` SPI，**零 Lettuce/Jedis 依赖**——复用 v2.4.0 从 `RedisVectorStore` 抽取的共享 RESP2 编解码（`com.sure.ai.rag.store.resp.RespCodec`），底层为 JDK `Socket`。语义与内置 `LruCacheStore` 对齐：`GET` 读、`SET key value PX ttl` 写、`DEL` 删、`SCAN`（`COUNT 200`，**不用阻塞式 `KEYS`**）按前缀清空；值存 `ChatResponse.rawJson()` 并按响应侧字段无损还原。单 Socket 串行化，IO 失败自动重连重试一次，应用错误（`−ERR`）fail-fast 抛 `AiException`；默认 `localhost:6379`、前缀 `sureai:cache:`、TTL 5 分钟、超时 10s（builder：`host/port/password/keyPrefix/defaultTtlMillis/timeout`）。`docs/cache.md` 增补「LruCacheStore vs RedisCacheStore 选型」。
+- **Realtime 连接韧性（sure-ai-core `com.sure.ai.client.realtime`）**：
+  - **`RealtimeOptions`**：自动重连（默认开，最多 5 次）、指数退避 `min(base*2^(n-1), max)`（默认 1s 起步、30s 封顶）、周期心跳 ping（默认 30s）+ 空闲超时判死（默认 10s 无入站帧）；不可变值对象 + builder，经 `AbstractRealtimeClient` 4 参构造器注入，平台现有 3 参构造器沿用 `defaults()`（行为兼容）。
+  - **8 个生命周期/VAD 回调**（全部 `default` 空实现，向后兼容）：`onConnected` / `onDisconnected` / `onReconnecting` / `onReconnected` / `onReconnectFailed` / `onSpeechStart` / `onSpeechStop` / `onInterrupted`。
+  - **事件标准化**：VAD（`input_audio_buffer.speech_started/stopped`）与中断（OpenAI 系 `conversation.interrupted`/`response.output_audio.interrupted`、Gemini `serverContent.interrupted==true`）归一到统一回调；**Gemini 每次新 WS 会话（含重连成功后）自动重发 `setup`**（Live 协议要求建连先发 `{"setup":{...}}`）。
+  - 重连/心跳任务经包内可注入 `RealtimeTaskScheduler` 调度，`heartbeatTick()`/`lastActivityNanos` 对测试包可见，全链路零真实网络可测。`docs/realtime.md` 增补「事件速查表（JSON 事件名 × 平台）」与完整重连/心跳配置示例。
+- **Langfuse 原生导出（sure-ai-otel `com.sure.ai.otel.langfuse`，零依赖、无感降级）**：
+  - **`LangfuseExporters` 静态门面**（对齐 `OtelSupport` 范式）：`metricsCollectorFromEnv()` / `metricsCollector(LangfuseConfig)`，返回标准 `MetricsCollector`，挂到 `AiConfig.metricsCollector(...)`。
+  - **`LangfuseConfig`**：`of(endpoint, publicKey, secretKey, environment)` / `fromEnv()` / `disabled()`；环境变量官方名优先、sureai 前缀兜底（`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`/`LANGFUSE_HOST`/`LANGFUSE_ENVIRONMENT`），默认基址 `https://cloud.langfuse.com`。
+  - **事件映射**：一次逻辑调用 = 一个 `trace-create` + 一个 `generation-create`，终态写 `generation-update`（成功 `level=DEFAULT`、失败 `level=ERROR`，含 `endTime`/`model`/`usage{input,output,total}`），重试追加为 `event-create`（name=`retry`）；同一调用组装成一个 `batch` 单次 POST 到 `/api/public/ingestion`。
+  - **认证**：HTTP Basic `base64(publicKey:secretKey)`（对齐 Langfuse Ingestion 约定）。**无感降级**：密钥任一缺失即 `isEnabled()==false` 全空操作、零网络；发送失败仅记 warning 并吞咽，绝不影响主流程。可运行示例 `LangfuseObservationDemo`，`docs/observability.md` 新增「Langfuse 原生导出」小节、`docs/COOKBOOK.md` 新增场景 16。
+
+### Changed
+- 无破坏性变更：8 个新 Realtime 回调均为 `default` 空实现；`RealtimeOptions` 默认值对现有行为友好；Langfuse/Redis 均为可选挂载，未配置时行为与 2.3.0 逐字节一致。
+
+### 测试
+- 本迭代新增测试 **53** 个（平台能力核实 6 + `RedisCacheStore` 10 + Realtime 韧性/事件标准化 19 + Langfuse 导出 18）；全工程合计 **1352** 个测试，`mvn -B verify -Dgpg.skip=true` BUILD SUCCESS（checkstyle / spotbugs / jacoco / license 零违规）。测试基线自 2.3.0 的 1299 演进：能力核实与补全（6）→ RedisCacheStore（10）→ Realtime 韧性（19）→ Langfuse（18），合计 +53。
+
 ## [2.3.0] - Unreleased
 
 本版本线为「核心性能与协议完备」专项：在保持对外 API 完全向后兼容的前提下，收口 MCP 2026-07-28 无状态扩展面、ReAct Agent 单轮并行工具调用，并对 core 的 JSON / SSE 热点路径做性能优化。

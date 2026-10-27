@@ -4,7 +4,7 @@
 
 ## 前置要求
 
-- JDK 21+
+- JDK 25+
 - 为 ${platform} 平台申请 API Key
 
 ## 配置 API Key
