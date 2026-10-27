@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
@@ -42,7 +43,7 @@ import java.util.stream.Stream;
  *   <li>{@code artifactId}：缺省 = {@code slug(projectName)}；</li>
  *   <li>{@code mainPackage}：缺省 = {@code groupId + "." + 包名化(projectName)}（点分隔，供 package 声明）；</li>
  *   <li>{@code mainPackagePath}：缺省 = {@code mainPackage} 点转斜杠（供源文件目录路径）；</li>
- *   <li>{@code sureaiVersion}：缺省 = {@code 2.10.0-SNAPSHOT}（生成工程所依赖的 sure-ai 版本）。</li>
+ *   <li>{@code sureaiVersion}：缺省 = 当前 sure-ai 版本（构建期注入，见 {@link #DEFAULT_SUREAI_VERSION}）。</li>
  * </ul>
  *
  * <p>模板文件须为 UTF-8 文本；目标目录已存在且非空时拒绝生成（防覆盖）。
@@ -56,8 +57,52 @@ public final class TemplateGenerator {
 	/** 模板资源根（classpath）。 */
 	static final String TEMPLATE_ROOT = "/templates/";
 
-	/** 生成工程默认依赖的 sure-ai 版本。 */
-	public static final String DEFAULT_SUREAI_VERSION = "2.10.0-SNAPSHOT";
+	/**
+	 * 生成工程默认依赖的 sure-ai 版本。
+	 *
+	 * <p>构建期由 Maven 资源过滤把 {@code @project.version@} 注入
+	 * {@code sureai-version.properties}；运行期读取之，缺失/损坏时回退到
+	 * {@link #FALLBACK_SUREAI_VERSION}（与发布版本同步维护）。</p>
+	 */
+	public static final String DEFAULT_SUREAI_VERSION = loadDefaultVersion();
+
+	/** 属性文件缺失/未过滤时的最终兜底版本（随发布同步更新）。 */
+	static final String FALLBACK_SUREAI_VERSION = "3.0.0";
+
+	private static String loadDefaultVersion() {
+		return resolveDefaultVersion(
+			TemplateGenerator.class.getResourceAsStream("/sureai-version.properties"));
+	}
+
+	/**
+	 * 从属性输入流解析 sure-ai 版本（包可见，供测试注入各类分支）。
+	 *
+	 * @param in 属性输入流；{@code null} 视为缺失
+	 * @return 解析出的版本号；输入为 null / 键缺失 / 值为空白 / 读取失败时返回
+	 * {@link #FALLBACK_SUREAI_VERSION}
+	 */
+	static String resolveDefaultVersion(InputStream in) {
+		if (in == null) {
+			return FALLBACK_SUREAI_VERSION;
+		}
+		try {
+			Properties p = new Properties();
+			p.load(in);
+			String v = p.getProperty("sureai.version");
+			if (v != null && !v.isBlank()) {
+				return v.trim();
+			}
+			return FALLBACK_SUREAI_VERSION;
+		} catch (IOException ignored) {
+			return FALLBACK_SUREAI_VERSION;
+		} finally {
+			try {
+				in.close();
+			} catch (IOException ignored) {
+				// 流关闭失败可忽略
+			}
+		}
+	}
 
 	private TemplateGenerator() {
 		throw new AssertionError("No instances");
