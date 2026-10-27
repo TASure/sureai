@@ -18,6 +18,7 @@ package com.sure.ai.gateway;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Semaphore;
 import java.util.function.LongSupplier;
 
 import com.sure.ai.cost.CostAggregator;
@@ -40,6 +41,9 @@ import com.sure.tool.thread.RateLimiter;
  * <p>QPS 复用 sure-core 的令牌桶 {@link RateLimiter}（非阻塞 {@code tryAcquire}），按租户懒加载。
  * 预算周期到期后窗口用量清零，但令牌桶按秒平滑补充、不随窗口重置。</p>
  *
+ * <p>并发上限用每租户公平 {@link Semaphore} 实现（{@link #tryAcquireConcurrency}），同样按租户懒加载；
+ * 与 QPS / 预算检查相互独立、互不影响。同租户改配 {@code maxConcurrency} 后下次准入按新上限重建闸门。</p>
+ *
  * <p>时钟可注入（默认 {@link System#currentTimeMillis()}），便于测试周期重置。线程安全。</p>
  *
  * @author sureai
@@ -58,6 +62,9 @@ public final class BudgetEnforcer {
 
 	/** 租户 → 窗口状态。 */
 	private final ConcurrentMap<String, TenantState> states = new ConcurrentHashMap<>();
+
+	/** 租户 → 并发闸门（信号量懒加载；配置变更时按新上限重建，最小侵入独立维护，不动 TenantState）。 */
+	private final ConcurrentMap<String, ConcurrencyGate> concurrencyGates = new ConcurrentHashMap<>();
 
 	/**
 	 * 全参构造器。
@@ -176,6 +183,60 @@ public final class BudgetEnforcer {
 	}
 
 	/**
+	 * 尝试获取租户并发许可（非阻塞）。
+	 *
+	 * <p>语义：tenantId 空白，或租户未配置 / {@code maxConcurrency<=0}（不限）时恒返回 true，
+	 * 不建闸门；已达并发上限时返回 false（<b>不抛异常</b>，由调用方决定如何拒绝）。
+	 * 信号量为公平模式、按租户懒加载；同租户改配 {@code maxConcurrency} 后下次调用按新上限重建闸门
+	 * （重建前仍被持有的旧许可随旧闸门一起丢弃，属配置变更的可接受代价）。</p>
+	 *
+	 * @param tenantId 租户 ID
+	 * @return 获取到许可返回 true；并发已满返回 false
+	 */
+	public boolean tryAcquireConcurrency(String tenantId) {
+		if (tenantId == null || tenantId.isBlank()) {
+			return true;
+		}
+		TenantConfig cfg = this.tenantManager.configFor(tenantId);
+		if (cfg == null || !cfg.limitedConcurrency()) {
+			return true;
+		}
+		ConcurrencyGate gate = this.concurrencyGates.compute(tenantId,
+			(k, existing) -> existing != null && existing.max == cfg.maxConcurrency()
+				? existing : new ConcurrencyGate(cfg.maxConcurrency()));
+		return gate.semaphore.tryAcquire();
+	}
+
+	/**
+	 * 对称释放租户并发许可。
+	 *
+	 * <p>配对契约：<b>只能</b>对 {@link #tryAcquireConcurrency} 返回 true 的请求调用本方法；
+	 * 不限 / 未配置 / 从未获取过许可的租户调用为 no-op，不校验配对、不抛异常。</p>
+	 *
+	 * @param tenantId 租户 ID
+	 */
+	public void releaseConcurrency(String tenantId) {
+		if (tenantId == null || tenantId.isBlank()) {
+			return;
+		}
+		ConcurrencyGate gate = this.concurrencyGates.get(tenantId);
+		if (gate != null) {
+			gate.semaphore.release();
+		}
+	}
+
+	/**
+	 * 查询租户当前配置的并发上限（供调用方拼异常消息中的 max 值）。
+	 *
+	 * @param tenantId 租户 ID
+	 * @return 并发上限；未配置或不限返回 0
+	 */
+	public int concurrencyLimit(String tenantId) {
+		TenantConfig cfg = this.tenantManager.configFor(tenantId);
+		return cfg == null ? 0 : cfg.maxConcurrency();
+	}
+
+	/**
 	 * 取（或创建）租户窗口状态。
 	 *
 	 * @param tenantId 租户 ID
@@ -232,6 +293,26 @@ public final class BudgetEnforcer {
 				this.limiter = new RateLimiter(qps);
 			}
 			return this.limiter;
+		}
+	}
+
+	/** 租户并发闸门：固定上限的公平信号量；配置变更时整门重建（对比 max 字段判定）。 */
+	private static final class ConcurrencyGate {
+
+		/** 建闸时配置的并发上限。 */
+		private final int max;
+
+		/** 公平信号量（保证等待顺序，避免饥饿）。 */
+		private final Semaphore semaphore;
+
+		/**
+		 * 按上限建闸。
+		 *
+		 * @param max 并发上限
+		 */
+		ConcurrencyGate(int max) {
+			this.max = max;
+			this.semaphore = new Semaphore(max, true);
 		}
 	}
 }

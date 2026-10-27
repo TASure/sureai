@@ -45,6 +45,15 @@ public record McpError(long code, String message, JsonElement data) {
 	/** 内部错误码（标准 JSON-RPC：-32603）。 */
 	public static final int INTERNAL_ERROR = -32603;
 
+	/** 请求头与请求体不一致（MCP 2026-07-28：-32020 HeaderMismatch）。 */
+	public static final int HEADER_MISMATCH = -32020;
+
+	/** 缺少服务端要求的客户端能力（MCP 2026-07-28：-32021）。 */
+	public static final int MISSING_REQUIRED_CLIENT_CAPABILITY = -32021;
+
+	/** 不支持的协议版本（MCP 2026-07-28：-32022，data 含 supported/requested）。 */
+	public static final int UNSUPPORTED_PROTOCOL_VERSION = -32022;
+
 	/**
 	 * 从 JSON 对象解析。
 	 *

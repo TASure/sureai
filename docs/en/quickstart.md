@@ -4,7 +4,7 @@
 
 Goal: add the dependency, send your first chat, stream a reply, and switch platforms.
 
-Prerequisites: JDK 21+ and an API key. Keys are read from environment variables with
+Prerequisites: JDK 25+ and an API key. Keys are read from environment variables with
 the unified prefix `SURE_AI_<PLATFORM>_API_KEY`, e.g. `SURE_AI_OPENAI_API_KEY`.
 
 ## 1. Import the BOM, then pick one platform module

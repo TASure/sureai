@@ -104,4 +104,130 @@ public class TenantAwareGatewayClientTest {
 		// 共享 CostAggregator 也记了一条
 		assertEquals(1, agg.tenantSummary("t1").totalCalls());
 	}
+
+	/** 构造一个 t1 并发上限为 maxConcurrency 的客户端夹具。 */
+	private static ClientFixture fixture(int maxConcurrency) {
+		TenantManager mgr = new TenantManager();
+		mgr.configureTenant("t1", TenantConfig.builder().maxConcurrency(maxConcurrency).build());
+		CostAggregator agg = new CostAggregator();
+		BudgetEnforcer enforcer = new BudgetEnforcer(mgr, agg);
+		FakeClient downstream = new FakeClient("downstream");
+		TenantAwareGatewayClient client = new TenantAwareGatewayClient(downstream, enforcer);
+		return new ClientFixture(enforcer, downstream, client);
+	}
+
+	/**
+	 * 并发位被占满时 chat 抛 AiBudgetExceededException（消息含 max 值），下游未被触达。
+	 */
+	@Test
+	public void testChatRejectedWhenConcurrencyFull() {
+		ClientFixture f = fixture(1);
+		// 手动占满唯一并发位
+		assertTrue(f.enforcer.tryAcquireConcurrency("t1"));
+
+		try {
+			f.client.chat(req("t1"));
+			fail("expected AiBudgetExceededException (concurrency)");
+		} catch (AiBudgetExceededException ex) {
+			assertEquals("t1", ex.tenantId());
+			assertTrue(ex.getMessage().contains("concurrency"));
+			assertTrue(ex.getMessage().contains("max=1"));
+		}
+		assertEquals(0, f.downstream.chatCalls);
+	}
+
+	/**
+	 * 正常调用完成后 finally 释放并发位：紧接着第二次调用仍成功（证明许可已归还）。
+	 */
+	@Test
+	public void testChatAcquireReleasePairing() {
+		ClientFixture f = fixture(1);
+		f.client.chat(req("t1"));
+		assertEquals(1, f.downstream.chatCalls);
+		// 若 finally 未释放，第二次会因并发已满抛异常；此处成功即证明已配对释放
+		f.client.chat(req("t1"));
+		assertEquals(2, f.downstream.chatCalls);
+	}
+
+	/**
+	 * 并发位被占满时 chatStream 同样抛 AiBudgetExceededException。
+	 */
+	@Test
+	public void testChatStreamRejectedWhenConcurrencyFull() {
+		ClientFixture f = fixture(1);
+		assertTrue(f.enforcer.tryAcquireConcurrency("t1"));
+
+		try {
+			f.client.chatStream(req("t1"), c -> { });
+			fail("expected AiBudgetExceededException (concurrency)");
+		} catch (AiBudgetExceededException ex) {
+			assertTrue(ex.getMessage().contains("concurrency"));
+		}
+	}
+
+	/**
+	 * 正常流式调用不触发异常，返回后并发位已释放（可再次手动 acquire 成功）。
+	 */
+	@Test
+	public void testChatStreamNormalOkAndReleased() {
+		ClientFixture f = fixture(1);
+		f.downstream.stream("a", "b");
+		f.client.chatStream(req("t1"), c -> { });
+		// finally 已释放：本应空出的位可立即获取
+		assertTrue(f.enforcer.tryAcquireConcurrency("t1"));
+	}
+
+	/**
+	 * 下游 chat 抛异常时 finally 仍执行 release：异常向上透传，且并发位被正确归还。
+	 */
+	@Test
+	public void testReleaseRunsWhenDelegateThrows() {
+		ClientFixture f = fixture(1);
+		f.downstream.throwOn(new IllegalStateException("boom"));
+		try {
+			f.client.chat(req("t1"));
+			fail("expected IllegalStateException from delegate");
+		} catch (IllegalStateException ex) {
+			assertEquals("boom", ex.getMessage());
+		}
+		// finally 中 release 已执行：否则位仍被占，这里会拿到 false
+		assertTrue("delegate 抛异常后 finally 仍应释放并发位",
+			f.enforcer.tryAcquireConcurrency("t1"));
+	}
+
+	/**
+	 * 下游 chatStream 抛异常时 finally 同样释放并发位。
+	 */
+	@Test
+	public void testChatStreamReleaseWhenDelegateThrows() {
+		ClientFixture f = fixture(1);
+		f.downstream.throwOn(new IllegalStateException("boom"));
+		try {
+			f.client.chatStream(req("t1"), c -> { });
+			fail("expected IllegalStateException from delegate");
+		} catch (IllegalStateException ex) {
+			assertEquals("boom", ex.getMessage());
+		}
+		assertTrue(f.enforcer.tryAcquireConcurrency("t1"));
+	}
+
+	/** 测试夹具：持有执行器、下游假客户端与被测网关客户端。 */
+	private static final class ClientFixture {
+
+		/** 预算执行器。 */
+		private final BudgetEnforcer enforcer;
+
+		/** 下游假客户端。 */
+		private final FakeClient downstream;
+
+		/** 被测租户客户端。 */
+		private final TenantAwareGatewayClient client;
+
+		ClientFixture(BudgetEnforcer enforcer, FakeClient downstream,
+				TenantAwareGatewayClient client) {
+			this.enforcer = enforcer;
+			this.downstream = downstream;
+			this.client = client;
+		}
+	}
 }

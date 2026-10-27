@@ -64,4 +64,14 @@ public final class LangfuseExporters {
 	public static MetricsCollector metricsCollector(LangfuseConfig config) {
 		return new LangfuseMetricsCollector(config);
 	}
+
+	/**
+	 * 以显式配置构建评估 run（{@code EvalReport}）Langfuse 导出器（trace + scores）。
+	 *
+	 * @param config Langfuse 配置；为 {@code null} 或禁用态时返回空操作
+	 * @return EvalReportLangfuseExporter
+	 */
+	public static EvalReportLangfuseExporter evalReportExporter(LangfuseConfig config) {
+		return new EvalReportLangfuseExporter(config);
+	}
 }

@@ -30,7 +30,7 @@
 | 维度 | sureai | Spring AI | langchain4j | Koog | Embabel |
 |------|--------|-----------|-------------|------|---------|
 | 定位 | 零依赖的多平台 LLM 接入工具库 | Spring 生态的 AI 应用框架 | Java 版 LangChain，LLM 集成工具包 | JetBrains 的 JVM 智能体框架 | Spring 创始人的 JVM 智能体流程框架 |
-| 主语言 / 生态 | Java（JDK 21+） | Java，深度绑定 Spring | Java（兼 Kotlin） | Kotlin 为主，一等 Java 互操作 | Kotlin 为主，一等 Java 互操作 |
+| 主语言 / 生态 | Java（JDK 25+） | Java，深度绑定 Spring | Java（兼 Kotlin） | Kotlin 为主，一等 Java 互操作 | Kotlin 为主，一等 Java 互操作 |
 | 依赖形态 | **零运行期第三方依赖**（仅 JDK + 自研 JSON/HTTP），模块级隔离 | 依赖 Spring Boot / Spring Framework 全家桶 | 多模块，传递依赖链，常配 Spring Boot / Quarkus | Gradle 依赖（`ai.koog:koog-agents`），KMP 体系 | 基于 Spring Boot（据公开报道），Kotlin 编写 |
 | 模型/平台覆盖 | **23 个平台**（国产平台全覆盖） | 主流商业 + 开源供应商（OpenAI/Azure/Anthropic/Google/Amazon/HuggingFace 等） | 主流供应商 + 大量向量库 | 多模型供应商，定位在 Agent 编排 | 多模型供应商，定位在 Agent 流程 |
 | 运行目标平台 | JVM | JVM（Spring 应用） | JVM | **KMP 多端**：JVM / Android / iOS / JS / WasmJS | JVM |

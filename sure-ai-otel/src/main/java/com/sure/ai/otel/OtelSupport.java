@@ -20,7 +20,9 @@ import com.sure.ai.agent.event.AgentEventSink;
 import com.sure.ai.client.observability.MetricsCollector;
 import com.sure.ai.client.observability.RetryListener;
 
+import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.metrics.MeterProvider;
+import io.opentelemetry.api.trace.TracerProvider;
 
 /**
  * OpenTelemetry 桥接静态入口（对齐 sureai Util 门面范式）。
@@ -106,5 +108,25 @@ public final class OtelSupport {
 	 */
 	public static AgentEventSink agentEventSink() {
 		return new OtelAgentEventSink();
+	}
+
+	/**
+	 * 创建评估 run 桥接器（把一次 {@code EvalReport} 映射为 {@code eval.evaluation} span）。
+	 *
+	 * @param tracerProvider OTel TracerProvider；为 {@code null} 时返回空操作实现
+	 * @return OtelEvalTracing 桥接实例
+	 */
+	public static OtelEvalTracing evalTracing(TracerProvider tracerProvider) {
+		return new OtelEvalTracing(tracerProvider);
+	}
+
+	/**
+	 * 从 {@link OpenTelemetry} 创建评估 run 桥接器（便捷重载）。
+	 *
+	 * @param openTelemetry OTel 实例；为 {@code null} 时返回空操作实现
+	 * @return OtelEvalTracing 桥接实例
+	 */
+	public static OtelEvalTracing evalTracing(OpenTelemetry openTelemetry) {
+		return new OtelEvalTracing(openTelemetry);
 	}
 }

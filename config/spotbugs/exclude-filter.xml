@@ -213,12 +213,25 @@
         <Bug pattern="SC_START_IN_CTOR"/>
     </Match>
 
-    <!-- MCP Server 工具描述暴露可变 JsonObject（EI_EXPOSE_REP）：
-         McpServerTool.inputSchema 持有自研零依赖 JsonObject，与 McpRequest.params
-         同类——inputSchema 由调用方在传入前填好，server 只读广播，按引用是零依赖 JSON 模型惯例。 -->
+    <!-- MCP Server 工具描述暴露/暂存可变 JsonObject（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         McpServerTool.inputSchema/_meta 与 Builder 暂存对象均为自研零依赖 JsonObject，
+         与 McpRequest.params 同类——由调用方在传入前填好，server 只读广播，按引用是
+         零依赖 JSON 模型的惯例用法。 -->
     <Match>
         <Class name="com.sure.ai.mcp.server.McpServerTool"/>
-        <Bug pattern="EI_EXPOSE_REP"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.sure.ai.mcp.server.McpServerTool$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Skills over MCP 技能描述持有 frontmatter（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         McpSkillInfo.frontmatter 为自研零依赖 JsonObject，由技能来源装配、server 只读广播，
+         与 McpServerTool.inputSchema 同类惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.mcp.server.skill.McpSkillInfo"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
     </Match>
 
     <!-- MCP Server 入参记录暴露集合引用（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
@@ -372,6 +385,38 @@
          同类按引用共享惯例；调用方负责缓存后端与 TTL。 -->
     <Match>
         <Class name="com.sure.ai.framework.advisor.SemanticCacheAdvisor"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- GatewayUtil 暴露/暂存共享有状态组件（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         registry() 返回的 ClientRegistry 设计上即供调用方 register/remove 的可变共享注册表
+         （静态入口的注册便捷性是 API 本意），Builder 为一次性装配器，暂存 registry /
+         tenantManager 等调用方组件是按引用共享惯例，与 GatewayClient / FrameworkUtil.Builder
+         同类；调用方负责这些组件的生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.gateway.GatewayUtil"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="~com.sure.ai.gateway.GatewayUtil\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- EvalOutcome 执行结果记录持有异常引用（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         error() 返回的 Throwable 是调用方/被测客户端现场抛出的原始异常，评估层需要读取其
+         类型、堆栈与 cause 链做失败归因与报告展示；复制 Throwable 会丢失堆栈因果链，
+         且异常对象本就只读消费，与 McpRequest.params 同类只读视图惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.evals.metric.EvalOutcome"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- ToolCatalog 持有调用方注入的委托 ToolRegistry（EI_EXPOSE_REP2）：
+         delegate 是可选镜像目标，调用方构造后仍可独立 register/unregister，
+         市场注册成功后按引用同步写入，语义即按引用共享，与 ReActAgent.registry /
+         GatewayClient.registry 同类惯例；调用方负责注册中心生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.tool.catalog.ToolCatalog"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 

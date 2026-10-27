@@ -24,7 +24,7 @@
     <parent>
         <groupId>io.github.tasure</groupId>
         <artifactId>sureai</artifactId>
-        <version>2.6.0-SNAPSHOT</version>
+        <version>3.0.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>sure-ai-spring-boot-starter</artifactId>
@@ -35,7 +35,7 @@
 
     <properties>
         <!-- 固定 spring-boot BOM 版本（仅本模块内部使用，不上提父 POM dependencyManagement） -->
-        <spring-boot.version>3.3.5</spring-boot.version>
+        <spring-boot.version>4.1.1</spring-boot.version>
         <!-- Starter 为自动装配骨架：无业务分支，跳过 JaCoCo 行覆盖率门禁（参考 suretool 惯例） -->
         <jacoco.skip>true</jacoco.skip>
         <!-- 自动配置骨架类跳过 SpotBugs 深度扫描（理由见类 JavaDoc） -->

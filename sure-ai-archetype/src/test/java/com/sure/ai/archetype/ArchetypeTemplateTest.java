@@ -108,7 +108,8 @@ public class ArchetypeTemplateTest {
 		assertTrue("模板 pom 必须使用 import scope", templatePom.contains("<scope>import</scope>"));
 		assertTrue("模板 pom 依赖必须按平台变量生成 sure-ai-${platform}",
 			templatePom.contains("sure-ai-${platform}"));
-		assertTrue("模板 pom 必须 release 21", templatePom.contains("<maven.compiler.release>21</maven.compiler.release>"));
+		assertTrue("模板 pom 必须 release 25（JDK25 基线）",
+		templatePom.contains("<maven.compiler.release>25</maven.compiler.release>"));
 	}
 
 	@Test

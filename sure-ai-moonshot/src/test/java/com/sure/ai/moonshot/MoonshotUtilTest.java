@@ -17,7 +17,9 @@
 package com.sure.ai.moonshot;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -110,6 +112,60 @@ public class MoonshotUtilTest {
 		finally {
 			env.restore();
 		}
+	}
+
+	/**
+	 * env 分支：key 与 baseUrl 均设置时，buildFromEnv 走成功路径并指向本地 mock。
+	 *
+	 * <p>覆盖 {@code key 非空} 与 {@code baseUrl 非空} 两条 true 分支（含 b.baseUrl）。</p>
+	 */
+	@Test
+	public void testBuildFromEnvWithKeyAndBaseUrl() throws Exception {
+		var f = MoonshotUtil.class.getDeclaredField("HOLDER");
+		f.setAccessible(true);
+		f.get(null).getClass().getMethod("reset").invoke(f.get(null));
+		EnvVars env = EnvVars.begin();
+		try {
+			env.set(MoonshotUtil.ENV_API_KEY, "env-key");
+			env.set(MoonshotUtil.ENV_BASE_URL, this.baseUrl);
+			assertEquals("你好", MoonshotUtil.chat("moonshot-v1", "hi").firstText());
+		}
+		finally {
+			env.restore();
+			f.get(null).getClass().getMethod("reset").invoke(f.get(null));
+		}
+	}
+
+	/**
+	 * env 分支：仅设置 key、不设 baseUrl 时，buildFromEnv 仍能构造客户端。
+	 *
+	 * <p>覆盖 {@code baseUrl 为 null} 时跳过 b.baseUrl 的 false 分支。</p>
+	 */
+	@Test
+	public void testBuildFromEnvWithoutBaseUrl() throws Exception {
+		var f = MoonshotUtil.class.getDeclaredField("HOLDER");
+		f.setAccessible(true);
+		f.get(null).getClass().getMethod("reset").invoke(f.get(null));
+		EnvVars env = EnvVars.begin();
+		try {
+			env.set(MoonshotUtil.ENV_API_KEY, "env-key");
+			env.set(MoonshotUtil.ENV_BASE_URL, null);
+			assertNotNull(MoonshotUtil.client());
+		}
+		finally {
+			env.restore();
+			f.get(null).getClass().getMethod("reset").invoke(f.get(null));
+		}
+	}
+
+	/** Models 私有构造器不可实例化，常量可读取。 */
+	@Test
+	public void testModelsConstructor() throws Exception {
+		var c = MoonshotModels.class.getDeclaredConstructor();
+		c.setAccessible(true);
+		var ex = assertThrows(java.lang.reflect.InvocationTargetException.class, c::newInstance);
+		assertTrue(ex.getCause() instanceof AssertionError);
+		assertEquals("kimi-k2", MoonshotModels.KIMI_K2);
 	}
 
 	/** 私有构造器不可实例化。 */
