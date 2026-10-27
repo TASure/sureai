@@ -19,11 +19,15 @@ package com.sure.ai.gemini;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
+import com.sure.ai.client.realtime.RealtimeEventListener;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
 
 /**
  * Google Gemini 静态入口工具类。
@@ -39,11 +43,13 @@ public final class GeminiUtil {
 	/** 默认 baseUrl。 */
 	private static final String DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
-	/** 单例客户端。 */
-	private static volatile GeminiClient client;
+	/** 主客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<GeminiClient> HOLDER =
+		new SingletonHolder<>(GeminiUtil::loadFromEnv);
 
-	/** 初始化锁对象。 */
-	private static final Object LOCK = new Object();
+	/** Realtime 客户端容器（构造参数依赖调用参数，用 getOrCreate 懒加载）。 */
+	private static final SingletonHolder<GeminiRealtimeClient> REALTIME =
+		new SingletonHolder<>(null);
 
 	private GeminiUtil() {
 		throw new AssertionError("No instances");
@@ -64,9 +70,7 @@ public final class GeminiUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new GeminiClient(config);
-		}
+		HOLDER.set(new GeminiClient(config));
 	}
 
 	/**
@@ -75,22 +79,17 @@ public final class GeminiUtil {
 	 * @return 客户端
 	 */
 	public static GeminiClient client() {
-		GeminiClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					String apiKey = System.getenv("SURE_AI_GEMINI_API_KEY");
-					String baseUrl = System.getenv("SURE_AI_GEMINI_BASE_URL");
-					if (baseUrl == null || baseUrl.isBlank()) {
-						baseUrl = DEFAULT_BASE_URL;
-					}
-					c = new GeminiClient(AiConfig.builder().apiKey(apiKey).baseUrl(baseUrl).build());
-					client = c;
-				}
-			}
+		return HOLDER.get();
+	}
+
+	/** 从环境变量懒加载构造客户端。 */
+	private static GeminiClient loadFromEnv() {
+		String apiKey = System.getenv("SURE_AI_GEMINI_API_KEY");
+		String baseUrl = System.getenv("SURE_AI_GEMINI_BASE_URL");
+		if (baseUrl == null || baseUrl.isBlank()) {
+			baseUrl = DEFAULT_BASE_URL;
 		}
-		return c;
+		return new GeminiClient(AiConfig.builder().apiKey(apiKey).baseUrl(baseUrl).build());
 	}
 
 	/**
@@ -143,6 +142,54 @@ public final class GeminiUtil {
 	 */
 	public static EmbeddingResponse embed(EmbeddingRequest request) {
 		return client().embed(request);
+	}
+
+	/**
+	 * 便捷图像生成：仅模型与提示词。
+	 *
+	 * @param model  模型名（如 {@link GeminiModels#GEMINI_2_0_FLASH_EXP}）
+	 * @param prompt 提示词
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(String model, String prompt) {
+		return client().generate(model, prompt);
+	}
+
+	/**
+	 * 图像生成。
+	 *
+	 * @param request 图像请求
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(ImageRequest request) {
+		return client().generate(request);
+	}
+
+	// ==================== Realtime（Gemini Live 全双工语音对话） ====================
+
+	/**
+	 * 获取 Realtime 单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * <p>Realtime 需要事件监听器，不提供静态便捷方法；单例首次以
+	 * {@code (model, listener)} 构造，之后重复调用返回同一实例。</p>
+	 *
+	 * @param model        实时模型 ID（不含 models/ 前缀）
+	 * @param eventListener 事件监听器
+	 * @return Realtime 客户端
+	 */
+	public static GeminiRealtimeClient realtimeClient(String model,
+			RealtimeEventListener eventListener) {
+		return REALTIME.getOrCreate(() -> {
+			String apiKey = System.getenv("SURE_AI_GEMINI_API_KEY");
+			return new GeminiRealtimeClient(AiConfig.of(apiKey), model, eventListener);
+		});
+	}
+
+	/**
+	 * 重置 Realtime 单例客户端（测试清理用）。
+	 */
+	public static void resetRealtimeClient() {
+		REALTIME.reset();
 	}
 
 	/**

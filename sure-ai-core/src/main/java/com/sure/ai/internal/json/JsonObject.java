@@ -243,6 +243,30 @@ public final class JsonObject extends JsonElement {
 	}
 
 	@Override
+	public long optLong(String key, long defaultValue) {
+		JsonElement el = this.map.get(key);
+		if (el == null || !el.isNumber()) {
+			return defaultValue;
+		}
+		return el.getAsLong();
+	}
+
+	/**
+	 * 取 double 值，缺失或非数字时返回默认值。
+	 *
+	 * @param key          键
+	 * @param defaultValue 默认值
+	 * @return double 值
+	 */
+	public double optDouble(String key, double defaultValue) {
+		JsonElement el = this.map.get(key);
+		if (el == null || !el.isNumber()) {
+			return defaultValue;
+		}
+		return el.getAsDouble();
+	}
+
+	@Override
 	public String toString() {
 		return JsonWriter.stringify(this);
 	}

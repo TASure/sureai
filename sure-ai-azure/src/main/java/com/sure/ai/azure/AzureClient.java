@@ -18,9 +18,12 @@ package com.sure.ai.azure;
 
 import java.net.http.HttpRequest;
 import java.util.Map;
+import java.util.Set;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.compat.OpenAiCompatClient;
+import com.sure.ai.model.FineTuneResponse;
 
 /**
  * Azure OpenAI（Azure AI Foundry）客户端。
@@ -29,7 +32,8 @@ import com.sure.ai.client.compat.OpenAiCompatClient;
  * <ul>
  *   <li><b>鉴权</b>：使用 {@code api-key: <apiKey>} 头（而非 {@code Authorization: Bearer}）。</li>
  *   <li><b>URL</b>：对话为 {@code {baseUrl}/openai/deployments/{deployment}/chat/completions?api-version={apiVersion}}，
- *   向量为 {@code .../openai/deployments/{deployment}/embeddings?api-version={apiVersion}}。</li>
+ *   向量为 {@code .../openai/deployments/{deployment}/embeddings?api-version={apiVersion}}，
+ *   图像为 {@code .../openai/deployments/{deployment}/images/generations?api-version={apiVersion}}。</li>
  * </ul>
  *
  * <p>配置约定：</p>
@@ -43,6 +47,16 @@ import com.sure.ai.client.compat.OpenAiCompatClient;
  * <p>官方文档：<a href="https://learn.microsoft.com/en-us/azure/ai-foundry/openai/reference">REST API reference</a>；
  * <a href="https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle">api-version 生命周期</a>
  * （2024-10-21 为当前最新 GA 版本）。</p>
+ *
+ * <p>P2 平台特定能力：</p>
+ * <ul>
+ *   <li>{@code GET /openai/models?api-version=}：模型列表（继承 core 的 data[] 解析）；</li>
+ *   <li>{@code POST /openai/moderations?api-version=}：内容审核；</li>
+ *   <li>{@code POST /openai/fine_tuning/jobs?api-version=}、
+ *   {@code GET /openai/fine_tuning/jobs/{id}?api-version=}、
+ *   {@code POST /openai/files?api-version=}：微调与训练文件上传；</li>
+ *   <li>reasoning_effort 与 grounding web_search 工具与 OpenAI 协议一致，由 core 序列化。</li>
+ * </ul>
  *
  * @author sureai
  * @since 0.1.0
@@ -78,6 +92,14 @@ public class AzureClient extends OpenAiCompatClient {
 			+ "/chat/completions?api-version=" + this.apiVersion;
 		this.embeddingsPath = "/openai/deployments/" + this.deployment
 			+ "/embeddings?api-version=" + this.apiVersion;
+		this.imagesPath = "/openai/deployments/" + this.deployment
+			+ "/images/generations?api-version=" + this.apiVersion;
+		// 平台特定能力：模型列表 / 内容审核 / 微调 / 文件上传均走 /openai/* 根路径，
+		// 鉴权由 applyAuth 的 api-key 头完成，端点统一拼接 api-version 查询参数。
+		this.modelsPath = "/openai/models?api-version=" + this.apiVersion;
+		this.moderationsPath = "/openai/moderations?api-version=" + this.apiVersion;
+		this.fineTunePath = "/openai/fine_tuning/jobs?api-version=" + this.apiVersion;
+		this.filesPath = "/openai/files?api-version=" + this.apiVersion;
 	}
 
 	@Override
@@ -88,6 +110,45 @@ public class AzureClient extends OpenAiCompatClient {
 	@Override
 	protected void applyAuth(HttpRequest.Builder requestBuilder, AiConfig cfg) {
 		requestBuilder.header("api-key", cfg.apiKey());
+	}
+
+	/**
+	 * Azure OpenAI（Azure AI Foundry）主 Client 经构造器显式接线的 OpenAI 兼容端点：
+	 * chat/completions、embeddings、images/generations（均走 {@code /openai/deployments/{deployment}/...}）、
+	 * /openai/moderations、/openai/fine_tuning/jobs 与 /openai/files（微调 + 训练文件上传）。
+	 *
+	 * <p>依据：<a href="https://learn.microsoft.com/en-us/azure/ai-foundry/openai/reference">Azure OpenAI REST API reference</a>。</p>
+	 *
+	 * <p>未声明：</p>
+	 * <ul>
+	 *   <li>{@code VIDEO}——Azure 视频生成走独立的
+	 *   {@code /openai/v1/video/generations} 异步协议（见 {@link AzureVideoClient}），
+	 *   主 Client 未覆写 videosPath，故不声明，调用主 Client 视频方法时 guard 快速失败；</li>
+	 *   <li>{@code TTS}/{@code STT}——Azure 语音走 Azure AI Speech 独立协议
+	 *   （见 {@link AzureTtsClient}/{@link AzureSttClient}），主 Client 未接线对应路径。</li>
+	 * </ul>
+	 *
+	 * @return Azure 主 Client 实际支持的能力集合
+	 */
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
+			Capability.IMAGE, Capability.MODERATION, Capability.FINETUNE);
+	}
+
+	/**
+	 * 查询微调任务详情：Azure 的任务详情端点为
+	 * {@code /openai/fine_tuning/jobs/{id}?api-version=...}，不能直接复用带查询串的
+	 * {@link #fineTunePath} 后再追加 {@code /{id}}（否则查询串会落到 path 中间）。
+	 *
+	 * @param jobId 微调任务 ID
+	 * @return 微调任务响应
+	 */
+	@Override
+	public FineTuneResponse getFineTune(String jobId) {
+		PostResult result = doGetRaw("/openai/fine_tuning/jobs/" + encodePathSegment(jobId)
+			+ "?api-version=" + this.apiVersion);
+		return parseFineTuneResponse(result.json(), result.rawBody());
 	}
 
 	/** 部署名。 */
@@ -120,19 +181,8 @@ public class AzureClient extends OpenAiCompatClient {
 		return rebuild(config, "https://" + resource + ".openai.azure.com");
 	}
 
-	/** 用新 baseUrl 重建配置（保留其余全部字段与额外头）。 */
+	/** 用新 baseUrl 替换配置（其余全部字段通过 {@link AiConfig#withBaseUrl} 原样保留）。 */
 	private static AiConfig rebuild(AiConfig config, String baseUrl) {
-		AiConfig.Builder b = AiConfig.builder()
-			.apiKey(config.apiKey())
-			.baseUrl(baseUrl)
-			.timeout(config.timeout())
-			.connectTimeout(config.connectTimeout())
-			.proxy(config.proxy())
-			.organization(config.organization())
-			.maxRetries(config.maxRetries());
-		for (Map.Entry<String, String> e : config.extraHeaders().entrySet()) {
-			b.extraHeader(e.getKey(), e.getValue());
-		}
-		return b.build();
+		return config.withBaseUrl(baseUrl);
 	}
 }

@@ -19,12 +19,19 @@ package com.sure.ai.baidu;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
 
 /**
  * 百度千帆（文心 ERNIE）静态入口。
@@ -51,11 +58,13 @@ public final class BaiduUtil {
 	/** 环境变量：baseUrl。 */
 	public static final String ENV_BASE_URL = "SURE_AI_BAIDU_BASE_URL";
 
-	/** 全局单例。 */
-	private static volatile BaiduClient client;
+	/** 主客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<BaiduClient> MAIN =
+		new SingletonHolder<>(BaiduUtil::buildFromEnv);
 
-	/** 初始化锁。 */
-	private static final Object LOCK = new Object();
+	/** 图像生成客户端容器。 */
+	private static final SingletonHolder<BaiduImageClient> IMAGE =
+		new SingletonHolder<>(BaiduUtil::buildImageClientFromEnv);
 
 	/** 工具类禁止实例化。 */
 	private BaiduUtil() {
@@ -69,13 +78,11 @@ public final class BaiduUtil {
 	 * @param secretKey 千帆 Secret Key
 	 */
 	public static void init(String apiKey, String secretKey) {
-		synchronized (LOCK) {
-			AiConfig cfg = AiConfig.builder()
-				.apiKey(apiKey)
-				.extraHeader(BaiduClient.SECRET_KEY_HEADER, secretKey)
-				.build();
-			client = new BaiduClient(cfg);
-		}
+		AiConfig cfg = AiConfig.builder()
+			.apiKey(apiKey)
+			.extraHeader(BaiduClient.SECRET_KEY_HEADER, secretKey)
+			.build();
+		MAIN.set(new BaiduClient(cfg));
 	}
 
 	/**
@@ -84,9 +91,7 @@ public final class BaiduUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new BaiduClient(config);
-		}
+		MAIN.set(new BaiduClient(config));
 	}
 
 	/**
@@ -96,17 +101,7 @@ public final class BaiduUtil {
 	 * @throws AiException 环境变量缺失时抛出
 	 */
 	public static BaiduClient client() {
-		BaiduClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = buildFromEnv();
-					client = c;
-				}
-			}
-		}
-		return c;
+		return MAIN.get();
 	}
 
 	/** 从环境变量构建客户端。 */
@@ -168,5 +163,109 @@ public final class BaiduUtil {
 	 */
 	public static EmbeddingResponse embed(EmbeddingRequest request) {
 		return client().embed(request);
+	}
+
+	/**
+	 * 获取文心一格图像生成单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 图像客户端
+	 * @throws AiException 环境变量缺失时抛出
+	 */
+	public static BaiduImageClient imageClient() {
+		return IMAGE.get();
+	}
+
+	/** 从环境变量构建图像客户端：apiKey + secretKey 放入 extraHeaders。 */
+	private static BaiduImageClient buildImageClientFromEnv() {
+		String key = System.getenv(ENV_API_KEY);
+		String secret = System.getenv(ENV_SECRET_KEY);
+		if (key == null || key.isBlank()) {
+			throw new AiException("env " + ENV_API_KEY + " is not set");
+		}
+		if (secret == null || secret.isBlank()) {
+			throw new AiException("env " + ENV_SECRET_KEY + " is not set");
+		}
+		AiConfig.Builder b = AiConfig.builder()
+			.apiKey(key)
+			.extraHeader(BaiduClient.SECRET_KEY_HEADER, secret);
+		String base = System.getenv(ENV_BASE_URL);
+		if (base != null && !base.isBlank()) {
+			b.baseUrl(base);
+		}
+		return new BaiduImageClient(b.build());
+	}
+
+	/**
+	 * 便捷文生图。
+	 *
+	 * @param model  模型 ID（如 {@link BaiduModels#ERNIE_VILG_V2}）
+	 * @param prompt 提示词
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(String model, String prompt) {
+		return imageClient().generate(model, prompt);
+	}
+
+	/**
+	 * 文生图。
+	 *
+	 * @param request 图像请求
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(ImageRequest request) {
+		return imageClient().generate(request);
+	}
+
+	/**
+	 * 便捷语音合成：模型/文本/音色。
+	 *
+	 * <p>百度短文本语音合成无 model 概念，{@code model} 参数可传入任意占位值；
+	 * {@code voice} 映射到发音人 per（如 {@link BaiduModels#TTS_PER_XIAOMEI}）。</p>
+	 *
+	 * @param model 模型占位（百度忽略）
+	 * @param text  待合成文本
+	 * @param voice 发音人 per
+	 * @return 语音合成响应（二进制音频）
+	 */
+	public static TtsResponse tts(String model, String text, String voice) {
+		return client().synthesize(TtsRequest.of(model, text, voice));
+	}
+
+	/**
+	 * 语音合成。
+	 *
+	 * @param request TTS 请求
+	 * @return 语音合成响应（二进制音频）
+	 */
+	public static TtsResponse tts(TtsRequest request) {
+		return client().synthesize(request);
+	}
+
+	/**
+	 * 便捷语音识别：模型 + 音频数据。
+	 *
+	 * @param model     模型占位（百度忽略）
+	 * @param audioData 音频二进制（pcm/wav/amr/m4a，≤60s，单声道 16kHz）
+	 * @return 语音识别响应（转写文本）
+	 */
+	public static SttResponse stt(String model, byte[] audioData) {
+		return client().transcribe(SttRequest.of(model, audioData));
+	}
+
+	/**
+	 * 语音识别。
+	 *
+	 * @param request STT 请求
+	 * @return 语音识别响应（转写文本）
+	 */
+	public static SttResponse stt(SttRequest request) {
+		return client().transcribe(request);
+	}
+
+	/**
+	 * 重置图像单例客户端（测试清理用）。
+	 */
+	public static void resetImageClient() {
+		IMAGE.reset();
 	}
 }

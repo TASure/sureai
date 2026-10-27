@@ -1,0 +1,357 @@
+/*
+ * Copyright (c) 2026 sureai contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.sure.ai.azure;
+
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+
+import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
+import com.sure.ai.exception.AiApiException;
+import com.sure.ai.exception.AiException;
+import com.sure.ai.exception.AiTimeoutException;
+import com.sure.ai.model.VideoRequest;
+import com.sure.ai.model.VideoResponse;
+
+/**
+ * {@link AzureVideoClient} 测试：本地 HttpServer mock 提交与轮询。
+ *
+ * @author sureai
+ * @since 0.2.0
+ */
+public class AzureVideoClientTest {
+
+	private static final String API_KEY = "azure-video-key";
+	private static final String VIDEO_URL = "https://example.com/sora.mp4";
+
+	private HttpServer server;
+	private String baseUrl;
+	private final AtomicReference<String> submitUri = new AtomicReference<>();
+	private final AtomicReference<String> submitBody = new AtomicReference<>();
+	private final AtomicReference<String> apiKeyHeader = new AtomicReference<>();
+	private final AtomicReference<String> authHeader = new AtomicReference<>();
+	private final AtomicInteger pollHits = new AtomicInteger();
+
+	/** 模式：null=成功，"failed"=任务失败，"pending"=一直运行，"noUrl"=成功但 generations 无 url。 */
+	private String mode;
+
+	/** 启动 mock 服务。 */
+	@Before
+	public void setUp() throws IOException {
+		this.server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		this.server.start();
+		this.baseUrl = "http://127.0.0.1:" + this.server.getAddress().getPort();
+		this.pollHits.set(0);
+		this.mode = null;
+		register();
+	}
+
+	/** 停止服务并恢复轮询参数。 */
+	@After
+	public void tearDown() {
+		this.server.stop(0);
+		AzureVideoClient.POLL_INTERVAL_MS = 2000L;
+		AzureVideoClient.MAX_WAIT_MS = 120000L;
+	}
+
+	/** 注册 mock 路由。 */
+	private void register() {
+		this.server.createContext("/", exchange -> {
+			String method = exchange.getRequestMethod();
+			String path = exchange.getRequestURI().getPath();
+			this.apiKeyHeader.set(exchange.getRequestHeaders().getFirst("api-key"));
+			this.authHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
+			if ("POST".equals(method)) {
+				this.submitUri.set(exchange.getRequestURI().toString());
+				byte[] in = exchange.getRequestBody().readAllBytes();
+				this.submitBody.set(new String(in, StandardCharsets.UTF_8));
+				if ("noTaskId".equals(this.mode)) {
+					respond(exchange, 200, "{\"status\":\"queued\"}");
+					return;
+				}
+				respond(exchange, 200, "{\"id\":\"task_1\",\"status\":\"queued\",\"created_at\":123}");
+				return;
+			}
+			if ("GET".equals(method)) {
+				int hits = this.pollHits.incrementAndGet();
+				if ("failed".equals(this.mode)) {
+					respond(exchange, 200, "{\"id\":\"task_1\",\"status\":\"failed\"}");
+					return;
+				}
+				if ("pending".equals(this.mode) || hits == 1) {
+					respond(exchange, 200, "{\"id\":\"task_1\",\"status\":\"running\"}");
+					return;
+				}
+				if ("noUrl".equals(this.mode)) {
+					respond(exchange, 200,
+						"{\"id\":\"task_1\",\"status\":\"succeeded\",\"generations\":[{\"id\":\"gen_abc\"}]}");
+					return;
+				}
+				if ("noGens".equals(this.mode)) {
+					respond(exchange, 200, "{\"id\":\"task_1\",\"status\":\"succeeded\",\"created_at\":123}");
+					return;
+				}
+				respond(exchange, 200, "{\"id\":\"task_1\",\"status\":\"succeeded\",\"created_at\":123,"
+					+ "\"generations\":[{\"id\":\"gen_1\",\"url\":\"" + VIDEO_URL + "\"}]}");
+				return;
+			}
+			respond(exchange, 404, "{}");
+		});
+	}
+
+	/** 发送 JSON 响应。 */
+	private static void respond(HttpExchange ex, int status, String body) throws IOException {
+		byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+		ex.getResponseHeaders().set("Content-Type", "application/json");
+		ex.sendResponseHeaders(status, bytes.length);
+		try (OutputStream os = ex.getResponseBody()) {
+			os.write(bytes);
+		}
+	}
+
+	/** 构造指向 mock 的客户端。 */
+	private AzureVideoClient newClient() {
+		AiConfig cfg = AiConfig.builder().apiKey(API_KEY).baseUrl(this.baseUrl).build();
+		return new AzureVideoClient(cfg);
+	}
+
+	/** 成功：api-key 头、提交路径、api-version、轮询、firstUrl。 */
+	@Test
+	public void testSuccess() {
+		AzureVideoClient client = newClient();
+		VideoResponse resp = client.generate(VideoRequest.builder()
+			.model(AzureModels.SORA_2).prompt("a cat").size("1280x720")
+			.duration(5).build());
+		assertEquals(VIDEO_URL, resp.firstUrl());
+		assertEquals(123L, resp.created());
+		assertEquals(API_KEY, this.apiKeyHeader.get());
+		assertNull("不应使用 Authorization 头", this.authHeader.get());
+		assertTrue(this.submitUri.get().contains("/openai/v1/video/generations/jobs"));
+		assertTrue(this.submitUri.get().contains("api-version=preview"));
+		String body = this.submitBody.get();
+		assertTrue(body.contains("\"prompt\":\"a cat\""));
+		assertTrue(body.contains("\"model\":\"sora-2\""));
+		assertTrue(body.contains("\"width\":1280"));
+		assertTrue(body.contains("\"height\":720"));
+		assertTrue(body.contains("\"n_seconds\":5"));
+		assertEquals(2, this.pollHits.get());
+		client.close();
+	}
+
+	/** 任务失败：status=failed 抛 AiApiException。 */
+	@Test
+	public void testFailed() {
+		this.mode = "failed";
+		AzureVideoClient client = newClient();
+		assertThrows(AiApiException.class,
+			() -> client.generate(VideoRequest.of(AzureModels.SORA_2, "x")));
+		client.close();
+	}
+
+	/** 超时：始终 running，超过最大等待抛 AiTimeoutException。 */
+	@Test
+	public void testTimeout() {
+		this.mode = "pending";
+		AzureVideoClient.POLL_INTERVAL_MS = 30L;
+		AzureVideoClient.MAX_WAIT_MS = 600L;
+		AzureVideoClient client = newClient();
+		assertThrows(AiTimeoutException.class,
+			() -> client.generate(VideoRequest.of(AzureModels.SORA_2, "slow")));
+		assertTrue("应多次轮询后才超时，实际轮询次数: " + this.pollHits.get(), this.pollHits.get() > 1);
+		client.close();
+	}
+
+	/** generations 无 url：拼接 content/video 下载端点。 */
+	@Test
+	public void testDownloadUrlFallback() {
+		this.mode = "noUrl";
+		AzureVideoClient client = newClient();
+		VideoResponse resp = client.generate(VideoRequest.of(AzureModels.SORA_2, "x"));
+		String url = resp.firstUrl();
+		assertNotNull(url);
+		assertTrue(url.contains("/openai/v1/video/generations/gen_abc/content/video"));
+		assertTrue(url.contains("api-version=preview"));
+		client.close();
+	}
+
+	/** name() 与默认 apiVersion。 */
+	@Test
+	public void testNameAndDefaults() {
+		assertEquals("azure-video", newClient().name());
+		assertEquals("preview", newClient().apiVersion());
+	}
+
+	/** n/duration 缺省回退（n_variants=1、n_seconds=5）。 */
+	@Test
+	public void testDefaultsSize() {
+		AzureVideoClient.POLL_INTERVAL_MS = 10L;
+		AzureVideoClient client = newClient();
+		client.generate(VideoRequest.builder().model(AzureModels.SORA_2).prompt("x").build());
+		assertTrue(this.submitBody.get().contains("\"n_seconds\":5"));
+		assertTrue(this.submitBody.get().contains("\"n_variants\":1"));
+		client.close();
+	}
+
+	/** 提交响应无 task id → 抛 AiException。 */
+	@Test
+	public void testNoTaskId() {
+		this.mode = "noTaskId";
+		AzureVideoClient client = newClient();
+		assertThrows(AiException.class,
+			() -> client.generate(VideoRequest.of(AzureModels.SORA_2, "x")));
+		client.close();
+	}
+
+	/** succeeded 但无 generations 数组 → 空结果列表。 */
+	@Test
+	public void testNoGenerations() {
+		this.mode = "noGens";
+		AzureVideoClient client = newClient();
+		VideoResponse resp = client.generate(VideoRequest.of(AzureModels.SORA_2, "x"));
+		assertTrue(resp.data().isEmpty());
+		client.close();
+	}
+
+	/** baseUrl 以斜杠结尾：downloadUrl 拼接分支。 */
+	@Test
+	public void testBaseUrlTrailingSlash() {
+		this.mode = "noUrl";
+		AzureVideoClient client = new AzureVideoClient(AiConfig.builder().apiKey(API_KEY)
+			.baseUrl(this.baseUrl + "/").build());
+		VideoResponse resp = client.generate(VideoRequest.of(AzureModels.SORA_2, "x"));
+		assertNotNull(resp.firstUrl());
+		assertTrue(resp.firstUrl().contains("/openai/v1/video/generations/gen_abc/content/video"));
+		client.close();
+	}
+
+	/** parseSize：缺省、星号/乘号分隔、非法回退。 */
+	@Test
+	public void testParseSize() throws Exception {
+		assertArrayEquals(new int[] { 1280, 720 }, invokeParseSize(null));
+		assertArrayEquals(new int[] { 1280, 720 }, invokeParseSize("  "));
+		assertArrayEquals(new int[] { 640, 480 }, invokeParseSize("640x480"));
+		assertArrayEquals(new int[] { 640, 480 }, invokeParseSize("640*480"));
+		assertArrayEquals(new int[] { 640, 480 }, invokeParseSize("640×480"));
+		assertArrayEquals(new int[] { 1280, 720 }, invokeParseSize("abc"));
+		assertArrayEquals(new int[] { 1280, 720 }, invokeParseSize("1x2x3"));
+		assertArrayEquals(new int[] { 1280, 720 }, invokeParseSize("abxcd"));
+	}
+
+	/** n 显式设置 → n_variants 透传分支。 */
+	@Test
+	public void testExplicitN() {
+		AzureVideoClient.POLL_INTERVAL_MS = 10L;
+		AzureVideoClient client = newClient();
+		client.generate(VideoRequest.builder().model(AzureModels.SORA_2).prompt("x").n(2).build());
+		assertTrue(this.submitBody.get().contains("\"n_variants\":2"));
+		client.close();
+	}
+
+	/** normalizeBaseUrl：baseUrl 为空且无 resource → 原样返回。 */
+	@Test
+	public void testNormalizeNoResource() {
+		AiConfig cfg = AzureVideoClient.normalizeBaseUrl(
+			AiConfig.builder().apiKey("k").build());
+		assertNull(cfg.baseUrl());
+	}
+
+	/** normalizeBaseUrl：resource 推导 baseUrl。 */
+	@Test
+	public void testNormalizeFromResource() {
+		AiConfig cfg = AzureVideoClient.normalizeBaseUrl(
+			AiConfig.builder().apiKey("k").extraHeader("resource", "myres").build());
+		assertEquals("https://myres.openai.azure.com", cfg.baseUrl());
+	}
+
+	/** 反射调用私有静态 parseSize。 */
+	private static int[] invokeParseSize(String size) throws Exception {
+		java.lang.reflect.Method m = AzureVideoClient.class.getDeclaredMethod("parseSize", String.class);
+		m.setAccessible(true);
+		return (int[]) m.invoke(null, size);
+	}
+
+	/** 线程已中断：sleepQuietly 捕获 InterruptedException 并抛出 AiException。 */
+	@Test
+	public void testSleepQuietlyInterrupted() throws Exception {
+		AzureVideoClient client = newClient();
+		AzureVideoClient.POLL_INTERVAL_MS = 10000L;
+		java.lang.reflect.Method m = AzureVideoClient.class.getDeclaredMethod("sleepQuietly");
+		m.setAccessible(true);
+		Thread.currentThread().interrupt();
+		try {
+			assertThrows(java.lang.reflect.InvocationTargetException.class, () -> m.invoke(client));
+		}
+		finally {
+			Thread.interrupted();
+		}
+		client.close();
+	}
+
+	/** Util 重置方法：注入三个单例后 reset，反射断言 Holder 内部实例均置 null。 */
+	@SuppressWarnings("unchecked")
+	@Test
+	public void testUtilReset() throws Exception {
+		AiConfig cfg = AiConfig.builder().apiKey(API_KEY).baseUrl(this.baseUrl).build();
+		SingletonHolder<AzureVideoClient> video = (SingletonHolder<AzureVideoClient>) holder("VIDEO");
+		SingletonHolder<AzureTtsClient> tts = (SingletonHolder<AzureTtsClient>) holder("TTS");
+		SingletonHolder<AzureSttClient> stt = (SingletonHolder<AzureSttClient>) holder("STT");
+		video.set(new AzureVideoClient(cfg));
+		tts.set(new AzureTtsClient(cfg));
+		stt.set(new AzureSttClient(cfg));
+		assertNotNull(instanceOf(video));
+		assertNotNull(instanceOf(tts));
+		assertNotNull(instanceOf(stt));
+		AzureUtil.resetVideoClient();
+		AzureUtil.resetTtsClient();
+		AzureUtil.resetSttClient();
+		assertNull(instanceOf(video));
+		assertNull(instanceOf(tts));
+		assertNull(instanceOf(stt));
+	}
+
+	/** 反射读取 AzureUtil 指定的 SingletonHolder 容器。 */
+	private static SingletonHolder<?> holder(String name) throws Exception {
+		java.lang.reflect.Field f = AzureUtil.class.getDeclaredField(name);
+		f.setAccessible(true);
+		return (SingletonHolder<?>) f.get(null);
+	}
+
+	/** 反射读取 SingletonHolder 内部的实例字段（用于断言是否已清空）。 */
+	private static Object instanceOf(SingletonHolder<?> holder) throws Exception {
+		java.lang.reflect.Field f = SingletonHolder.class.getDeclaredField("instance");
+		f.setAccessible(true);
+		return f.get(holder);
+	}
+}

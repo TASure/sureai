@@ -19,6 +19,7 @@ package com.sure.ai.moonshot;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
@@ -47,11 +48,9 @@ public final class MoonshotUtil {
 	/** 环境变量：baseUrl。 */
 	public static final String ENV_BASE_URL = "SURE_AI_MOONSHOT_BASE_URL";
 
-	/** 全局单例。 */
-	private static volatile MoonshotClient client;
-
-	/** 初始化锁。 */
-	private static final Object LOCK = new Object();
+	/** 单例客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<MoonshotClient> HOLDER =
+		new SingletonHolder<>(MoonshotUtil::buildFromEnv);
 
 	/** 工具类禁止实例化。 */
 	private MoonshotUtil() {
@@ -64,9 +63,7 @@ public final class MoonshotUtil {
 	 * @param apiKey Moonshot apiKey
 	 */
 	public static void init(String apiKey) {
-		synchronized (LOCK) {
-			client = new MoonshotClient(AiConfig.of(apiKey));
-		}
+		HOLDER.set(new MoonshotClient(AiConfig.of(apiKey)));
 	}
 
 	/**
@@ -75,9 +72,7 @@ public final class MoonshotUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new MoonshotClient(config);
-		}
+		HOLDER.set(new MoonshotClient(config));
 	}
 
 	/**
@@ -87,17 +82,7 @@ public final class MoonshotUtil {
 	 * @throws AiException 环境变量缺失时抛出
 	 */
 	public static MoonshotClient client() {
-		MoonshotClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = buildFromEnv();
-					client = c;
-				}
-			}
-		}
-		return c;
+		return HOLDER.get();
 	}
 
 	/** 从环境变量构建客户端。 */

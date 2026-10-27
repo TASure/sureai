@@ -16,9 +16,10 @@
 
 package com.sure.ai.openai;
 
-import java.util.Map;
+import java.util.Set;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.compat.OpenAiCompatClient;
 
 /**
@@ -45,7 +46,7 @@ public class OpenAiClient extends OpenAiCompatClient {
 	 * @param config 配置
 	 */
 	public OpenAiClient(AiConfig config) {
-		super(applyDefaultBaseUrl(config, DEFAULT_BASE_URL));
+		super(config.withBaseUrlIfAbsent(DEFAULT_BASE_URL));
 	}
 
 	@Override
@@ -54,27 +55,20 @@ public class OpenAiClient extends OpenAiCompatClient {
 	}
 
 	/**
-	 * baseUrl 为空时，用默认地址重建配置（保留其余全部字段与额外头）。
+	 * OpenAI 为 OpenAI 兼容协议的参考平台，基类实现的全部端点在官方 API 上均存在：
+	 * chat/completions、embeddings（text-embedding-3 系列）、images/generations（gpt-image-1/DALL·E）、
+	 * audio/speech（tts-1）、audio/transcriptions（whisper-1）、moderations（text-moderation）、
+	 * fine_tuning/jobs 以及异步视频任务（POST /videos + GET /videos/{id} 轮询）。
 	 *
-	 * @param config       原始配置
-	 * @param defaultBase  默认 baseUrl
-	 * @return 补齐 baseUrl 后的配置
+	 * <p>逐项依据官方 API 参考：<a href="https://platform.openai.com/docs/api-reference">platform.openai.com/docs/api-reference</a>。
+	 * 视频走基类 {@code /videos} 异步任务协议（Sora），本主 Client 直接复用，故声明 VIDEO。</p>
+	 *
+	 * @return 全量兼容能力集合
 	 */
-	static AiConfig applyDefaultBaseUrl(AiConfig config, String defaultBase) {
-		if (config.baseUrl() != null && !config.baseUrl().isBlank()) {
-			return config;
-		}
-		AiConfig.Builder b = AiConfig.builder()
-			.apiKey(config.apiKey())
-			.baseUrl(defaultBase)
-			.timeout(config.timeout())
-			.connectTimeout(config.connectTimeout())
-			.proxy(config.proxy())
-			.organization(config.organization())
-			.maxRetries(config.maxRetries());
-		for (Map.Entry<String, String> e : config.extraHeaders().entrySet()) {
-			b.extraHeader(e.getKey(), e.getValue());
-		}
-		return b.build();
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
+			Capability.IMAGE, Capability.VIDEO, Capability.TTS, Capability.STT,
+			Capability.MODERATION, Capability.FINETUNE);
 	}
 }

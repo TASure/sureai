@@ -19,12 +19,24 @@ package com.sure.ai.zhipu;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
+import com.sure.ai.client.realtime.RealtimeEventListener;
 import com.sure.ai.exception.AiException;
+import com.sure.ai.model.BatchRequest;
+import com.sure.ai.model.BatchResponse;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.VideoRequest;
+import com.sure.ai.model.VideoResponse;
 
 /**
  * 智谱 AI 静态入口。
@@ -47,11 +59,24 @@ public final class ZhipuUtil {
 	/** 环境变量：baseUrl。 */
 	public static final String ENV_BASE_URL = "SURE_AI_ZHIPU_BASE_URL";
 
-	/** 全局单例。 */
-	private static volatile ZhipuClient client;
+	/** 环境变量：视频客户端 baseUrl（主机根，缺省 https://open.bigmodel.cn）。 */
+	public static final String ENV_VIDEO_BASE_URL = "SURE_AI_ZHIPU_VIDEO_BASE_URL";
 
-	/** 初始化锁（避免公开类锁被外部代码争抢）。 */
-	private static final Object LOCK = new Object();
+	/** 主客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<ZhipuClient> HOLDER =
+		new SingletonHolder<>(ZhipuUtil::buildFromEnv);
+
+	/** 视频生成客户端容器（端点与鉴权独立）。 */
+	private static final SingletonHolder<ZhipuVideoClient> VIDEO =
+		new SingletonHolder<>(ZhipuUtil::buildVideoClientFromEnv);
+
+	/** 批处理客户端容器。 */
+	private static final SingletonHolder<ZhipuBatchClient> BATCH =
+		new SingletonHolder<>(() -> new ZhipuBatchClient(buildBatchConfigFromEnv()));
+
+	/** Realtime 客户端容器（构造参数依赖调用参数，用 getOrCreate 懒加载）。 */
+	private static final SingletonHolder<ZhipuRealtimeClient> REALTIME =
+		new SingletonHolder<>(null);
 
 	/** 工具类禁止实例化。 */
 	private ZhipuUtil() {
@@ -64,9 +89,7 @@ public final class ZhipuUtil {
 	 * @param apiKey 智谱 apiKey
 	 */
 	public static void init(String apiKey) {
-		synchronized (LOCK) {
-			client = new ZhipuClient(AiConfig.of(apiKey));
-		}
+		HOLDER.set(new ZhipuClient(AiConfig.of(apiKey)));
 	}
 
 	/**
@@ -75,9 +98,7 @@ public final class ZhipuUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new ZhipuClient(config);
-		}
+		HOLDER.set(new ZhipuClient(config));
 	}
 
 	/**
@@ -87,17 +108,7 @@ public final class ZhipuUtil {
 	 * @throws AiException 环境变量缺失时抛出
 	 */
 	public static ZhipuClient client() {
-		ZhipuClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = buildFromEnv();
-					client = c;
-				}
-			}
-		}
-		return c;
+		return HOLDER.get();
 	}
 
 	/** 从环境变量构建客户端。 */
@@ -153,5 +164,200 @@ public final class ZhipuUtil {
 	 */
 	public static EmbeddingResponse embed(EmbeddingRequest request) {
 		return client().embed(request);
+	}
+
+	/**
+	 * 便捷图像生成：仅模型与提示词。
+	 *
+	 * @param model  模型 ID（如 {@link ZhipuModels#COGVIEW_3}）
+	 * @param prompt 提示词
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(String model, String prompt) {
+		return client().generate(model, prompt);
+	}
+
+	/**
+	 * 图像生成。
+	 *
+	 * @param request 图像请求
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(ImageRequest request) {
+		return client().generate(request);
+	}
+
+	/**
+	 * 获取 CogVideoX 视频生成单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 视频客户端
+	 * @throws AiException 环境变量缺失时抛出
+	 */
+	public static ZhipuVideoClient videoClient() {
+		return VIDEO.get();
+	}
+
+	/** 从环境变量构建视频客户端。 */
+	private static ZhipuVideoClient buildVideoClientFromEnv() {
+		String key = System.getenv(ENV_API_KEY);
+		if (key == null || key.isBlank()) {
+			throw new AiException("env " + ENV_API_KEY + " is not set");
+		}
+		AiConfig.Builder b = AiConfig.builder().apiKey(key);
+		String base = System.getenv(ENV_VIDEO_BASE_URL);
+		if (base != null && !base.isBlank()) {
+			b.baseUrl(base);
+		}
+		return new ZhipuVideoClient(b.build());
+	}
+
+	/**
+	 * 便捷视频生成：仅模型与提示词。
+	 *
+	 * @param model  模型 ID（如 {@link ZhipuModels#COGVIDEOX_3}）
+	 * @param prompt 提示词
+	 * @return 视频响应
+	 */
+	public static VideoResponse video(String model, String prompt) {
+		return videoClient().generate(VideoRequest.of(model, prompt));
+	}
+
+	/**
+	 * 视频生成。
+	 *
+	 * @param request 视频请求
+	 * @return 视频响应
+	 */
+	public static VideoResponse video(VideoRequest request) {
+		return videoClient().generate(request);
+	}
+
+	/**
+	 * 重置视频单例客户端（测试清理用）。
+	 */
+	public static void resetVideoClient() {
+		VIDEO.reset();
+	}
+
+	/**
+	 * 便捷语音合成：模型/文本/音色，委托主客户端（OpenAI 兼容协议）。
+	 *
+	 * @param model 模型 ID（如 {@link ZhipuModels#GLM_TTS}）
+	 * @param text  待合成文本
+	 * @param voice 音色 ID
+	 * @return 语音响应
+	 */
+	public static TtsResponse tts(String model, String text, String voice) {
+		return client().synthesize(model, text, voice);
+	}
+
+	/**
+	 * 语音合成，委托主客户端。
+	 *
+	 * @param request TTS 请求
+	 * @return 语音响应
+	 */
+	public static TtsResponse tts(TtsRequest request) {
+		return client().synthesize(request);
+	}
+
+	/**
+	 * 便捷语音识别：模型 + 音频数据，委托主客户端（multipart 上传）。
+	 *
+	 * @param model     模型 ID（如 {@link ZhipuModels#GLM_ASR_2512}）
+	 * @param audioData 音频二进制
+	 * @return 识别响应
+	 */
+	public static SttResponse stt(String model, byte[] audioData) {
+		return client().transcribe(model, audioData);
+	}
+
+	/**
+	 * 语音识别，委托主客户端。
+	 *
+	 * @param request STT 请求
+	 * @return 识别响应
+	 */
+	public static SttResponse stt(SttRequest request) {
+		return client().transcribe(request);
+	}
+
+	// ==================== 批处理（Batches） ====================
+
+	/**
+	 * 获取批处理单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 批处理客户端
+	 * @throws AiException 环境变量缺失时抛出
+	 */
+	public static ZhipuBatchClient batchClient() {
+		return BATCH.get();
+	}
+
+	/** 从环境变量构建批处理客户端配置。 */
+	private static AiConfig buildBatchConfigFromEnv() {
+		String key = System.getenv(ENV_API_KEY);
+		if (key == null || key.isBlank()) {
+			throw new AiException("env " + ENV_API_KEY + " is not set");
+		}
+		AiConfig.Builder b = AiConfig.builder().apiKey(key);
+		String base = System.getenv(ENV_BASE_URL);
+		if (base != null && !base.isBlank()) {
+			b.baseUrl(base);
+		}
+		return b.build();
+	}
+
+	/**
+	 * 提交批处理任务。
+	 *
+	 * @param request 批处理请求（须先上传 JSONL 取得 input_file_id）
+	 * @return 初始任务响应
+	 */
+	public static BatchResponse batch(BatchRequest request) {
+		return batchClient().createBatch(request);
+	}
+
+	/**
+	 * 查询批处理任务状态。
+	 *
+	 * @param batchId 任务 ID
+	 * @return 最新任务响应
+	 */
+	public static BatchResponse getBatch(String batchId) {
+		return batchClient().getBatch(batchId);
+	}
+
+	/**
+	 * 重置批处理单例客户端（测试清理用）。
+	 */
+	public static void resetBatchClient() {
+		BATCH.reset();
+	}
+
+	// ==================== Realtime（GLM 全双工语音对话） ====================
+
+	/**
+	 * 获取 Realtime 单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * <p>Realtime 需要事件监听器，不提供静态便捷方法；单例首次以
+	 * {@code (model, listener)} 构造，之后重复调用返回同一实例。</p>
+	 *
+	 * @param model        实时模型 ID
+	 * @param eventListener 事件监听器
+	 * @return Realtime 客户端
+	 * @throws AiException 环境变量缺失时抛出
+	 */
+	public static ZhipuRealtimeClient realtimeClient(String model,
+			RealtimeEventListener eventListener) {
+		return REALTIME.getOrCreate(() ->
+			new ZhipuRealtimeClient(buildBatchConfigFromEnv(), model, eventListener));
+	}
+
+	/**
+	 * 重置 Realtime 单例客户端（测试清理用）。
+	 */
+	public static void resetRealtimeClient() {
+		REALTIME.reset();
 	}
 }

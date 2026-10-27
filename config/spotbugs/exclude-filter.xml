@@ -60,4 +60,364 @@
         <Bug pattern="SWL_SLEEP_WITH_LOCK_HELD"/>
     </Match>
 
+    <!-- Builder 模式暂存外部组件引用（EI_EXPOSE_REP2）：
+         RagPipeline.Builder 为一次性装配器，vectorStore/splitter/retriever
+         本就是调用方提供的共享组件（VectorStore 等为有状态服务），
+         语义即按引用共享，与 ChatRequest.Builder 同类惯例。 -->
+    <Match>
+        <Class name="~com.sure.ai.rag.pipeline.RagPipeline\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- STT 段级记录暴露不可变词级列表（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         Segment 为不可变 record，规范构造器已 List.copyOf 防御性拷贝，
+         words() 返回不可变 List 供消费者只读访问，与 ChatStreamChunk 同类惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.model.Segment"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Builder 模式暂存外部字节数组引用（EI_EXPOSE_REP2）：
+         SttRequest.Builder.audioData 已在 setter 中 clone 防御性拷贝，
+         产物不可变；Builder 本身是一次性可变装配器，与 ChatRequest.Builder 同类惯例。 -->
+    <Match>
+        <Class name="~com.sure.ai.model.SttRequest\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Builder 模式暂存外部候选文档列表引用（EI_EXPOSE_REP2）：
+         RerankRequest.Builder.documents 仅在 build() 时 List.copyOf 防御性拷贝，
+         产物不可变；Builder 本身是一次性可变装配器，与 ChatRequest.Builder 同类惯例。 -->
+    <Match>
+        <Class name="~com.sure.ai.model.RerankRequest\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Builder 模式暂存外部对话请求列表引用（EI_EXPOSE_REP2）：
+         BatchRequest.Builder.requests 仅在 build() 时 List.copyOf 防御性拷贝，
+         产物不可变；Builder 本身是一次性可变装配器，与 ChatRequest.Builder 同类惯例。 -->
+    <Match>
+        <Class name="~com.sure.ai.model.BatchRequest\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Builder 模式暂存外部向量存储/向量化组件引用（EI_EXPOSE_REP2）：
+         VectorRetriever.Builder 为一次性装配器，store/embeddingProvider 本就是调用方
+         提供的共享有状态组件，语义即按引用共享，与 RagPipeline.Builder 同类惯例。 -->
+    <Match>
+        <Class name="~com.sure.ai.rag.retriever.VectorRetriever\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Realtime 客户端单例字段未被 SpotBugs 识别（UUF_UNUSED_FIELD）：
+         QwenUtil.realtimeClient 为 volatile 字段，采用双检锁（double-checked locking）
+         懒加载并在 resetRealtimeClient() 中置空；SpotBugs 对该并发惯用法存在已知误报，
+         字段实际既被读（本地缓存命中）也被写（初始化与重置）。 -->
+    <Match>
+        <Class name="com.sure.ai.qwen.QwenUtil"/>
+        <Bug pattern="UUF_UNUSED_FIELD"/>
+    </Match>
+
+    <!-- AgentUtil 全局注册中心单例字段未被 SpotBugs 识别（UUF_UNUSED_FIELD）：
+         AgentUtil.globalRegistry 为 volatile 字段，采用双检锁懒加载，
+         并在 resetRegistry() 中重新赋值；与 QwenUtil.realtimeClient 同类并发惯用法，
+         SpotBugs 对该模式存在已知误报，字段实际既被读（registry() 命中）也被写。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.AgentUtil"/>
+        <Bug pattern="UUF_UNUSED_FIELD"/>
+    </Match>
+
+    <!-- PlanExecuteAgent 骨架类构造参数字段暂未使用（UUF_UNUSED_FIELD）：
+         该类为 Plan-and-Execute 编排器的占位骨架，构造器签名已与 ReActAgent 对齐
+         以便后续无缝替换；run() 当前抛 UnsupportedOperationException，
+         保存的 client/baseRequest/registry/listener/maxIterations/timeout 字段是
+         为下一阶段完整实现预留的入参，并非死代码，故排除而非删除。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.plan.PlanExecuteAgent"/>
+        <Bug pattern="UUF_UNUSED_FIELD"/>
+    </Match>
+
+    <!-- AgentUtil.registry() 返回全局可变注册中心（MS_EXPOSE_REP）：
+         全局 ToolRegistry 设计上就是供调用方 register/unregister 的可变共享单例，
+         与 QwenUtil.realtimeClient 同类语义；返回可变引用是 API 本意（便捷入口），
+         复杂场景建议直接 new ToolRegistry()，见类 JavaDoc。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.AgentUtil"/>
+        <Bug pattern="MS_EXPOSE_REP"/>
+    </Match>
+
+    <!-- 编排器持有外部共享 ToolRegistry 引用（EI_EXPOSE_REP2）：
+         ReActAgent / PlanExecuteAgent 的 registry 本就是调用方传入的有状态共享组件，
+         语义即按引用共享（调用方在编排期仍可动态注册/注销工具，编排器每轮实时读取
+         getToolSpecs/getHandler），与 RagPipeline.Builder 暂存共享组件同类惯例。
+         conversationMemory() 同样返回调用方注入的共享记忆组件，按引用暴露是 API 本意。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.react.ReActAgent"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.sure.ai.agent.plan.PlanExecuteAgent"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 不可变快照记录暴露集合/数组引用（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         AiMetrics.Snapshot 由 snapshot() 构造时已对 statusCodeCounts 做 Map.copyOf、
+         对 durationHistogram 做新数组拷贝，运行时不可变；SpotBugs 无法识别 record
+         构造期的防御性拷贝，与 ChatStreamChunk/PostResult 同类只读视图惯例。 -->
+    <Match>
+        <Class name="~com.sure.ai.client.observability.AiMetrics\$Snapshot"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Micrometer 适配器持有外部 MeterRegistry 引用（EI_EXPOSE_REP2）：
+         MeterRegistry 是调用方注入的共享注册表（如 SimpleMeterRegistry / Prometheus 实例），
+         本适配器只向其写入指标、不持有所有权，与 RagPipeline.Builder 暂存共享组件同类惯例；
+         调用方负责 Registry 的生命周期与跨指标共享。 -->
+    <Match>
+        <Class name="com.sure.ai.micrometer.MicrometerMetricsAdapter"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- AiConfig 暴露调用方注入的 CacheStore SPI 引用（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         CacheStore 是调用方提供的共享有状态组件（内置 LruCacheStore 或外部 Redis 实现），
+         客户端按引用持有、不拥有其生命周期，与 metricsCollector / RagPipeline.Builder 暂存
+         共享组件同类惯例；调用方负责 store 的跨客户端共享与关闭。 -->
+    <Match>
+        <Class name="com.sure.ai.client.AiConfig"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="~com.sure.ai.client.AiConfig\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- MCP 消息记录暴露可变 JsonObject（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         McpRequest.params / McpNotification.params 持有自研可变 JsonObject，
+         与 JsonObject/JsonArray 同类设计——JSON-RPC 帧构造期即按引用读写参数树，
+         调用方直接在传入的 JsonObject 上填参数，是零依赖 JSON 模型的惯例用法。 -->
+    <Match>
+        <Class name="com.sure.ai.mcp.message.McpRequest"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.sure.ai.mcp.message.McpNotification"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 行帧传输构造期启动后台读线程（SC_START_IN_CTOR）：
+         LineFrameMcpTransport 是抽象基类，子类（StdioMcpTransport）在 super() 中
+         拿到子进程 stdout 后必须立即开始消费，否则子进程写满 stdout 管道会阻塞；
+         读线程为 daemon、异常即关闭传输，生命周期与传输对象严格绑定，设计意图明确。 -->
+    <Match>
+        <Class name="com.sure.ai.mcp.transport.LineFrameMcpTransport"/>
+        <Bug pattern="SC_START_IN_CTOR"/>
+    </Match>
+
+    <!-- MCP Server 工具描述暴露/暂存可变 JsonObject（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         McpServerTool.inputSchema/_meta 与 Builder 暂存对象均为自研零依赖 JsonObject，
+         与 McpRequest.params 同类——由调用方在传入前填好，server 只读广播，按引用是
+         零依赖 JSON 模型的惯例用法。 -->
+    <Match>
+        <Class name="com.sure.ai.mcp.server.McpServerTool"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.sure.ai.mcp.server.McpServerTool$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- Skills over MCP 技能描述持有 frontmatter（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         McpSkillInfo.frontmatter 为自研零依赖 JsonObject，由技能来源装配、server 只读广播，
+         与 McpServerTool.inputSchema 同类惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.mcp.server.skill.McpSkillInfo"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- MCP Server 入参记录暴露集合引用（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         ChatToolRequest / EmbedToolRequest 仅用于 JsonSchemaGenerator 反射推导 JSON Schema，
+         运行期从不被实例化或共享可变状态；记录组件按引用持有是 schema 描述对象的惯例，
+         与 ChatStreamChunk/Segment 同类只读视图设计。 -->
+    <Match>
+        <Class name="com.sure.ai.mcp.server.tool.ChatToolRequest"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.sure.ai.mcp.server.tool.EmbedToolRequest"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- CostSummary 不可变快照记录暴露 Map 引用（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         紧凑构造器已对 tokensByModel/costByModel 做 Map.copyOf 防御性拷贝，
+         运行时不可变；SpotBugs 无法识别 record 构造期的防御性拷贝，
+         与 ChatStreamChunk/Segment/AiMetrics.Snapshot 同类只读视图惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.cost.CostSummary"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- GatewayClient 持有外部共享 ClientRegistry 引用（EI_EXPOSE_REP2）：
+         ClientRegistry 是调用方构造网关后仍可动态 register/remove/markUnhealthy 的
+         有状态共享组件，网关每次调用实时读取其健康候选快照，语义即按引用共享，
+         与 ReActAgent/RagPipeline.Builder 暂存共享组件同类惯例；调用方负责注册表生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.gateway.GatewayClient"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- BudgetEnforcer 持有外部共享 TenantManager/CostAggregator 引用（EI_EXPOSE_REP2）：
+         TenantManager 是调用方构造后仍维护租户配额状态的有状态共享组件，BudgetEnforcer
+         每次记账实时读写其租户状态，语义即按引用共享，与 GatewayClient/ReActAgent 暂存
+         共享组件同类惯例；调用方负责这两个组件的生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.gateway.BudgetEnforcer"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- SureAiProxy 持有外部共享 ClientRegistry 引用（EI_EXPOSE_REP2）：
+         registry 为调用方传入的有状态注册表，代理在 /v1/embeddings 路由时实时按 EMBED
+         能力查找 EmbeddingClient，语义即按引用共享，与 GatewayClient 暂存 ClientRegistry
+         同类惯例；调用方负责注册表的注册与生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.proxy.SureAiProxy"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 检查点/事件记录暴露自研可变 JsonObject（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         AgentCheckpoint.metadata 与 ToolCalledEvent.arguments 持有自研零依赖 JsonObject，
+         与 McpRequest.params/McpServerTool.inputSchema 同类——JsonObject 设计上即允许调用方
+         读写扩展字段，按引用暴露是零依赖 JSON 模型惯例；Builder 暂存引用为一次性装配器惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.checkpoint.AgentCheckpoint"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="~com.sure.ai.agent.checkpoint.AgentCheckpoint\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="com.sure.ai.agent.event.ToolCalledEvent"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 审批请求记录暴露自研可变 JsonObject（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         ApprovalRequest.arguments 持有模型解析后的工具参数 JsonObject，
+         与 AgentCheckpoint.metadata / ToolCalledEvent.arguments 同类——JsonObject 设计上即
+         按引用读写，策略与处理器只读读取参数树，是零依赖 JSON 模型惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.approval.ApprovalRequest"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 长期记忆门面暴露底层存储 SPI 引用（EI_EXPOSE_REP）：
+         LongTermMemory.store() 返回调用方注入的共享 MemoryStore（内置内存实现或外部
+         向量库适配），store/extractor/embedder/summarizer 本就是按引用共享的可插拔组件，
+         与 AiConfig.CacheStore / ReActAgent.registry 同类语义；调用方负责存储生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.memory.longterm.LongTermMemory"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+
+    <!-- RAG 高级检索策略 Builder 暂存共享有状态组件（EI_EXPOSE_REP2）：
+         HydeRetriever/MultiQueryRetriever/CorrectiveRetriever/ParentChildRetriever/
+         MultimodalIngestor/MultimodalRetriever 的 Builder 均为一次性装配器，其 store/
+         embeddingProvider/ingestor/parentIndex 本就是调用方提供的共享有状态组件
+         （VectorStore/EmbeddingProvider 等为服务式 SPI），语义即按引用共享，
+         与 VectorRetriever.Builder / RagPipeline.Builder 同类惯例。 -->
+    <Match>
+        <Class name="~com\.sure\.ai\.rag\.strategy\.(HydeRetriever|MultiQueryRetriever|CorrectiveRetriever|ParentChildRetriever|MultimodalIngestor|MultimodalRetriever)\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- GraphRAG 管线暴露/暂存共享可变知识图谱（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         GraphRagIndexer.graph() 返回内部构建的 KnowledgeGraph，供调用方与
+         GraphRagRetriever 共享同一份图；Builder.graph(KnowledgeGraph) 为一次性装配器，
+         复用调用方既有图谱是有意设计（图谱本就是有状态服务式组件），与
+         RagPipeline.Builder / strategy 各 Retriever.Builder 同类按引用共享惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.rag.graph.GraphRagIndexer"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="~com.sure.ai.rag.graph.GraphRagIndexer\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- CLI 持有调用方注入的输出流（EI_EXPOSE_REP2）：
+         CliRunner.out 是为测试捕获 stdout 而注入的 PrintStream，设计上即写入调用方提供的
+         输出目标（生产为 System.out，测试为 ByteArrayOutputStream），按引用是可测性设计本意，
+         与 GatewayClient 暂存共享组件同类惯例；包装一层流并不能保护底层目标，无防御意义。 -->
+    <Match>
+        <Class name="com.sure.ai.cli.CliRunner"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 声明式编排层 Builder 暂存共享组件引用（EI_EXPOSE_REP2）：
+         FrameworkUtil.Builder 为一次性装配器，client/memory 本就是调用方提供的组件
+         （AiClient 为平台客户端、ChatMemory 为有状态会话记忆），语义即按引用共享，
+         与 RagPipeline.Builder / ChatRequest.Builder 同类惯例；调用方负责其生命周期。 -->
+    <Match>
+        <Class name="~com.sure.ai.framework.FrameworkUtil\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- 语义缓存 Builder 暂存共享组件引用（EI_EXPOSE_REP2）：
+         SemanticCache.Builder 为一次性装配器，embedder/store 本就是调用方提供的可插拔组件
+         （EmbeddingClient 为平台向量客户端、CacheStore 为有状态缓存后端，缺省 LruCacheStore、
+         外部可传 RedisCacheStore），语义即按引用共享，与 FrameworkUtil.Builder /
+         RagPipeline.Builder 同类惯例；调用方负责其生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.framework.cache.Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- AdvisorContext 暴露可变消息列表（EI_EXPOSE_REP）：
+         messages() 设计上即供链上 advisor（工具循环回填 tool 结果、校验 advisor 追加修正指令）
+         就地读写同一份对话历史，终端再据此重建请求；返回不可变视图会让工具循环无法工作，
+         与 ChatMemory.history() 返回可变列表同类编排惯例。上下文每次调用新建、不跨线程共享。 -->
+    <Match>
+        <Class name="com.sure.ai.framework.advisor.AdvisorContext"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+
+    <!-- SemanticCacheAdvisor 持有调用方注入的共享 SemanticCache（EI_EXPOSE_REP2）：
+         缓存是调用方构建（embedder/threshold/store 均由其配置）并可能跨代理共享的有状态组件，
+         advisor 仅 get/put，不拥有其生命周期，与 ReActAgent.registry / AiConfig.CacheStore
+         同类按引用共享惯例；调用方负责缓存后端与 TTL。 -->
+    <Match>
+        <Class name="com.sure.ai.framework.advisor.SemanticCacheAdvisor"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- GatewayUtil 暴露/暂存共享有状态组件（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         registry() 返回的 ClientRegistry 设计上即供调用方 register/remove 的可变共享注册表
+         （静态入口的注册便捷性是 API 本意），Builder 为一次性装配器，暂存 registry /
+         tenantManager 等调用方组件是按引用共享惯例，与 GatewayClient / FrameworkUtil.Builder
+         同类；调用方负责这些组件的生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.gateway.GatewayUtil"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="~com.sure.ai.gateway.GatewayUtil\$Builder"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- EvalOutcome 执行结果记录持有异常引用（EI_EXPOSE_REP / EI_EXPOSE_REP2）：
+         error() 返回的 Throwable 是调用方/被测客户端现场抛出的原始异常，评估层需要读取其
+         类型、堆栈与 cause 链做失败归因与报告展示；复制 Throwable 会丢失堆栈因果链，
+         且异常对象本就只读消费，与 McpRequest.params 同类只读视图惯例。 -->
+    <Match>
+        <Class name="com.sure.ai.evals.metric.EvalOutcome"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- ToolCatalog 持有调用方注入的委托 ToolRegistry（EI_EXPOSE_REP2）：
+         delegate 是可选镜像目标，调用方构造后仍可独立 register/unregister，
+         市场注册成功后按引用同步写入，语义即按引用共享，与 ReActAgent.registry /
+         GatewayClient.registry 同类惯例；调用方负责注册中心生命周期。 -->
+    <Match>
+        <Class name="com.sure.ai.agent.tool.catalog.ToolCatalog"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
 </FindBugsFilter>

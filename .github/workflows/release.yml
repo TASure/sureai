@@ -1,0 +1,148 @@
+# 发布到 Maven Central（OSSRH 暂存）。
+#
+# 触发方式：
+#   1. 打 tag 推送：git tag v1.4.0 && git push origin v1.4.0（push tags: v*）
+#   2. 在 Actions 页面手动触发（workflow_dispatch）
+#
+# 前置：需在 GitHub 仓库 Settings → Secrets and variables → Actions 配置以下 Repository secrets：
+#   OSSRH_USERNAME   Sonatype 账号用户名（https://central.sonatype.com/）
+#   OSSRH_PASSWORD   Sonatype 账号密码 / token
+#   GPG_PRIVATE_KEY  GPG 私钥（`gpg --armor --export-secret-keys <KEYID>` 输出全文，
+#                    含 -----BEGIN PGP PRIVATE KEY BLOCK----- 头尾）
+#   GPG_PASSPHRASE   GPG 私钥口令
+#
+# 说明：release profile（见 pom.xml / docs/RELEASING.md）会附加源码、JavaDoc 并 GPG 签名，
+# 上传到 OSSRH 暂存仓库（nexus-staging autoReleaseAfterClose=false），需在 Sonatype 控制台手动 Close + Release。
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  # SLSA build provenance attestation（GitHub 原生 / Sigstore keyless）所需：
+  #   id-token: write      向 GitHub OIDC provider 换取短期 Sigstore 签名证书
+  #   attestations: write   把签名后的 in-toto attestation 上传到本仓库 attestations API
+  # （attest 步骤本身不需要 contents: write，但下面 Attach SBOM to Release 需要，故保留。）
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+          # 仅导入 GPG 私钥；server 凭证不交给 setup-java（其写入的 ${env.X} 占位符
+          # 在 Maven 3.9 不再插值，会导致 nexus-staging "Cannot decipher credentials"），
+          # 由下方 Write settings.xml 步骤显式写入明文
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+
+      - name: Validate release secrets
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$OSSRH_USERNAME" ] || [ -z "$OSSRH_PASSWORD" ] || [ -z "$GPG_PRIVATE_KEY" ] || [ -z "$GPG_PASSPHRASE" ]; then
+            echo "::error::Release secrets not configured. Set OSSRH_USERNAME / OSSRH_PASSWORD / GPG_PRIVATE_KEY / GPG_PASSPHRASE in repo Settings → Secrets and variables → Actions (see docs/RELEASING.md)."
+            exit 1
+          fi
+
+      - name: Write plaintext settings.xml
+        # 明文写入 ossrh server（heredoc 由 shell 展开 env），与本地发布环境等价；
+        # Maven 3.9 不插值 settings.xml 的 ${env.X}，占位符会导致 nexus-staging 解密报错
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          cat > /home/runner/.m2/settings.xml <<'SETTINGS_EOF'
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <servers>
+              <server>
+                <id>ossrh</id>
+                <username>${OSSRH_USERNAME}</username>
+                <password>${OSSRH_PASSWORD}</password>
+              </server>
+            </servers>
+          </settings>
+          SETTINGS_EOF
+          python3 - <<'PYEOF'
+          import os
+          p = '/home/runner/.m2/settings.xml'
+          s = open(p, encoding='utf-8').read()
+          s = s.replace('${OSSRH_USERNAME}', os.environ['OSSRH_USERNAME'])
+          s = s.replace('${OSSRH_PASSWORD}', os.environ['OSSRH_PASSWORD'])
+          open(p, 'w', encoding='utf-8').write(s)
+          print('settings.xml written (server ossrh:', s.count('<id>ossrh</id>'), 'found)')
+          PYEOF
+
+      - name: Validate release version (not SNAPSHOT)
+        # 发布流只跑在 release 版本上；SNAPSHOT 版本走 nexus-staging 会被 snapshots 仓库 400 拒收
+        run: |
+          VERSION=$(grep -m1 '<version>' pom.xml | sed 's/.*<version>\(.*\)<\/version>.*/\1/')
+          case "$VERSION" in
+            *-SNAPSHOT)
+              echo "::error::Current version is $VERSION (SNAPSHOT). Release workflow must run on a release tag, e.g. git tag v1.7.0 && git push origin v1.7.0"
+              exit 1 ;;
+          esac
+          echo "Releasing version: $VERSION"
+
+      - name: Build and deploy to OSSRH
+        env:
+          MAVEN_OPTS: -Xmx1024m
+          # keyname 默认用项目 GPG 密钥；如需其他密钥可用 GPG_KEY_ID secret 覆盖
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        # -Dgpg.passphrase 经 env 透传；keyname 为空会导致 gpg "Invalid user ID" 签名失败，故显式给默认值
+        run: |
+          KEYNAME="${GPG_KEY_ID:-D4CB857FBF6D720F38F26062350F235EAF989176}"
+          mvn -B -Prelease clean deploy -Dgpg.keyname="$KEYNAME" -Dgpg.passphrase="${{ secrets.GPG_PASSPHRASE }}"
+
+      - name: Generate SBOM (CycloneDX)
+        # 重新触发 sure-ai-all 的 package 阶段以产出聚合 BOM（上游模块已由上一步 deploy 装入本地 .m2，
+        # 无需 -am）。产物：sure-ai-all/target/bom.xml + bom.json。
+        run: |
+          mvn -B -pl sure-ai-all package -DskipTests -Dgpg.skip=true
+          ls -la sure-ai-all/target/bom.xml sure-ai-all/target/bom.json
+
+      - name: Attest build provenance (SLSA v1.0)
+        # 信任链第三层：对本轮构建产物生成 GitHub 原生、Sigstore 签名的 SLSA Build Provenance attestation。
+        #   - subject = 聚合 SBOM（sure-ai-all/target/bom.json + bom.xml）+ 全部模块 jar
+        #     （sure-ai-*/target/*.jar；jar 产物分散在各平台模块 target，聚合点 sure-ai-all 为 pom 包，不出 jar）。
+        #   - action 用 OIDC 换短期 Sigstore 证书，对 in-toto/v1 provenance statement 做 DSSE 签名，
+        #     并上传到本仓库 attestations API；消费方用 `gh attestation verify` 在线校验（见 docs/RELEASING.md）。
+        #   - subject-path 官方支持 glob / 路径列表（总数 ≤ 1024）；本仓库 ~40 模块 × (主/sources/javadoc) jar 远低于上限。
+        # 前置：permissions 已含 id-token: write + attestations: write（见文件头 permissions 块）。
+        # 产物可用性：上方 `clean deploy` 已把各模块 jar 落盘到各自 target，本步骤不做 clean，jar 仍在；
+        # Generate SBOM 已落盘 bom.json/bom.xml。
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            sure-ai-all/target/bom.json
+            sure-ai-all/target/bom.xml
+            sure-ai-*/target/*.jar
+
+      - name: Attach SBOM to GitHub Release
+        # 将 CycloneDX SBOM 附加到当前 tag 的 Release（JSON 为主，XML 为辅）。
+        # softprops/action-gh-release 按 github.ref（触发本 workflow 的 v* tag）创建/更新 Release。
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sure-ai-all/target/bom.json
+            sure-ai-all/target/bom.xml
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -25,9 +25,11 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.After;
@@ -37,11 +39,18 @@ import org.junit.Test;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiAuthException;
+import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
+import com.sure.ai.model.FineTuneRequest;
+import com.sure.ai.model.ModerationRequest;
+import com.sure.ai.model.VideoRequest;
 
 /**
  * {@link DoubaoClient} 与 {@link DoubaoUtil} 测试：本地 HttpServer mock。
@@ -78,11 +87,17 @@ public class DoubaoClientTest {
 	}
 
 	/** 反射设置 Util 单例。 */
+	@SuppressWarnings("unchecked")
 	private static void setSingleton(DoubaoClient c) {
 		try {
-			Field f = DoubaoUtil.class.getDeclaredField("client");
+			Field f = DoubaoUtil.class.getDeclaredField("HOLDER");
 			f.setAccessible(true);
-			f.set(null, c);
+			SingletonHolder<DoubaoClient> holder = (SingletonHolder<DoubaoClient>) f.get(null);
+			if (c == null) {
+				holder.reset();
+			} else {
+				holder.set(c);
+			}
 		} catch (ReflectiveOperationException ex) {
 			throw new IllegalStateException(ex);
 		}
@@ -241,5 +256,51 @@ public class DoubaoClientTest {
 	public void testUtilInitByKey() {
 		DoubaoUtil.init("ark-key");
 		assertNotNull(DoubaoUtil.client());
+	}
+
+	/** 方舟模型列表需 IAMS 签名：listModels() 应直接抛 AiException，不发网络请求。 */
+	@Test
+	public void testListModelsThrows() {
+		DoubaoClient client = newClient();
+		com.sure.ai.exception.AiException e = assertThrows(com.sure.ai.exception.AiException.class,
+			client::listModels);
+		assertTrue(e.getMessage().contains("IAMS"));
+		assertTrue(this.lastPath.get() == null);
+		client.close();
+	}
+
+	/**
+	 * capabilities() 精确声明（1.9.0 批次 1b）：方舟主 Client 支持 chat/stream/embed/image(Seedream)；
+	 * 不声明 MODERATION（兼容面无 /moderations，内容安全为接入点护栏 moderation_hit_type）、
+	 * VIDEO（见 {@link DoubaoVideoClient}）与 FINETUNE（未适配），调用应 guard 快速失败。
+	 */
+	@Test
+	public void testCapabilitiesDeclaration() throws Exception {
+		DoubaoClient client = newClient();
+		Set<Capability> caps = capabilitiesOf(client);
+		for (Capability c : new Capability[]{Capability.CHAT, Capability.CHAT_STREAM,
+			Capability.EMBED, Capability.IMAGE}) {
+			assertTrue("应声明能力 " + c, caps.contains(c));
+		}
+		assertFalse("方舟主 Client 不声明 MODERATION（无兼容 /moderations 端点）",
+			caps.contains(Capability.MODERATION));
+		assertFalse("方舟主 Client 不声明 VIDEO（见 DoubaoVideoClient）", caps.contains(Capability.VIDEO));
+		assertFalse("方舟主 Client 不声明 FINETUNE（未适配）", caps.contains(Capability.FINETUNE));
+		assertEquals(4, caps.size());
+		// 未声明能力 → guard 在发请求前抛 AiException
+		assertThrows(AiException.class, () -> client.generate(VideoRequest.builder()
+			.model("doubao-seedance").prompt("x").build()));
+		assertThrows(AiException.class, () -> client.createFineTune(
+			FineTuneRequest.builder().model("doubao-pro").trainingFileId("f-1").build()));
+		assertThrows(AiException.class, () -> client.moderate(ModerationRequest.of("x")));
+		client.close();
+	}
+
+	/** 反射调用 protected capabilities()。 */
+	@SuppressWarnings("unchecked")
+	private static Set<Capability> capabilitiesOf(Object client) throws Exception {
+		Method m = AbstractAiClient.class.getDeclaredMethod("capabilities");
+		m.setAccessible(true);
+		return (Set<Capability>) m.invoke(client);
 	}
 }

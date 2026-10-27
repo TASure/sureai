@@ -21,37 +21,55 @@ import java.util.List;
 /**
  * 对话响应。
  *
- * @param id     响应 ID
- * @param model  模型名
- * @param choices 候选列表
- * @param usage   用量
- * @param rawJson 原始响应 JSON
+ * @param id              响应 ID
+ * @param model           模型名
+ * @param choices         候选列表
+ * @param usage           用量
+ * @param groundingSources 联网来源，可能为空
+ * @param rawJson         原始响应 JSON
  * @author sureai
  * @since 0.1.0
  */
 public record ChatResponse(String id, String model, List<Choice> choices,
-		TokenUsage usage, String rawJson) {
+		TokenUsage usage, List<GroundingSource> groundingSources, String rawJson) {
 
 	/**
 	 * 全参构造器（防御性拷贝）。
 	 */
 	public ChatResponse {
 		choices = choices == null ? List.of() : List.copyOf(choices);
+		groundingSources = groundingSources == null ? List.of() : List.copyOf(groundingSources);
 	}
 
 	/**
-	 * 静态工厂。
+	 * 静态工厂（不含联网来源）。
 	 *
 	 * @param id     响应 ID
 	 * @param model  模型名
 	 * @param choices 候选列表
-	 * @param usage   用量
+	 * @param usage  用量
 	 * @param rawJson 原始 JSON
 	 * @return 响应
 	 */
 	public static ChatResponse of(String id, String model, List<Choice> choices,
 			TokenUsage usage, String rawJson) {
-		return new ChatResponse(id, model, choices, usage, rawJson);
+		return new ChatResponse(id, model, choices, usage, List.of(), rawJson);
+	}
+
+	/**
+	 * 静态工厂（含联网来源）。
+	 *
+	 * @param id              响应 ID
+	 * @param model           模型名
+	 * @param choices         候选列表
+	 * @param usage           用量
+	 * @param groundingSources 联网来源
+	 * @param rawJson         原始 JSON
+	 * @return 响应
+	 */
+	public static ChatResponse of(String id, String model, List<Choice> choices,
+			TokenUsage usage, List<GroundingSource> groundingSources, String rawJson) {
+		return new ChatResponse(id, model, choices, usage, groundingSources, rawJson);
 	}
 
 	/**

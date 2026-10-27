@@ -1,0 +1,256 @@
+/*
+ * Copyright (c) 2026 sureai contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.sure.ai.mcp.server;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+
+import java.util.List;
+
+import org.junit.Before;
+import org.junit.Test;
+
+import com.sure.ai.internal.json.Json;
+import com.sure.ai.internal.json.JsonArray;
+import com.sure.ai.internal.json.JsonObject;
+import com.sure.ai.mcp.model.McpToolResult;
+
+/**
+ * {@link McpServer} 协议引擎单元测试：直接 dispatch JSON 帧，断言响应结构。
+ *
+ * @author sureai
+ * @since 1.5.0
+ */
+public class McpServerTest {
+
+	private McpServer server;
+
+	/** 注册一个 echo 工具。 */
+	@Before
+	public void setUp() {
+		this.server = new McpServer()
+			.serverInfo("test-server", "9.9.9")
+			.instructions("be helpful");
+		this.server.registerTool(new McpServerTool("echo", "echo back",
+			Json.object(),
+			args -> new McpToolResult(false, List.of("got:" + args.optString("text", "")))));
+	}
+
+	private static String req(long id, String method, JsonObject params) {
+		JsonObject o = Json.object();
+		o.put("jsonrpc", "2.0");
+		o.put("id", id);
+		o.put("method", method);
+		if (params != null) {
+			o.set("params", params);
+		}
+		return Json.stringify(o);
+	}
+
+	private static JsonObject resultOf(String response) {
+		return Json.parse(response).getAsJsonObject().getJsonObject("result");
+	}
+
+	@Test
+	public void initializeHandshake() {
+		String resp = this.server.dispatch(req(1, "initialize", Json.object()));
+		JsonObject r = resultOf(resp);
+		assertEquals("2025-06-18", r.getString("protocolVersion"));
+		assertTrue(r.getJsonObject("capabilities").has("tools"));
+		assertEquals("test-server", r.getJsonObject("serverInfo").getString("name"));
+		assertEquals("be helpful", r.getString("instructions"));
+	}
+
+	@Test
+	public void initializedNotificationGetsNoResponse() {
+		JsonObject n = Json.object();
+		n.put("jsonrpc", "2.0");
+		n.put("method", "notifications/initialized");
+		assertNull(this.server.dispatch(Json.stringify(n)));
+	}
+
+	@Test
+	public void toolsListReturnsRegisteredTools() {
+		this.server.registerTool(new McpServerTool("second", "second desc", Json.object(),
+			args -> new McpToolResult(false, List.of("x"))));
+		String resp = this.server.dispatch(req(2, "tools/list", null));
+		JsonArray tools = resultOf(resp).getJsonArray("tools");
+		assertEquals(2, tools.size());
+		JsonObject first = tools.get(0).getAsJsonObject();
+		assertEquals("echo", first.getString("name"));
+		assertEquals("echo back", first.getString("description"));
+		assertTrue(first.has("inputSchema"));
+	}
+
+	@Test
+	public void toolsCallExistingTool() {
+		JsonObject params = Json.object();
+		params.put("name", "echo");
+		JsonObject arguments = Json.object();
+		arguments.put("text", "hi");
+		params.set("arguments", arguments);
+		String resp = this.server.dispatch(req(3, "tools/call", params));
+		JsonObject r = resultOf(resp);
+		assertFalse(r.getBoolean("isError"));
+		JsonArray content = r.getJsonArray("content");
+		assertEquals("got:hi", content.get(0).getAsJsonObject().getString("text"));
+	}
+
+	@Test
+	public void toolsCallUnknownToolIsInvalidParams() {
+		// 2026-07-28：未知工具属于 JSON-RPC -32602 InvalidParams，不再是 isError 工具结果
+		JsonObject params = Json.object();
+		params.put("name", "nope");
+		params.set("arguments", Json.object());
+		String resp = this.server.dispatch(req(4, "tools/call", params));
+		JsonObject error = Json.parse(resp).getAsJsonObject().getJsonObject("error");
+		assertEquals(-32602, error.getInt("code"));
+		assertTrue(error.getString("message").contains("Unknown tool"));
+	}
+
+	@Test
+	public void toolsCallHandlerExceptionIsError() {
+		this.server.registerTool(new McpServerTool("boom", null, Json.object(),
+			args -> {
+				throw new IllegalStateException("kaboom");
+			}));
+		JsonObject params = Json.object();
+		params.put("name", "boom");
+		params.set("arguments", Json.object());
+		String resp = this.server.dispatch(req(5, "tools/call", params));
+		JsonObject r = resultOf(resp);
+		assertTrue(r.getBoolean("isError"));
+	}
+
+	@Test
+	public void unknownMethodReturnsJsonRpcError() {
+		String resp = this.server.dispatch(req(6, "nope/x", null));
+		JsonObject o = Json.parse(resp).getAsJsonObject();
+		assertTrue(o.has("error"));
+		assertEquals(-32601, o.getJsonObject("error").getInt("code"));
+	}
+
+	@Test
+	public void malformedJsonReturnsParseError() {
+		String resp = this.server.dispatch("{not json");
+		JsonObject o = Json.parse(resp).getAsJsonObject();
+		assertTrue(o.has("error"));
+		assertEquals(-32700, o.getJsonObject("error").getInt("code"));
+	}
+
+	@Test
+	public void serverDiscoverStateless() {
+		String resp = this.server.dispatch(req(7, "server/discover", Json.object()));
+		JsonObject r = resultOf(resp);
+		assertEquals("complete", r.getString("resultType"));
+		JsonArray versions = r.getJsonArray("supportedVersions");
+		assertTrue(versions.size() >= 2);
+		assertTrue(r.has("ttlMs"));
+		assertEquals("public", r.getString("cacheScope"));
+		JsonObject meta = r.getJsonObject("_meta");
+		assertEquals("test-server", meta.getJsonObject("io.modelcontextprotocol/serverInfo").getString("name"));
+	}
+
+	@Test
+	public void toolsListStatelessCarriesCacheHints() {
+		JsonObject meta = Json.object();
+		meta.put(McpServer.META_PROTOCOL_VERSION, "2026-07-28");
+		JsonObject params = Json.object();
+		params.set("_meta", meta);
+		String resp = this.server.dispatch(req(8, "tools/list", params));
+		JsonObject r = resultOf(resp);
+		assertEquals("complete", r.getString("resultType"));
+		assertTrue(r.has("ttlMs"));
+		assertEquals("public", r.getString("cacheScope"));
+	}
+
+	@Test
+	public void listEndpointsEmptyByDefault() {
+		assertTrue(resultOf(this.server.dispatch(req(9, "resources/list", null))).getJsonArray("resources").size() == 0);
+		assertTrue(resultOf(this.server.dispatch(req(10, "prompts/list", null))).getJsonArray("prompts").size() == 0);
+	}
+
+	@Test
+	public void pingReturnsEmptyResult() {
+		JsonObject r = resultOf(this.server.dispatch(req(11, "ping", null)));
+		assertNotNull(r);
+	}
+
+	// ==================== 2026-07-28 无状态扩展面（v2.3.0 收口） ====================
+
+	/** MRTR：所有结果都必须带 resultType（普通结果为 complete）。 */
+	@Test
+	public void allResultsCarryResultType() {
+		assertEquals("complete", resultOf(this.server.dispatch(req(20, "initialize", Json.object()))).getString("resultType"));
+		assertEquals("complete", resultOf(this.server.dispatch(req(21, "ping", null))).getString("resultType"));
+		assertEquals("complete", resultOf(this.server.dispatch(req(22, "tools/list", null))).getString("resultType"));
+		JsonObject callParams = Json.object();
+		callParams.put("name", "echo");
+		callParams.set("arguments", Json.object());
+		assertEquals("complete", resultOf(this.server.dispatch(req(23, "tools/call", callParams))).getString("resultType"));
+	}
+
+	/** subscriptions/listen：回显服务端承诺的订阅子集，丢弃未声明/不支持的键。 */
+	@Test
+	public void subscriptionsListenEchosAcceptedFilter() {
+		JsonObject filter = Json.object();
+		filter.put("toolsListChanged", Boolean.TRUE);
+		filter.put("promptsListChanged", Boolean.FALSE);
+		filter.put("bogusType", Boolean.TRUE);
+		JsonArray uris = Json.array();
+		uris.add("file:///a.json");
+		filter.set("resourceSubscriptions", uris);
+		JsonObject params = Json.object();
+		params.set("notifications", filter);
+		JsonObject r = resultOf(this.server.dispatch(req(24, "subscriptions/listen", params)));
+		assertEquals("complete", r.getString("resultType"));
+		JsonObject n = r.getJsonObject("notifications");
+		assertTrue(n.getBoolean("toolsListChanged"));
+		assertFalse(n.has("promptsListChanged"));
+		assertFalse(n.has("bogusType"));
+		assertEquals(1, n.getJsonArray("resourceSubscriptions").size());
+	}
+
+	/** 旧的 resources/subscribe/unsubscribe 在 2026-07-28 已被移除，应方法未找到。 */
+	@Test
+	public void resourcesSubscribeRemoved() {
+		JsonObject sub = Json.parse(this.server.dispatch(req(25, "resources/subscribe", null))).getAsJsonObject();
+		assertTrue(sub.has("error"));
+		assertEquals(-32601, sub.getJsonObject("error").getInt("code"));
+		JsonObject unsub = Json.parse(this.server.dispatch(req(26, "resources/unsubscribe", null))).getAsJsonObject();
+		assertTrue(unsub.has("error"));
+		assertEquals(-32601, unsub.getJsonObject("error").getInt("code"));
+	}
+
+	/** 无状态 tools/call 也应在 _meta 里带 serverInfo（服务端自报身份）。 */
+	@Test
+	public void statelessCallCarriesServerInfoMeta() {
+		JsonObject meta = Json.object();
+		meta.put(McpServer.META_PROTOCOL_VERSION, "2026-07-28");
+		JsonObject params = Json.object();
+		params.put("name", "echo");
+		params.set("arguments", Json.object());
+		params.set("_meta", meta);
+		JsonObject r = resultOf(this.server.dispatch(req(27, "tools/call", params)));
+		assertEquals("complete", r.getString("resultType"));
+		assertEquals("test-server", r.getJsonObject("_meta")
+			.getJsonObject(McpServer.META_SERVER_INFO).getString("name"));
+	}
+}

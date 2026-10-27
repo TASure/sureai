@@ -38,9 +38,17 @@ import com.sun.net.httpserver.HttpServer;
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiAuthException;
+import com.sure.ai.internal.json.Json;
+import com.sure.ai.internal.json.JsonObject;
+import com.sure.ai.model.CacheControl;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
+import com.sure.ai.model.DocumentPart;
+import com.sure.ai.model.ImagePart;
+import com.sure.ai.model.MessagePart;
+import com.sure.ai.model.Model;
+import com.sure.ai.model.TextPart;
 import com.sure.ai.model.ToolCall;
 import com.sure.ai.model.ToolFunction;
 import com.sure.ai.model.ToolSpec;
@@ -261,5 +269,186 @@ public class AnthropicClientTest {
 	@Test
 	public void testName() {
 		assertEquals("anthropic", newClient().name());
+	}
+
+	/** 多模态：ImagePart 映射为 type=image + source.base64。 */
+	@Test
+	public void testMultimodalImage() {
+		handle(200, "{\"id\":\"msg_m\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"text\",\"text\":\"seen\"}],\"stop_reason\":\"end_turn\","
+			+ "\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}");
+		AnthropicClient client = newClient();
+		List<MessagePart> parts = List.of(TextPart.of("describe"),
+			ImagePart.ofBase64("aW1n", "image/png"));
+		client.chat(ChatRequest.builder().model("m").messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"type\":\"image\""));
+		assertTrue(body.contains("\"source\""));
+		assertTrue(body.contains("\"media_type\":\"image/png\""));
+		assertTrue(body.contains("aW1n"));
+		client.close();
+	}
+
+	/** 多模态：DocumentPart 映射为 type=document + source.base64。 */
+	@Test
+	public void testMultimodalDocument() {
+		handle(200, "{\"id\":\"msg_d\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stop_reason\":\"end_turn\","
+			+ "\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}");
+		AnthropicClient client = newClient();
+		List<MessagePart> parts = List.of(
+			DocumentPart.ofBase64("a.pdf", "application/pdf", "UE9E"));
+		client.chat(ChatRequest.builder().model("m").messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"type\":\"document\""));
+		assertTrue(body.contains("\"media_type\":\"application/pdf\""));
+		client.close();
+	}
+
+	/** Prompt 缓存：TextPart 带 cacheControl 输出 cache_control 断点。 */
+	@Test
+	public void testPromptCache() {
+		handle(200, "{\"id\":\"msg_c\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"stop_reason\":\"end_turn\","
+			+ "\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}");
+		AnthropicClient client = newClient();
+		List<MessagePart> parts = List.of(
+			TextPart.ofWithCache("system-like long prompt", CacheControl.ephemeral()));
+		client.chat(ChatRequest.builder().model("m").messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"cache_control\""));
+		assertTrue(body.contains("\"type\":\"ephemeral\""));
+		client.close();
+	}
+
+	/** 结构化输出：自动注入 structured_output 工具并锁定 tool_choice。 */
+	@Test
+	public void testStructuredOutput() {
+		String resp = "{\"id\":\"msg_s\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"structured_output\","
+			+ "\"input\":{\"answer\":\"42\"}}],\"stop_reason\":\"tool_use\","
+			+ "\"usage\":{\"input_tokens\":5,\"output_tokens\":3}}";
+		handle(200, resp);
+		AnthropicClient client = newClient();
+		JsonObject schema = Json.object();
+		schema.put("type", "object");
+		JsonObject props = Json.object();
+		JsonObject answer = Json.object();
+		answer.put("type", "string");
+		props.put("answer", answer);
+		schema.put("properties", props);
+		JsonObject jsonSchema = Json.object();
+		jsonSchema.put("name", "answer");
+		jsonSchema.set("schema", schema);
+		JsonObject format = Json.object();
+		format.put("type", "json_schema");
+		format.set("json_schema", jsonSchema);
+		ChatResponse result = client.chat(ChatRequest.builder().model("m")
+			.messages(ChatMessage.user("give json"))
+			.responseFormat(format).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"name\":\"structured_output\""));
+		assertTrue(body.contains("\"tool_choice\""));
+		assertTrue(body.contains("\"type\":\"tool\""));
+		assertTrue(body.contains("\"input_schema\""));
+		List<ToolCall> calls = result.choices().get(0).message().toolCalls();
+		assertNotNull(calls);
+		assertEquals("structured_output", calls.get(0).name());
+		assertTrue(calls.get(0).argumentsJson().contains("42"));
+		client.close();
+	}
+
+	/** 思考模式：thinkingConfig 写入请求体 thinking 字段，thinking block 解析为 reasoningContent。 */
+	@Test
+	public void testThinking() {
+		String resp = "{\"id\":\"msg_t\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"thinking\",\"thinking\":\"推理过程\"},"
+			+ "{\"type\":\"text\",\"text\":\"答案\"}],\"stop_reason\":\"end_turn\","
+			+ "\"usage\":{\"input_tokens\":5,\"output_tokens\":10}}";
+		handle(200, resp);
+		AnthropicClient client = newClient();
+		JsonObject thinking = Json.object();
+		thinking.put("type", "enabled");
+		thinking.put("budget_tokens", 4096);
+		ChatResponse result = client.chat(ChatRequest.builder().model("m")
+			.messages(ChatMessage.user("q"))
+			.thinkingConfig(thinking).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"thinking\""));
+		assertTrue(body.contains("\"budget_tokens\":4096"));
+		assertEquals("答案", result.firstText());
+		assertEquals("推理过程", result.choices().get(0).message().reasoningContent());
+		client.close();
+	}
+
+	/** 模型列表：GET /v1/models，解析 data[].id。 */
+	@Test
+	public void testListModels() {
+		String resp = "{\"data\":[{\"id\":\"claude-opus-4-2\",\"display_name\":\"Claude Opus 4.2\","
+			+ "\"created_at\":1700000000,\"type\":\"model\"},"
+			+ "{\"id\":\"claude-sonnet-4-6\",\"display_name\":\"Claude Sonnet 4.6\",\"type\":\"model\"}]}";
+		handle(200, resp);
+		AnthropicClient client = newClient();
+		List<Model> models = client.listModels();
+		assertEquals(2, models.size());
+		assertEquals("claude-opus-4-2", models.get(0).id());
+		assertEquals("Claude Opus 4.2", models.get(0).ownedBy());
+		assertEquals("claude-sonnet-4-6", models.get(1).id());
+		client.close();
+	}
+
+	/** 多模态：ImagePart.ofUrl 映射为 source.type=url（2026 官方支持 URL 引用）。 */
+	@Test
+	public void testMultimodalImageUrlSource() {
+		handle(200, "{\"id\":\"msg_u\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"text\",\"text\":\"seen\"}],\"stop_reason\":\"end_turn\","
+			+ "\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}");
+		AnthropicClient client = newClient();
+		List<MessagePart> parts = List.of(TextPart.of("describe"),
+			ImagePart.ofUrl("https://example.com/cat.jpg"));
+		client.chat(ChatRequest.builder().model("m").messages(ChatMessage.user(parts)).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"type\":\"image\""));
+		assertTrue(body.contains("\"type\":\"url\""));
+		assertTrue(body.contains("\"url\":\"https://example.com/cat.jpg\""));
+		client.close();
+	}
+
+	/** 并行工具调用回传：连续多条 ChatMessage.tool() 合并为单条 user 消息的多个 tool_result 块。 */
+	@Test
+	public void testParallelToolResultsCoalesced() {
+		handle(200, "{\"id\":\"msg_r\",\"model\":\"m\",\"role\":\"assistant\","
+			+ "\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stop_reason\":\"end_turn\","
+			+ "\"usage\":{\"input_tokens\":5,\"output_tokens\":3}}");
+		AnthropicClient client = newClient();
+		List<ToolCall> calls = List.of(
+			ToolCall.of("toolu_1", "get_weather", "{\"city\":\"SF\"}"),
+			ToolCall.of("toolu_2", "get_time", "{}"));
+		client.chat(ChatRequest.builder().model("m")
+			.messages(ChatMessage.user("?"),
+				ChatMessage.assistant(calls),
+				ChatMessage.tool("toolu_1", "{\"weather\":\"sunny\"}"),
+				ChatMessage.tool("toolu_2", "{\"time\":\"10:00\"}"))
+			.build());
+		String body = this.lastBody.get();
+		// 初始 user("?") + 合并后的单条工具结果 user 消息 = 2 条 user（合并前应为 3 条）。
+		assertEquals(2, countOccurrences(body, "\"role\":\"user\""));
+		assertTrue(body.contains("\"tool_use_id\":\"toolu_1\""));
+		assertTrue(body.contains("\"tool_use_id\":\"toolu_2\""));
+		assertTrue(body.contains("\"type\":\"tool_result\""));
+		// 两个 tool_result 块合并在同一条 user 消息里。
+		assertEquals(2, countOccurrences(body, "\"type\":\"tool_result\""));
+		client.close();
+	}
+
+	/** 统计子串出现次数。 */
+	private static int countOccurrences(String haystack, String needle) {
+		int count = 0;
+		int idx = 0;
+		while ((idx = haystack.indexOf(needle, idx)) != -1) {
+			count++;
+			idx += needle.length();
+		}
+		return count;
 	}
 }

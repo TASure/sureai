@@ -16,12 +16,11 @@
 
 package com.sure.ai.deepseek;
 
-import java.util.Map;
+import java.util.Set;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.compat.OpenAiCompatClient;
-import com.sure.ai.model.EmbeddingRequest;
-import com.sure.ai.model.EmbeddingResponse;
 
 /**
  * DeepSeek 平台客户端（OpenAI 兼容协议）。
@@ -38,8 +37,9 @@ import com.sure.ai.model.EmbeddingResponse;
  *   其特有参数可通过 {@link com.sure.ai.model.ChatRequest.Builder#extra(String, Object)} 透传。</li>
  * </ul>
  *
- * <p>DeepSeek 暂无官方 embeddings API，故 {@link #embed} 直接抛出
- * {@link UnsupportedOperationException}。</p>
+ * <p>能力声明（1.4.0 P2-6）：仅支持对话与流式对话。DeepSeek 暂无官方 embeddings API，
+ * 也不提供图像/视频/内容审核/微调端点；调用 {@code embed} 等不支持方法时由基类
+ * {@link #guard(Capability)} 在发请求前快速失败，不再依赖本类手工抛异常。</p>
  *
  * <p>官方文档：<a href="https://api-docs.deepseek.com/">https://api-docs.deepseek.com/</a></p>
  *
@@ -57,7 +57,7 @@ public class DeepSeekClient extends OpenAiCompatClient {
 	 * @param config 配置
 	 */
 	public DeepSeekClient(AiConfig config) {
-		super(applyDefaultBaseUrl(config, DEFAULT_BASE_URL));
+		super(config.withBaseUrlIfAbsent(DEFAULT_BASE_URL));
 	}
 
 	@Override
@@ -65,33 +65,13 @@ public class DeepSeekClient extends OpenAiCompatClient {
 		return "deepseek";
 	}
 
-	@Override
-	public EmbeddingResponse embed(EmbeddingRequest request) {
-		throw new UnsupportedOperationException("DeepSeek 暂不提供官方 embeddings API");
-	}
-
 	/**
-	 * baseUrl 为空时用默认地址重建配置。
+	 * DeepSeek 仅支持对话与流式对话；embedding/image/video/moderation/finetune 均未提供。
 	 *
-	 * @param config      原始配置
-	 * @param defaultBase 默认 baseUrl
-	 * @return 补齐 baseUrl 后的配置
+	 * @return 仅对话能力集合
 	 */
-	static AiConfig applyDefaultBaseUrl(AiConfig config, String defaultBase) {
-		if (config.baseUrl() != null && !config.baseUrl().isBlank()) {
-			return config;
-		}
-		AiConfig.Builder b = AiConfig.builder()
-			.apiKey(config.apiKey())
-			.baseUrl(defaultBase)
-			.timeout(config.timeout())
-			.connectTimeout(config.connectTimeout())
-			.proxy(config.proxy())
-			.organization(config.organization())
-			.maxRetries(config.maxRetries());
-		for (Map.Entry<String, String> e : config.extraHeaders().entrySet()) {
-			b.extraHeader(e.getKey(), e.getValue());
-		}
-		return b.build();
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM);
 	}
 }

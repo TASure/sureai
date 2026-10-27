@@ -19,6 +19,7 @@ package com.sure.ai.deepseek;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
@@ -47,10 +48,9 @@ public final class DeepSeekUtil {
 	/** 环境变量名：baseUrl 覆盖。 */
 	public static final String ENV_BASE_URL = "SURE_AI_DEEPSEEK_BASE_URL";
 
-	private static volatile DeepSeekClient client;
-
-	/** 初始化锁对象。 */
-	private static final Object LOCK = new Object();
+	/** 单例客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<DeepSeekClient> HOLDER =
+		new SingletonHolder<>(() -> new DeepSeekClient(buildConfigFromEnv()));
 
 	private DeepSeekUtil() {
 		throw new AssertionError("No instances");
@@ -62,9 +62,7 @@ public final class DeepSeekUtil {
 	 * @param apiKey API Key
 	 */
 	public static void init(String apiKey) {
-		synchronized (LOCK) {
-			client = new DeepSeekClient(AiConfig.of(apiKey));
-		}
+		HOLDER.set(new DeepSeekClient(AiConfig.of(apiKey)));
 	}
 
 	/**
@@ -73,9 +71,7 @@ public final class DeepSeekUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new DeepSeekClient(config);
-		}
+		HOLDER.set(new DeepSeekClient(config));
 	}
 
 	/**
@@ -85,17 +81,7 @@ public final class DeepSeekUtil {
 	 * @throws AiException 未初始化且未设置 {@code SURE_AI_DEEPSEEK_API_KEY}
 	 */
 	public static DeepSeekClient client() {
-		DeepSeekClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = new DeepSeekClient(buildConfigFromEnv());
-					client = c;
-				}
-			}
-		}
-		return c;
+		return HOLDER.get();
 	}
 
 	/** 从环境变量构造配置。 */

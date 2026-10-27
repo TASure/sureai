@@ -29,11 +29,17 @@ import com.sure.ai.exception.AiException;
  */
 public final class JsonParser {
 
+	/** 最大允许嵌套深度（对象/数组层数），超过即视为恶意输入抛业务异常，防止 StackOverflowError。 */
+	private static final int MAX_DEPTH = 1000;
+
 	/** 输入文本 */
 	private final String s;
 
 	/** 当前下标 */
 	private int pos;
+
+	/** 当前嵌套深度（每进入一个对象/数组值 +1） */
+	private int depth;
 
 	/**
 	 * 私有构造器。
@@ -70,25 +76,33 @@ public final class JsonParser {
 		if (this.pos >= this.s.length()) {
 			throw err("unexpected end of input");
 		}
-		char c = this.s.charAt(this.pos);
-		switch (c) {
-			case '{':
-				return parseObject();
-			case '[':
-				return parseArray();
-			case '"':
-				return new JsonPrimitive(parseString());
-			case 't':
-				expectLiteral("true");
-				return new JsonPrimitive(Boolean.TRUE);
-			case 'f':
-				expectLiteral("false");
-				return new JsonPrimitive(Boolean.FALSE);
-			case 'n':
-				expectLiteral("null");
-				return JsonPrimitive.jsonNull();
-			default:
-				return parseNumber();
+		if (this.depth >= MAX_DEPTH) {
+			throw err("nesting too deep (limit " + MAX_DEPTH + ")");
+		}
+		this.depth++;
+		try {
+			char c = this.s.charAt(this.pos);
+			switch (c) {
+				case '{':
+					return parseObject();
+				case '[':
+					return parseArray();
+				case '"':
+					return new JsonPrimitive(parseString());
+				case 't':
+					expectLiteral("true");
+					return new JsonPrimitive(Boolean.TRUE);
+				case 'f':
+					expectLiteral("false");
+					return new JsonPrimitive(Boolean.FALSE);
+				case 'n':
+					expectLiteral("null");
+					return JsonPrimitive.jsonNull();
+				default:
+					return parseNumber();
+			}
+		} finally {
+			this.depth--;
 		}
 	}
 
@@ -156,55 +170,86 @@ public final class JsonParser {
 	/** 解析字符串（含前导引号）。 */
 	private String parseString() {
 		this.pos++; // opening quote
-		StringBuilder sb = new StringBuilder();
+		int start = this.pos;
+		// 快速路径：无转义串直接区间扫描，命中闭合引号即 substring 返回，
+		// 避免 StringBuilder 分配与逐字符 append；命中反斜杠再退回慢速路径。
 		while (true) {
 			if (this.pos >= this.s.length()) {
 				throw err("unterminated string");
 			}
 			char c = this.s.charAt(this.pos);
 			if (c == '"') {
+				String r = this.s.substring(start, this.pos);
 				this.pos++;
-				return sb.toString();
+				return r;
 			}
 			if (c == '\\') {
-				this.pos++;
+				return parseStringWithEscape(start);
+			}
+			if (c < 0x20) {
+				throw err("unescaped control char at " + this.pos);
+			}
+			this.pos++;
+		}
+	}
+
+	/** 慢速路径：串中至少含一个反斜杠转义，用 StringBuilder 收集（前缀普通段整块追加）。 */
+	private String parseStringWithEscape(int start) {
+		StringBuilder sb = new StringBuilder();
+		sb.append(this.s, start, this.pos);
+		while (true) {
+			// this.pos 当前指向反斜杠。
+			this.pos++;
+			if (this.pos >= this.s.length()) {
+				throw err("unterminated escape");
+			}
+			char esc = this.s.charAt(this.pos);
+			this.pos++;
+			switch (esc) {
+				case '"':
+					sb.append('"');
+					break;
+				case '\\':
+					sb.append('\\');
+					break;
+				case '/':
+					sb.append('/');
+					break;
+				case 'b':
+					sb.append('\b');
+					break;
+				case 'f':
+					sb.append('\f');
+					break;
+				case 'n':
+					sb.append('\n');
+					break;
+				case 'r':
+					sb.append('\r');
+					break;
+				case 't':
+					sb.append('\t');
+					break;
+				case 'u':
+					sb.append(parseUnicode());
+					break;
+				default:
+					throw err("invalid escape '\\" + esc + "' at " + this.pos);
+			}
+			// 继续扫描后续普通段，直到下一个引号/反斜杠。
+			scanPlain:
+			while (true) {
 				if (this.pos >= this.s.length()) {
-					throw err("unterminated escape");
+					throw err("unterminated string");
 				}
-				char esc = this.s.charAt(this.pos);
-				this.pos++;
-				switch (esc) {
-					case '"':
-						sb.append('"');
-						break;
-					case '\\':
-						sb.append('\\');
-						break;
-					case '/':
-						sb.append('/');
-						break;
-					case 'b':
-						sb.append('\b');
-						break;
-					case 'f':
-						sb.append('\f');
-						break;
-					case 'n':
-						sb.append('\n');
-						break;
-					case 'r':
-						sb.append('\r');
-						break;
-					case 't':
-						sb.append('\t');
-						break;
-					case 'u':
-						sb.append(parseUnicode());
-						break;
-					default:
-						throw err("invalid escape '\\" + esc + "' at " + this.pos);
+				char c = this.s.charAt(this.pos);
+				if (c == '"') {
+					this.pos++;
+					return sb.toString();
 				}
-			} else {
+				if (c == '\\') {
+					break scanPlain;
+				}
 				if (c < 0x20) {
 					throw err("unescaped control char at " + this.pos);
 				}

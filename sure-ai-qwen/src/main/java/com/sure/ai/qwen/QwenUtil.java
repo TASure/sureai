@@ -16,15 +16,28 @@
 
 package com.sure.ai.qwen;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
+import com.sure.ai.client.realtime.RealtimeEventListener;
 import com.sure.ai.exception.AiException;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.RerankRequest;
+import com.sure.ai.model.RerankResponse;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.VideoRequest;
+import com.sure.ai.model.VideoResponse;
 
 /**
  * 阿里云百炼通义千问（DashScope）平台静态入口工具类。
@@ -47,10 +60,25 @@ public final class QwenUtil {
 	/** 环境变量名：baseUrl 覆盖。 */
 	public static final String ENV_BASE_URL = "SURE_AI_QWEN_BASE_URL";
 
-	private static volatile QwenClient client;
+	/** 主客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<QwenClient> HOLDER =
+		new SingletonHolder<>(() -> new QwenClient(buildConfigFromEnv()));
 
-	/** 初始化锁对象。 */
-	private static final Object LOCK = new Object();
+	/** 图像生成客户端容器。 */
+	private static final SingletonHolder<QwenImageClient> IMAGE =
+		new SingletonHolder<>(() -> new QwenImageClient(buildConfigFromEnv()));
+
+	/** 视频生成客户端容器。 */
+	private static final SingletonHolder<QwenVideoClient> VIDEO =
+		new SingletonHolder<>(() -> new QwenVideoClient(buildConfigFromEnv()));
+
+	/** 重排客户端容器。 */
+	private static final SingletonHolder<QwenRerankClient> RERANK =
+		new SingletonHolder<>(() -> new QwenRerankClient(buildConfigFromEnv()));
+
+	/** Realtime 客户端容器（构造参数依赖调用参数，用 getOrCreate 懒加载）。 */
+	private static final SingletonHolder<QwenRealtimeClient> REALTIME =
+		new SingletonHolder<>(null);
 
 	private QwenUtil() {
 		throw new AssertionError("No instances");
@@ -62,9 +90,7 @@ public final class QwenUtil {
 	 * @param apiKey API Key
 	 */
 	public static void init(String apiKey) {
-		synchronized (LOCK) {
-			client = new QwenClient(AiConfig.of(apiKey));
-		}
+		HOLDER.set(new QwenClient(AiConfig.of(apiKey)));
 	}
 
 	/**
@@ -73,9 +99,7 @@ public final class QwenUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new QwenClient(config);
-		}
+		HOLDER.set(new QwenClient(config));
 	}
 
 	/**
@@ -85,17 +109,7 @@ public final class QwenUtil {
 	 * @throws AiException 未初始化且未设置 {@code SURE_AI_QWEN_API_KEY}
 	 */
 	public static QwenClient client() {
-		QwenClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					c = new QwenClient(buildConfigFromEnv());
-					client = c;
-				}
-			}
-		}
-		return c;
+		return HOLDER.get();
 	}
 
 	/** 从环境变量构造配置。 */
@@ -173,5 +187,194 @@ public final class QwenUtil {
 	 */
 	public static EmbeddingResponse embed(EmbeddingRequest request) {
 		return client().embed(request);
+	}
+
+	/**
+	 * 获取通义万相图像生成单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 图像客户端
+	 * @throws AiException 未初始化且未设置 {@code SURE_AI_QWEN_API_KEY}
+	 */
+	public static QwenImageClient imageClient() {
+		return IMAGE.get();
+	}
+
+	/**
+	 * 便捷文生图。
+	 *
+	 * @param model  模型 ID（如 {@link QwenModels#WANX_V1}）
+	 * @param prompt 提示词
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(String model, String prompt) {
+		return imageClient().generate(model, prompt);
+	}
+
+	/**
+	 * 文生图。
+	 *
+	 * @param request 图像请求
+	 * @return 图像响应
+	 */
+	public static ImageResponse image(ImageRequest request) {
+		return imageClient().generate(request);
+	}
+
+	/**
+	 * 重置图像单例客户端（测试清理用）。
+	 */
+	public static void resetImageClient() {
+		IMAGE.reset();
+	}
+
+	/**
+	 * 获取通义万相视频生成单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 视频客户端
+	 * @throws AiException 未初始化且未设置 {@code SURE_AI_QWEN_API_KEY}
+	 */
+	public static QwenVideoClient videoClient() {
+		return VIDEO.get();
+	}
+
+	/**
+	 * 便捷文生视频。
+	 *
+	 * @param model  模型 ID（如 {@link QwenModels#WAN2_6_T2V}）
+	 * @param prompt 提示词
+	 * @return 视频响应
+	 */
+	public static VideoResponse video(String model, String prompt) {
+		return videoClient().generate(VideoRequest.of(model, prompt));
+	}
+
+	/**
+	 * 文生视频。
+	 *
+	 * @param request 视频请求
+	 * @return 视频响应
+	 */
+	public static VideoResponse video(VideoRequest request) {
+		return videoClient().generate(request);
+	}
+
+	/**
+	 * 重置视频单例客户端（测试清理用）。
+	 */
+	public static void resetVideoClient() {
+		VIDEO.reset();
+	}
+
+	/**
+	 * 便捷语音合成（TTS）。
+	 *
+	 * @param model 模型 ID（如 {@link QwenModels#COSYVOICE_V3_5_PLUS}）
+	 * @param text  待合成文本
+	 * @param voice 音色 ID
+	 * @return 语音响应（含音频 URL）
+	 */
+	public static TtsResponse tts(String model, String text, String voice) {
+		return client().synthesize(TtsRequest.of(model, text, voice));
+	}
+
+	/**
+	 * 语音合成（TTS）。
+	 *
+	 * @param request TTS 请求
+	 * @return 语音响应
+	 */
+	public static TtsResponse tts(TtsRequest request) {
+		return client().synthesize(request);
+	}
+
+	/**
+	 * 便捷语音识别（STT）。
+	 *
+	 * @param model     模型 ID（如 {@link QwenModels#QWEN3_ASR_FLASH}）
+	 * @param audioData 音频二进制数据
+	 * @return 转写响应
+	 */
+	public static SttResponse stt(String model, byte[] audioData) {
+		return client().transcribe(SttRequest.of(model, audioData));
+	}
+
+	/**
+	 * 语音识别（STT）。
+	 *
+	 * @param request STT 请求
+	 * @return 转写响应
+	 */
+	public static SttResponse stt(SttRequest request) {
+		return client().transcribe(request);
+	}
+
+	// ==================== 重排（Rerank） ====================
+
+	/**
+	 * 获取重排单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * @return 重排客户端
+	 * @throws AiException 未初始化且未设置 {@code SURE_AI_QWEN_API_KEY}
+	 */
+	public static QwenRerankClient rerankClient() {
+		return RERANK.get();
+	}
+
+	/**
+	 * 便捷重排：查询 + 候选文档，默认模型 {@link QwenModels#QWEN3_RERANK}。
+	 *
+	 * @param query     查询文本
+	 * @param documents 候选文档列表
+	 * @return 重排响应
+	 */
+	public static RerankResponse rerank(String query, List<String> documents) {
+		return rerank(RerankRequest.builder()
+			.model(QwenModels.QWEN3_RERANK)
+			.query(query)
+			.documents(documents)
+			.build());
+	}
+
+	/**
+	 * 重排。
+	 *
+	 * @param request 重排请求
+	 * @return 重排响应
+	 */
+	public static RerankResponse rerank(RerankRequest request) {
+		return rerankClient().rerank(request);
+	}
+
+	/**
+	 * 重置重排单例客户端（测试清理用）。
+	 */
+	public static void resetRerankClient() {
+		RERANK.reset();
+	}
+
+	// ==================== Realtime（全双工语音对话） ====================
+
+	/**
+	 * 获取 Realtime 单例客户端，未初始化时从环境变量懒加载。
+	 *
+	 * <p>Realtime 需要事件监听器，不提供静态便捷方法；单例首次以
+	 * {@code (model, listener)} 构造，之后重复调用返回同一实例。</p>
+	 *
+	 * @param model        实时模型 ID
+	 * @param eventListener 事件监听器
+	 * @return Realtime 客户端
+	 * @throws AiException 未初始化且未设置环境变量
+	 */
+	public static QwenRealtimeClient realtimeClient(String model,
+			RealtimeEventListener eventListener) {
+		return REALTIME.getOrCreate(() ->
+			new QwenRealtimeClient(buildConfigFromEnv(), model, eventListener));
+	}
+
+	/**
+	 * 重置 Realtime 单例客户端（测试清理用）。
+	 */
+	public static void resetRealtimeClient() {
+		REALTIME.reset();
 	}
 }

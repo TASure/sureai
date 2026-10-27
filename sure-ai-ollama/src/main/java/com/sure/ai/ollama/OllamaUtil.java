@@ -19,6 +19,7 @@ package com.sure.ai.ollama;
 import java.util.function.Consumer;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.ChatStreamChunk;
@@ -39,11 +40,9 @@ public final class OllamaUtil {
 	/** 默认 baseUrl。 */
 	private static final String DEFAULT_BASE_URL = "http://localhost:11434";
 
-	/** 单例客户端。 */
-	private static volatile OllamaClient client;
-
-	/** 初始化锁对象。 */
-	private static final Object LOCK = new Object();
+	/** 单例客户端容器（封装 DCL 懒加载）。 */
+	private static final SingletonHolder<OllamaClient> HOLDER =
+		new SingletonHolder<>(OllamaUtil::loadFromEnv);
 
 	private OllamaUtil() {
 		throw new AssertionError("No instances");
@@ -62,9 +61,7 @@ public final class OllamaUtil {
 	 * @param config 配置
 	 */
 	public static void init(AiConfig config) {
-		synchronized (LOCK) {
-			client = new OllamaClient(config);
-		}
+		HOLDER.set(new OllamaClient(config));
 	}
 
 	/**
@@ -73,21 +70,16 @@ public final class OllamaUtil {
 	 * @return 客户端
 	 */
 	public static OllamaClient client() {
-		OllamaClient c = client;
-		if (c == null) {
-			synchronized (LOCK) {
-				c = client;
-				if (c == null) {
-					String baseUrl = System.getenv("SURE_AI_OLLAMA_BASE_URL");
-					if (baseUrl == null || baseUrl.isBlank()) {
-						baseUrl = DEFAULT_BASE_URL;
-					}
-					c = new OllamaClient(AiConfig.builder().apiKey("ollama-local").baseUrl(baseUrl).build());
-					client = c;
-				}
-			}
+		return HOLDER.get();
+	}
+
+	/** 从环境变量懒加载构造客户端。 */
+	private static OllamaClient loadFromEnv() {
+		String baseUrl = System.getenv("SURE_AI_OLLAMA_BASE_URL");
+		if (baseUrl == null || baseUrl.isBlank()) {
+			baseUrl = DEFAULT_BASE_URL;
 		}
-		return c;
+		return new OllamaClient(AiConfig.builder().apiKey("ollama-local").baseUrl(baseUrl).build());
 	}
 
 	/**

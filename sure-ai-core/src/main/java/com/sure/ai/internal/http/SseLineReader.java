@@ -69,20 +69,28 @@ public final class SseLineReader {
 				}
 				int colon = line.indexOf(':');
 				String field = colon < 0 ? line : line.substring(0, colon);
-				String value = colon < 0 ? "" : line.substring(colon + 1);
-				if (value.startsWith(" ")) {
-					value = value.substring(1);
+				// 值的起点：冒号后一位；若紧跟一个空格则跳过（SSE 规范允许的分隔空格）。
+				// data 行的 value 往往是整段 JSON，直接按区间追加到 dataBuf，
+				// 避免先 substring 出大字符串再 append 的二次拷贝。
+				int vstart;
+				if (colon < 0) {
+					vstart = line.length();
+				} else {
+					vstart = colon + 1;
+					if (vstart < line.length() && line.charAt(vstart) == ' ') {
+						vstart++;
+					}
 				}
 				switch (field) {
 					case "data":
 						if (hasData) {
 							dataBuf.append('\n');
 						}
-						dataBuf.append(value);
+						dataBuf.append(line, vstart, line.length());
 						hasData = true;
 						break;
 					case "event":
-						eventName = value;
+						eventName = line.substring(vstart);
 						break;
 					default:
 						// id / retry 等字段忽略

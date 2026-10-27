@@ -24,10 +24,12 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -41,13 +43,25 @@ import org.junit.Test;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.exception.AiAuthException;
+import com.sure.ai.exception.AiException;
 import com.sure.ai.internal.json.Json;
 import com.sure.ai.internal.json.JsonObject;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
+import com.sure.ai.model.FineTuneRequest;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ImageResponse;
+import com.sure.ai.model.ModerationRequest;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.VideoRequest;
 
 /**
  * {@link ZhipuClient} 与 {@link ZhipuJwtGenerator} 测试：本地 HttpServer mock。
@@ -63,6 +77,7 @@ public class ZhipuClientTest {
 	private String baseUrl;
 	private final AtomicReference<String> lastAuth = new AtomicReference<>();
 	private final AtomicReference<String> lastBody = new AtomicReference<>();
+	private final AtomicReference<String> lastUri = new AtomicReference<>();
 	private final AtomicInteger requestCount = new AtomicInteger();
 
 	/** 启动本地服务。 */
@@ -74,6 +89,7 @@ public class ZhipuClientTest {
 		this.baseUrl = "http://127.0.0.1:" + port + "/api/paas/v4";
 		this.lastAuth.set(null);
 		this.lastBody.set(null);
+		this.lastUri.set(null);
 		this.requestCount.set(0);
 	}
 
@@ -98,6 +114,7 @@ public class ZhipuClientTest {
 	private void handle(Handler h) {
 		this.server.createContext("/", exchange -> {
 			this.requestCount.incrementAndGet();
+			this.lastUri.set(exchange.getRequestURI().toString());
 			this.lastAuth.set(exchange.getRequestHeaders().getFirst("Authorization"));
 			byte[] in = exchange.getRequestBody().readAllBytes();
 			this.lastBody.set(new String(in, StandardCharsets.UTF_8));
@@ -227,6 +244,66 @@ public class ZhipuClientTest {
 		client.close();
 	}
 
+	/** 图像生成：JWT Bearer 鉴权头、请求路径 /images/generations、响应解析正确。 */
+	@Test
+	public void testImageGeneration() {
+		handle(200, "{\"created\":1700000000,\"data\":["
+			+ "{\"url\":\"https://img.example.com/1.png\"}]}");
+		ZhipuClient client = newClient();
+		ImageResponse resp = client.generate(ImageRequest.builder()
+			.model(ZhipuModels.COGVIEW_3).prompt("一只猫").build());
+		String auth = this.lastAuth.get();
+		assertTrue(auth.startsWith("Bearer "));
+		assertFalse("must not be raw apiKey", auth.equals("Bearer " + API_KEY));
+		assertTrue(this.lastUri.get().contains("/images/generations"));
+		assertTrue(this.lastBody.get().contains("\"model\":\"cogview-3\""));
+		assertTrue(this.lastBody.get().contains("\"prompt\":\"一只猫\""));
+		assertEquals("https://img.example.com/1.png", resp.firstUrl());
+		assertEquals(1700000000L, resp.created());
+		client.close();
+	}
+
+	/** TTS：mock 返回二进制音频，断言 audioLength>0 且请求走 /audio/speech。 */
+	@Test
+	public void testTts() {
+		byte[] fakeAudio = "fake-mp3-bytes".getBytes(StandardCharsets.UTF_8);
+		handle(ex -> {
+			ex.getResponseHeaders().set("Content-Type", "audio/mpeg");
+			ex.sendResponseHeaders(200, fakeAudio.length);
+			try (OutputStream os = ex.getResponseBody()) {
+				os.write(fakeAudio);
+			}
+		});
+		ZhipuClient client = newClient();
+		TtsResponse resp = client.synthesize(TtsRequest.builder()
+			.model(ZhipuModels.GLM_TTS).input("你好").voice("female").build());
+		assertTrue(this.lastUri.get().endsWith("/audio/speech"));
+		assertTrue(this.lastBody.get().contains("\"input\":\"你好\""));
+		assertTrue(resp.audioLength() > 0);
+		assertEquals("mp3", resp.format());
+		client.close();
+	}
+
+	/** STT：mock 返回 JSON text，断言转写文本正确且请求为 multipart。 */
+	@Test
+	public void testStt() {
+		AtomicReference<String> contentType = new AtomicReference<>();
+		handle(ex -> {
+			contentType.set(ex.getRequestHeaders().getFirst("Content-Type"));
+			respond(ex, 200, "{\"text\":\"你好世界\",\"language\":\"zh\"}");
+		});
+		ZhipuClient client = newClient();
+		byte[] audio = "fake-audio".getBytes(StandardCharsets.UTF_8);
+		SttResponse resp = client.transcribe(SttRequest.builder()
+			.model(ZhipuModels.GLM_ASR_2512).audioData(audio).build());
+		assertTrue(this.lastUri.get().endsWith("/audio/transcriptions"));
+		assertTrue("request must be multipart/form-data",
+			contentType.get() != null && contentType.get().startsWith("multipart/form-data"));
+		assertEquals("你好世界", resp.text());
+		assertEquals("zh", resp.language());
+		client.close();
+	}
+
 	/** 401 映射为 AiAuthException。 */
 	@Test
 	public void testAuth401() {
@@ -258,6 +335,16 @@ public class ZhipuClientTest {
 		assertEquals("zhipu", newClient().name());
 	}
 
+	/** 智谱无公开模型列表 API：listModels() 应直接抛 AiException，不发网络请求。 */
+	@Test
+	public void testListModelsThrows() {
+		ZhipuClient client = newClient();
+		AiException e = assertThrows(AiException.class, client::listModels);
+		assertTrue(e.getMessage().contains("models list"));
+		assertEquals(0, this.requestCount.get());
+		client.close();
+	}
+
 	/** Models 常量非空。 */
 	@Test
 	public void testModelsConstants() {
@@ -268,5 +355,40 @@ public class ZhipuClientTest {
 		for (String id : ids) {
 			assertFalse(id.isEmpty());
 		}
+	}
+
+	/**
+	 * capabilities() 精确声明（1.9.0 批次 1b）：智谱主 Client OpenAI 兼容面支持 chat/stream/embed/image(CogView)/tts/stt；
+	 * 不声明 MODERATION（兼容面无 /moderations，内容安全为平台内置内容审核机制）、
+	 * VIDEO（见 {@link ZhipuVideoClient}）与 FINETUNE（未适配），调用应 guard 快速失败。
+	 */
+	@Test
+	public void testCapabilitiesDeclaration() throws Exception {
+		ZhipuClient client = newClient();
+		Set<Capability> caps = capabilitiesOf(client);
+		for (Capability c : new Capability[]{Capability.CHAT, Capability.CHAT_STREAM,
+			Capability.EMBED, Capability.IMAGE, Capability.TTS, Capability.STT}) {
+			assertTrue("应声明能力 " + c, caps.contains(c));
+		}
+		assertFalse("智谱主 Client 不声明 MODERATION（兼容面无 /moderations）",
+			caps.contains(Capability.MODERATION));
+		assertFalse("智谱主 Client 不声明 VIDEO（见 ZhipuVideoClient）", caps.contains(Capability.VIDEO));
+		assertFalse("智谱主 Client 不声明 FINETUNE（未适配）", caps.contains(Capability.FINETUNE));
+		assertEquals(6, caps.size());
+		// 未声明能力 → guard 在发请求前抛 AiException
+		assertThrows(AiException.class, () -> client.generate(VideoRequest.builder()
+			.model("cogvideox").prompt("x").build()));
+		assertThrows(AiException.class, () -> client.createFineTune(
+			FineTuneRequest.builder().model("glm-4").trainingFileId("f-1").build()));
+		assertThrows(AiException.class, () -> client.moderate(ModerationRequest.of("x")));
+		client.close();
+	}
+
+	/** 反射调用 protected capabilities()。 */
+	@SuppressWarnings("unchecked")
+	private static Set<Capability> capabilitiesOf(Object client) throws Exception {
+		Method m = AbstractAiClient.class.getDeclaredMethod("capabilities");
+		m.setAccessible(true);
+		return (Set<Capability>) m.invoke(client);
 	}
 }

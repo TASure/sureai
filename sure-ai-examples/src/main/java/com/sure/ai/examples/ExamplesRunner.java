@@ -16,6 +16,8 @@
 
 package com.sure.ai.examples;
 
+import java.util.Arrays;
+
 /**
  * 示例调度入口。
  *
@@ -83,6 +85,104 @@ public final class ExamplesRunner {
 			case "ollama":
 				OllamaDemo.main(emptyArgs);
 				break;
+			case "cohere":
+				CohereDemo.main(emptyArgs);
+				break;
+			case "grok":
+				GrokDemo.main(emptyArgs);
+				break;
+			case "llamacpp":
+				LlamaCppDemo.main(emptyArgs);
+				break;
+			case "mistral":
+				MistralDemo.main(emptyArgs);
+				break;
+			case "rag":
+				RagDemo.main(emptyArgs);
+				break;
+			case "agent":
+				AgentDemo.main(emptyArgs);
+				break;
+			case "image":
+				ImageDemo.main(emptyArgs);
+				break;
+			case "video":
+				VideoDemo.main(emptyArgs);
+				break;
+			case "audio":
+				AudioDemo.main(emptyArgs);
+				break;
+			case "rerank":
+				RerankDemo.main(emptyArgs);
+				break;
+			case "structured":
+				StructuredOutputDemo.main(emptyArgs);
+				break;
+			case "multimodal":
+				MultimodalDemo.main(emptyArgs);
+				break;
+			case "batch":
+				BatchDemo.main(emptyArgs);
+				break;
+			case "realtime":
+				RealtimeDemo.main(emptyArgs);
+				break;
+			case "thinking":
+				ThinkingDemo.main(emptyArgs);
+				break;
+			case "grounding":
+				GroundingDemo.main(emptyArgs);
+				break;
+			case "finetune":
+				FineTuneDemo.main(emptyArgs);
+				break;
+			case "moderation":
+				ModerationDemo.main(emptyArgs);
+				break;
+			case "models":
+				ModelsDemo.main(emptyArgs);
+				break;
+			case "mcpserver":
+				McpServerDemo.main(emptyArgs);
+				break;
+			case "mcphttp":
+				try {
+					McpHttpServerDemo.main(emptyArgs);
+				} catch (Exception ex) {
+					System.out.println("mcphttp 示例运行失败: " + ex.getMessage());
+				}
+				break;
+			case "agentmarket":
+				AgentEcosystemMcpDemo.main(emptyArgs);
+				break;
+			case "gateway":
+				GatewayDemo.main(emptyArgs);
+				break;
+			case "knowledgebase":
+				// 转发 runner 名之后的参数（可选本地文档路径）
+				String[] docArgs = args.length > 1 ? Arrays.copyOfRange(args, 1, args.length)
+						: emptyArgs;
+				KnowledgeBaseDemo.main(docArgs);
+				break;
+			case "gateway-multi":
+				MultiPlatformGatewayDemo.main(emptyArgs);
+				break;
+			case "code-assistant":
+				CodeAssistantDemo.main(emptyArgs);
+				break;
+			case "proxy":
+				ProxyDemo.main(emptyArgs);
+				break;
+			case "evals":
+				EvalsDemo.main(emptyArgs);
+				break;
+			case "regression":
+				try {
+					RegressionDemo.main(emptyArgs);
+				} catch (Exception ex) {
+					System.out.println("regression 示例运行失败: " + ex.getMessage());
+				}
+				break;
 			default:
 				System.out.println("未知平台：" + args[0]);
 				printUsage();
@@ -104,5 +204,34 @@ public final class ExamplesRunner {
 		System.out.println("  doubao     - 火山引擎豆包");
 		System.out.println("  baidu      - 百度千帆文心");
 		System.out.println("  ollama     - Ollama 本地模型");
+		System.out.println("  cohere     - Cohere Command 系列");
+		System.out.println("  grok       - xAI Grok 系列");
+		System.out.println("  llamacpp   - llama.cpp 本地 server");
+		System.out.println("  mistral    - Mistral La Plateforme");
+		System.out.println("  rag        - RAG 检索增强问答（基于 OpenAI）");
+		System.out.println("  agent      - Agent ReAct 多工具编排（离线 Fake 模型演示）");
+		System.out.println("  image      - 多平台图像生成演示（OpenAI/通义万相/智谱）");
+		System.out.println("  video      - 多平台视频生成演示（OpenAI Sora/通义万相/智谱 CogVideoX）");
+		System.out.println("  audio      - 语音 TTS/STT 演示（OpenAI）");
+		System.out.println("  rerank     - 重排序演示（通义千问 qwen3-rerank）");
+		System.out.println("  structured - 结构化输出演示（OpenAI json_object + JsonMapper）");
+		System.out.println("  multimodal - 多模态图像理解演示（OpenAI 视觉模型）");
+		System.out.println("  batch      - 批处理演示（OpenAI Batches 提交/查询）");
+		System.out.println("  realtime   - Realtime 实时语音对话演示（OpenAI，仅展示 API 用法）");
+		System.out.println("  thinking   - 思考模式演示（OpenAI reasoningEffort + reasoningContent）");
+		System.out.println("  grounding  - Grounding 联网搜索演示（OpenAI web_search + 来源解析）");
+		System.out.println("  finetune   - 微调演示（OpenAI FineTune 提交/查询任务）");
+		System.out.println("  moderation - 内容审核演示（OpenAI Moderation 类别与分数）");
+		System.out.println("  models     - 模型列表演示（OpenAI listModels）");
+		System.out.println("  mcpserver - MCP Server 演示（stdio 协议引擎，离线 fake chat 工具）");
+		System.out.println("  mcphttp   - MCP Server 演示（Streamable HTTP，loopback 回环）");
+		System.out.println("  agentmarket - Agent 生态 over MCP（工具市场 + Agent Skills 经 MCP 暴露）");
+		System.out.println("  gateway   - AI Gateway 演示（多供应商注册 + 轮询路由 + 故障转移，离线 fake）");
+		System.out.println("  knowledgebase - 知识库问答 RAG（读本地文档→分块→入库→检索→生成，可离线）");
+		System.out.println("  gateway-multi - 多平台统一网关对比（OpenAI/DeepSeek/Qwen 同问三答，可离线）");
+		System.out.println("  code-assistant - 代码助手（chatStream 流式 + calculator/datetime 工具调用，可离线）");
+		System.out.println("  proxy     - OpenAI 兼容代理演示（JDK HttpServer，loopback 自测）");
+		System.out.println("  evals     - 通用评估：数据集→确定性+LLM裁判指标→报告→阈值断言（离线）");
+		System.out.println("  regression - 录制→回放→TraceRegression golden 回归（离线）");
 	}
 }

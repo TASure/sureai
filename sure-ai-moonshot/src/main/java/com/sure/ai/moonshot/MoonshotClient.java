@@ -16,9 +16,10 @@
 
 package com.sure.ai.moonshot;
 
-import java.util.Map;
+import java.util.Set;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.compat.OpenAiCompatClient;
 
 /**
@@ -49,26 +50,22 @@ public class MoonshotClient extends OpenAiCompatClient {
 		return "moonshot";
 	}
 
-	/** baseUrl 为空时补默认地址，其余配置原样保留。 */
+	/**
+	 * Moonshot/Kimi 支持对话/流式与向量；不提供图像、视频、内容审核与微调端点，
+	 * 调用这些方法时由基类 {@link #guard(Capability)} 快速失败。
+	 *
+	 * @return Moonshot 能力集合
+	 */
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED);
+	}
+
+	/** baseUrl 为空时补默认地址，其余配置通过 {@link AiConfig#withBaseUrl} 原样保留。 */
 	private static AiConfig withDefaultBaseUrl(AiConfig config) {
 		if (config.baseUrl() != null && !config.baseUrl().isBlank()) {
 			return config;
 		}
-		AiConfig.Builder b = AiConfig.builder()
-			.apiKey(config.apiKey())
-			.baseUrl(DEFAULT_BASE_URL)
-			.timeout(config.timeout())
-			.connectTimeout(config.connectTimeout())
-			.maxRetries(config.maxRetries());
-		if (config.proxy() != null && !config.proxy().isBlank()) {
-			b.proxy(config.proxy());
-		}
-		if (config.organization() != null && !config.organization().isBlank()) {
-			b.organization(config.organization());
-		}
-		for (Map.Entry<String, String> e : config.extraHeaders().entrySet()) {
-			b.extraHeader(e.getKey(), e.getValue());
-		}
-		return b.build();
+		return config.withBaseUrl(DEFAULT_BASE_URL);
 	}
 }

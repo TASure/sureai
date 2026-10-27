@@ -42,6 +42,36 @@ public final class ZhipuModels {
 	/** Embedding-3：文本向量模型。 */
 	public static final String EMBEDDING_3 = "embedding-3";
 
+	/** CogView-3：文本生成图像模型。 */
+	public static final String COGVIEW_3 = "cogview-3";
+
+	/** CogView-3-Plus：增强版图像生成模型。 */
+	public static final String COGVIEW_3_PLUS = "cogview-3-plus";
+
+	/** CogView-4：新一代图像生成模型（250304 快照）。 */
+	public static final String COGVIEW_4 = "cogview-4-250304";
+
+	/** GLM-Image：多模态图像理解/生成模型。 */
+	public static final String GLM_IMAGE = "glm-image";
+
+	/** CogView-3-Flash：免费/高速轻量图像生成模型。 */
+	public static final String COGVIEW_3_FLASH = "cogview-3-flash";
+
+	/** CogVideoX-3：新一代视频生成模型。 */
+	public static final String COGVIDEOX_3 = "cogvideox-3";
+
+	/** CogVideoX-2：上一代视频生成模型。 */
+	public static final String COGVIDEOX_2 = "cogvideox-2";
+
+	/** CogVideoX-Flash：免费/高速轻量视频生成模型。 */
+	public static final String COGVIDEOX_FLASH = "cogvideox-flash";
+
+	/** GLM-TTS：语音合成模型。 */
+	public static final String GLM_TTS = "glm-tts";
+
+	/** GLM-ASR-2512：语音识别模型（2512 快照）。 */
+	public static final String GLM_ASR_2512 = "glm-asr-2512";
+
 	/** 工具类禁止实例化。 */
 	private ZhipuModels() {
 		throw new AssertionError("No instances");

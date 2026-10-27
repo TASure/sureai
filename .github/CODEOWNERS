@@ -1,0 +1,23 @@
+# CODEOWNERS — 自动请求 Code Review 的「代码所有者」清单
+# 文档：https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# 语法：每行 = <匹配模式> <一个或多个 owner>，空格分隔。
+#   - 更靠后的规则覆盖前面的同名模式（GitHub 取「最具体、最靠后」的那条）。
+#   - owner 可以是个人（@username）或组织下的团队（@org/team）。
+#
+# 如何修改本文件：
+#   - 新增需要单独把关的目录/文件，就在下面追加一行 <path> @owner；
+#   - 当仓库出现固定的个人 maintainer 或 org 下细分 team 时，把默认 owner 从
+#     @TASure 换成更具体的团队（例如 @TASure/core-maintainers），避免 reviewer 广播过广。
+
+# 默认：仓库内所有变更都由 TASure 组织维护者 Review。
+# 说明：本仓库当前为 org 级协作，不指定个人 owner（不编造具体用户名）；
+#       组织内具备写权限的成员即满足 review 要求。
+*       @TASure
+
+# 涉及 CI / 发布工作流（OIDC、Release、Secrets 用量）的变更，需维护者重点把关。
+# 当前与默认 owner 一致，显式列出以便日后把它收敛到专门的 infra 团队。
+.github/workflows/   @TASure
+
+# 示例（默认注释掉）：日后若 docs/ 由专人维护，可放开并替换 owner：
+# docs/               @TASure/docs-maintainers

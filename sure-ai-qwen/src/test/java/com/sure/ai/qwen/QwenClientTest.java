@@ -17,15 +17,20 @@
 package com.sure.ai.qwen;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.After;
 import org.junit.Before;
@@ -34,7 +39,10 @@ import org.junit.Test;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
+import com.sure.ai.client.SingletonHolder;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiAuthException;
 import com.sure.ai.exception.AiException;
@@ -43,6 +51,15 @@ import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
 import com.sure.ai.model.EmbeddingRequest;
 import com.sure.ai.model.EmbeddingResponse;
+import com.sure.ai.model.FineTuneRequest;
+import com.sure.ai.model.ImageRequest;
+import com.sure.ai.model.ModerationRequest;
+import com.sure.ai.model.SttRequest;
+import com.sure.ai.model.SttResponse;
+import com.sure.ai.model.TtsRequest;
+import com.sure.ai.model.TtsResponse;
+import com.sure.ai.model.VideoPart;
+import com.sure.ai.model.VideoRequest;
 
 /**
  * {@link QwenClient} 与 {@link QwenUtil} 集成测试：本地 HttpServer mock。
@@ -82,9 +99,9 @@ public class QwenClientTest {
 
 	/** 反射清空静态单例。 */
 	private static void resetUtil() throws Exception {
-		Field f = QwenUtil.class.getDeclaredField("client");
+		Field f = QwenUtil.class.getDeclaredField("HOLDER");
 		f.setAccessible(true);
-		f.set(null, null);
+		((SingletonHolder<?>) f.get(null)).reset();
 	}
 
 	/** 构造客户端。 */
@@ -139,6 +156,25 @@ public class QwenClientTest {
 		assertTrue(this.lastBody.get().contains("\"model\":\"qwen-plus\""));
 		assertEquals("你好", resp.firstText());
 		assertEquals(8, resp.usage().totalTokens());
+		client.close();
+	}
+
+	/** 视频输入：VideoPart.ofUrl 映射为 Qwen-VL 的 type=video_url 内容块。 */
+	@Test
+	public void testVideoInput() {
+		handle(200, "{\"id\":\"qv\",\"model\":\"qwen-vl-max\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"视频摘要\"},\"finish_reason\":\"stop\"}],"
+			+ "\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":4,\"total_tokens\":14}}");
+		QwenClient client = newClient();
+		client.chat(ChatRequest.builder().model("qwen-vl-max")
+			.messages(ChatMessage.user(List.of(
+				com.sure.ai.model.TextPart.of("描述这个视频"),
+				VideoPart.ofUrl("https://example.com/demo.mp4"))))
+			.build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"type\":\"video_url\""));
+		assertTrue(body.contains("\"video_url\""));
+		assertTrue(body.contains("https://example.com/demo.mp4"));
 		client.close();
 	}
 
@@ -253,5 +289,132 @@ public class QwenClientTest {
 			java.lang.reflect.InvocationTargetException.class, c::newInstance);
 		assertTrue(ex.getCause() instanceof AssertionError);
 		assertEquals("qwen-max", QwenModels.QWEN_MAX);
+	}
+
+	/** TTS（CosyVoice）：原生端点返回 JSON 含 audio.url。 */
+	@Test
+	public void testTts() {
+		handle(200, "{\"output\":{\"audio\":{\"url\":\"https://example.com/tts.mp3\"}},"
+			+ "\"request_id\":\"req-tts\"}");
+		QwenClient client = newClient();
+		TtsResponse resp = client.synthesize(TtsRequest.builder()
+			.model(QwenModels.COSYVOICE_V3_5_PLUS).input("你好世界").voice("longanhuan_v3.6")
+			.responseFormat("mp3").build());
+		assertEquals("https://example.com/tts.mp3", resp.url());
+		assertEquals("mp3", resp.format());
+		assertTrue(this.lastUri.get().contains("/api/v1/services/audio/tts/SpeechSynthesizer"));
+		assertTrue(this.lastBody.get().contains("\"model\":\"cosyvoice-v3.5-plus\""));
+		assertTrue(this.lastBody.get().contains("\"text\":\"你好世界\""));
+		assertTrue(this.lastBody.get().contains("\"voice\":\"longanhuan_v3.6\""));
+		client.close();
+	}
+
+	/** STT（Qwen-ASR）：chat/completions input_audio base64 上报，解析 choices 文本。 */
+	@Test
+	public void testStt() {
+		handle(200, "{\"id\":\"asr\",\"model\":\"qwen3-asr-flash\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"识别结果文本\"},\"finish_reason\":\"stop\"}]}");
+		QwenClient client = newClient();
+		byte[] audio = "fake-audio".getBytes(StandardCharsets.UTF_8);
+		SttResponse resp = client.transcribe(SttRequest.builder()
+			.model(QwenModels.QWEN3_ASR_FLASH).audioData(audio).build());
+		assertEquals("识别结果文本", resp.text());
+		assertTrue(this.lastUri.get().contains("/compatible-mode/v1/chat/completions"));
+		assertTrue(this.lastBody.get().contains("\"type\":\"input_audio\""));
+		String expectedB64 = Base64.getEncoder().encodeToString(audio);
+		assertTrue(this.lastBody.get().contains(expectedB64));
+		assertTrue(resp.rawJson().contains("qwen3-asr-flash"));
+		client.close();
+	}
+
+	/** TTS / STT 模型常量。 */
+	@Test
+	public void testAudioModelsConstants() {
+		assertNotNull(QwenModels.COSYVOICE_V3_5_PLUS);
+		assertNotNull(QwenModels.COSYVOICE_V3_5_FLASH);
+		assertNotNull(QwenModels.QWEN_AUDIO_TTS_PLUS);
+		assertNotNull(QwenModels.QWEN3_ASR_FLASH);
+	}
+
+	/** 思考模式：reasoningEffort 映射为 enable_thinking=true + thinking_budget，不发送 reasoning_effort。 */
+	@Test
+	public void testThinkingEnable() {
+		handle(200, "{\"id\":\"q\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		QwenClient client = newClient();
+		client.chat(ChatRequest.builder().model(QwenModels.QWEN_PLUS)
+			.messages(ChatMessage.user("hi")).reasoningEffort("high").build());
+		String body = this.lastBody.get();
+		assertTrue("应启用思考模式", body.contains("\"enable_thinking\":true"));
+		assertTrue("high 应映射较大 thinking_budget", body.contains("\"thinking_budget\":16384"));
+		assertFalse("通义不支持 reasoning_effort，不应发送", body.contains("reasoning_effort"));
+		client.close();
+	}
+
+	/** 思考模式：thinkingConfig=true（Boolean）→ enable_thinking=true。 */
+	@Test
+	public void testThinkingConfigBoolean() {
+		handle(200, "{\"id\":\"q\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		QwenClient client = newClient();
+		client.chat(ChatRequest.builder().model(QwenModels.QWEN_PLUS)
+			.messages(ChatMessage.user("hi")).thinkingConfig(Boolean.TRUE).build());
+		String body = this.lastBody.get();
+		assertTrue(body.contains("\"enable_thinking\":true"));
+		assertFalse(body.contains("reasoning_effort"));
+		client.close();
+	}
+
+	/** Grounding：grounding 非 null → enable_search=true，且不注入 web_search 工具。 */
+	@Test
+	public void testGroundingEnableSearch() {
+		handle(200, "{\"id\":\"q\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		QwenClient client = newClient();
+		client.chat(ChatRequest.builder().model(QwenModels.QWEN_PLUS)
+			.messages(ChatMessage.user("hi")).grounding("web_search").build());
+		String body = this.lastBody.get();
+		assertTrue("应开启联网搜索", body.contains("\"enable_search\":true"));
+		assertFalse("通义不用 web_search 工具", body.contains("web_search"));
+		client.close();
+	}
+
+	/**
+	 * capabilities() 精确声明（1.9.0 批次 1b）：百炼兼容模式主 Client 支持 chat/stream/embed 及原生覆写的
+	 * TTS(CosyVoice)/STT(Qwen-ASR)；不声明 MODERATION（兼容模式无 /moderations，内容安全为独立 AI 护栏）、
+	 * IMAGE（见 {@link QwenImageClient}）、VIDEO（见 {@link QwenVideoClient}）、FINETUNE（未适配），
+	 * 调用应 guard 快速失败。
+	 */
+	@Test
+	public void testCapabilitiesDeclaration() throws Exception {
+		QwenClient client = newClient();
+		Set<Capability> caps = capabilitiesOf(client);
+		for (Capability c : new Capability[]{Capability.CHAT, Capability.CHAT_STREAM,
+			Capability.EMBED, Capability.TTS, Capability.STT}) {
+			assertTrue("应声明能力 " + c, caps.contains(c));
+		}
+		assertFalse("百炼主 Client 不声明 MODERATION（兼容模式无 /moderations）",
+			caps.contains(Capability.MODERATION));
+		assertFalse("百炼主 Client 不声明 IMAGE（见 QwenImageClient）", caps.contains(Capability.IMAGE));
+		assertFalse("百炼主 Client 不声明 VIDEO（见 QwenVideoClient）", caps.contains(Capability.VIDEO));
+		assertFalse("百炼主 Client 不声明 FINETUNE（未适配）", caps.contains(Capability.FINETUNE));
+		assertEquals(5, caps.size());
+		// 未声明能力 → guard 在发请求前抛 AiException
+		assertThrows(AiException.class, () -> client.generate(ImageRequest.builder()
+			.model("wanx").prompt("x").build()));
+		assertThrows(AiException.class, () -> client.generate(VideoRequest.builder()
+			.model("wanx2.1").prompt("x").build()));
+		assertThrows(AiException.class, () -> client.createFineTune(
+			FineTuneRequest.builder().model("qwen-max").trainingFileId("f-1").build()));
+		assertThrows(AiException.class, () -> client.moderate(ModerationRequest.of("x")));
+		client.close();
+	}
+
+	/** 反射调用 protected capabilities()。 */
+	@SuppressWarnings("unchecked")
+	private static Set<Capability> capabilitiesOf(Object client) throws Exception {
+		Method m = AbstractAiClient.class.getDeclaredMethod("capabilities");
+		m.setAccessible(true);
+		return (Set<Capability>) m.invoke(client);
 	}
 }

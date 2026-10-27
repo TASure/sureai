@@ -177,4 +177,15 @@ public abstract class JsonElement {
 	public int optInt(String key, int defaultValue) {
 		return defaultValue;
 	}
+
+	/**
+	 * 仅当本元素为对象时，读取指定键的 long 值；否则返回默认值。
+	 *
+	 * @param key          键名
+	 * @param defaultValue 默认值
+	 * @return long 值，不存在或非对象时返回默认值
+	 */
+	public long optLong(String key, long defaultValue) {
+		return defaultValue;
+	}
 }

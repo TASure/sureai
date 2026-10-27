@@ -17,10 +17,14 @@
 package com.sure.ai.zhipu;
 
 import java.net.http.HttpRequest;
-import java.util.Map;
+import java.util.List;
+import java.util.Set;
 
 import com.sure.ai.client.AiConfig;
+import com.sure.ai.client.Capability;
 import com.sure.ai.client.compat.OpenAiCompatClient;
+import com.sure.ai.exception.AiException;
+import com.sure.ai.model.Model;
 
 /**
  * 智谱 AI 开放平台客户端。
@@ -30,6 +34,15 @@ import com.sure.ai.client.compat.OpenAiCompatClient;
  * HS256 JWT 作为 Bearer token，并在有效期内缓存复用。</p>
  *
  * <p>默认 baseUrl：{@code https://open.bigmodel.cn/api/paas/v4}。</p>
+ *
+ * <p>P2 平台特定能力：</p>
+ * <ul>
+ *   <li><b>模型列表</b>：智谱无公开 REST 模型列表 API，{@link #listModels()} 直接抛
+ *   {@link AiException}，模型 ID 见 {@link ZhipuModels}。</li>
+ *   <li><b>思考模式 / Grounding</b>：智谱 OpenAI 兼容模式与 OpenAI 协议高度相似，
+ *   {@code reasoning_effort} 与 {@code web_search} 工具由 core 序列化，无需额外改写。</li>
+ *   <li><b>微调</b>：智谱微调为独立控制台/工单流程，无稳定公开 REST 端点，本期未单独适配。</li>
+ * </ul>
  *
  * @author sureai
  * @since 0.1.0
@@ -55,11 +68,56 @@ public class ZhipuClient extends OpenAiCompatClient {
 	 */
 	public ZhipuClient(AiConfig config) {
 		super(withDefaultBaseUrl(config));
+		// baseUrl 已含 /api/paas/v4，这里显式给出相对语音接口路径，便于阅读与覆盖。
+		this.ttsPath = "/audio/speech";
+		this.sttPath = "/audio/transcriptions";
 	}
 
 	@Override
 	public String name() {
 		return "zhipu";
+	}
+
+	/**
+	 * 智谱 AI 开放平台主 Client（{@code https://open.bigmodel.cn/api/paas/v4}）OpenAI 兼容面实际支持：
+	 * chat/completions、embeddings（embedding-3）、images/generations（CogView-3 / GLM-Image）、
+	 * audio/speech（TTS）与 audio/transcriptions（STT）——后两者由构造器显式接线 ttsPath/sttPath。
+	 *
+	 * <p>依据：智谱开放平台 OpenAI 兼容接口文档（<a href="https://open.bigmodel.cn/dev/api">open.bigmodel.cn/dev/api</a>）。</p>
+	 *
+	 * <p>未声明：</p>
+	 * <ul>
+	 *   <li>{@code VIDEO}——视频生成（CogView/清影视频）走独立 {@link ZhipuVideoClient}（原生异步任务协议），
+	 *   主 Client 未接线 videosPath，故不声明；</li>
+	 *   <li>{@code FINETUNE}——智谱微调为独立控制台/工单流程，无稳定公开 REST 端点，本类未适配（见类注释），故不声明。</li>
+	 * </ul>
+	 *
+	 * <p>{@code MODERATION}（1.9.0 批次 1b 已按官方文档核实并移除）：智谱 OpenAI 兼容面
+	 * （{@code /api/paas/v4}）未提供 OpenAI 风格的 {@code /moderations} 端点；内容安全为平台内置的
+	 * 「内容审核」机制（输入拦截/输出限制），并非兼容面内可独立调用的审核接口。
+	 * 依据：<a href="https://docs.bigmodel.cn/cn/guide/platform/securityaudit">内容安全</a>。</p>
+	 *
+	 * @return Zhipu 主 Client 实际支持的能力集合
+	 */
+	@Override
+	protected Set<Capability> capabilities() {
+		return Set.of(Capability.CHAT, Capability.CHAT_STREAM, Capability.EMBED,
+			Capability.IMAGE, Capability.TTS, Capability.STT);
+	}
+
+	/**
+	 * 智谱不提供公开的 OpenAI 风格 {@code GET /models} 列表 API（模型仅在静态文档页概览）。
+	 *
+	 * <p>若沿用 core 的默认实现会对 {@code /models} 发请求并收到 404，故此处直接抛出
+	 * 业务异常，引导调用方使用 {@link ZhipuModels} 中的静态模型 ID 常量。</p>
+	 *
+	 * @return 从不正常返回
+	 * @throws AiException 始终抛出，说明智谱无公开模型列表 API
+	 */
+	@Override
+	public List<Model> listModels() {
+		throw new AiException("Zhipu does not provide a public models list API; "
+			+ "use static model IDs in ZhipuModels");
 	}
 
 	@Override
@@ -88,26 +146,11 @@ public class ZhipuClient extends OpenAiCompatClient {
 		}
 	}
 
-	/** baseUrl 为空时补默认地址，其余配置原样保留。 */
+	/** baseUrl 为空时补默认地址，其余配置通过 {@link AiConfig#withBaseUrl} 原样保留。 */
 	private static AiConfig withDefaultBaseUrl(AiConfig config) {
 		if (config.baseUrl() != null && !config.baseUrl().isBlank()) {
 			return config;
 		}
-		AiConfig.Builder b = AiConfig.builder()
-			.apiKey(config.apiKey())
-			.baseUrl(DEFAULT_BASE_URL)
-			.timeout(config.timeout())
-			.connectTimeout(config.connectTimeout())
-			.maxRetries(config.maxRetries());
-		if (config.proxy() != null && !config.proxy().isBlank()) {
-			b.proxy(config.proxy());
-		}
-		if (config.organization() != null && !config.organization().isBlank()) {
-			b.organization(config.organization());
-		}
-		for (Map.Entry<String, String> e : config.extraHeaders().entrySet()) {
-			b.extraHeader(e.getKey(), e.getValue());
-		}
-		return b.build();
+		return config.withBaseUrl(DEFAULT_BASE_URL);
 	}
 }
