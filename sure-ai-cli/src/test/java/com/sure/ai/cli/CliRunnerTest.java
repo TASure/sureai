@@ -135,7 +135,9 @@ public class CliRunnerTest {
 	@Test
 	public void chatPrintsFixedReply() {
 		FakeAiClient client = new FakeAiClient("你好，我是 Fake", List.of());
-		CliRunner runner = new CliRunner(out, factoryFor(client, "gpt-4o-mini"));
+		// chat 默认多轮：注入 EOF 行源（返回 null），避免读取真实 System.in 在无 EOF 的 CI 上挂起
+		CliRunner runner = new CliRunner(out, factoryFor(client, "gpt-4o-mini"),
+			path -> "", () -> null);
 		int code = runner.run(new String[] { "chat", "打招呼" });
 		assertEquals(0, code);
 		assertTrue(output().contains("你好，我是 Fake"));
@@ -144,7 +146,8 @@ public class CliRunnerTest {
 	@Test
 	public void chatUsesDefaultModel() {
 		FakeAiClient client = new FakeAiClient("ans", List.of());
-		CliRunner runner = new CliRunner(out, factoryFor(client, "gpt-4o-mini"));
+		CliRunner runner = new CliRunner(out, factoryFor(client, "gpt-4o-mini"),
+			path -> "", () -> null);
 		runner.run(new String[] { "chat", "q" });
 		assertEquals("gpt-4o-mini", client.lastRequest.model());
 	}
@@ -152,7 +155,8 @@ public class CliRunnerTest {
 	@Test
 	public void modelOverrideIsPassed() {
 		FakeAiClient client = new FakeAiClient("ans", List.of());
-		CliRunner runner = new CliRunner(out, factoryFor(client, "gpt-4o-mini"));
+		CliRunner runner = new CliRunner(out, factoryFor(client, "gpt-4o-mini"),
+			path -> "", () -> null);
 		runner.run(new String[] { "--model", "gpt-4o", "chat", "q" });
 		assertEquals("gpt-4o", client.lastRequest.model());
 	}
