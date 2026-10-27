@@ -17,6 +17,7 @@
 package com.sure.ai.openai;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -40,9 +41,12 @@ import com.sure.ai.client.AbstractAiClient;
 import com.sure.ai.client.AiConfig;
 import com.sure.ai.client.Capability;
 import com.sure.ai.client.SingletonHolder;
+import com.sure.ai.client.realtime.RealtimeEventListener;
 import com.sure.ai.exception.AiApiException;
 import com.sure.ai.exception.AiAuthException;
 import com.sure.ai.exception.AiException;
+import com.sure.ai.model.BatchRequest;
+import com.sure.ai.model.BatchResponse;
 import com.sure.ai.model.ChatMessage;
 import com.sure.ai.model.ChatRequest;
 import com.sure.ai.model.ChatResponse;
@@ -454,5 +458,166 @@ public class OpenAiClientTest {
 		Method m = AbstractAiClient.class.getDeclaredMethod("capabilities");
 		m.setAccessible(true);
 		return (Set<Capability>) m.invoke(client);
+	}
+
+	/** RealtimeEventListener 空实现（仅用于构造工厂单例，不触发回调）。 */
+	private static final class NoopRealtimeListener implements RealtimeEventListener {
+		@Override
+		public void onTranscript(String text) {
+		}
+
+		@Override
+		public void onAudio(byte[] audio) {
+		}
+
+		@Override
+		public void onError(String err) {
+		}
+
+		@Override
+		public void onClose() {
+		}
+
+		@Override
+		public void onEvent(String type, String rawJson) {
+		}
+
+		@Override
+		public void onSpeechStart() {
+		}
+
+		@Override
+		public void onSpeechStop() {
+		}
+
+		@Override
+		public void onInterrupted() {
+		}
+	}
+
+	/** Util 图像便捷重载：image(model,prompt) 与 image(ImageRequest)。 */
+	@Test
+	public void testUtilImageOverloads() {
+		handle(200, "{\"created\":1700000000,\"data\":["
+			+ "{\"url\":\"https://example.com/img.png\"}]}");
+		OpenAiUtil.init(AiConfig.builder().apiKey("k").baseUrl(this.baseUrl).build());
+		assertEquals("https://example.com/img.png", OpenAiUtil.image("dall-e-3", "cat").firstUrl());
+		assertEquals("https://example.com/img.png",
+			OpenAiUtil.image(ImageRequest.builder().model("dall-e-3").prompt("cat").build()).firstUrl());
+	}
+
+	/** Util 视频重载：video(VideoRequest) 走异步轮询 queued → completed。 */
+	@Test
+	public void testUtilVideoRequestOverload() {
+		java.util.concurrent.atomic.AtomicInteger polls = new java.util.concurrent.atomic.AtomicInteger(0);
+		handle(ex -> {
+			if ("POST".equals(ex.getRequestMethod())) {
+				respond(ex, 200, "{\"id\":\"v1\",\"status\":\"queued\"}");
+			} else {
+				int n = polls.incrementAndGet();
+				if (n == 1) {
+					respond(ex, 200, "{\"id\":\"v1\",\"status\":\"in_progress\"}");
+				} else {
+					respond(ex, 200, "{\"id\":\"v1\",\"status\":\"completed\",\"data\":[{\"url\":\"http://x/v.mp4\"}]}");
+				}
+			}
+		});
+		OpenAiUtil.init(AiConfig.builder().apiKey("k").baseUrl(this.baseUrl).build());
+		assertEquals("http://x/v.mp4", OpenAiUtil.video(VideoRequest.builder()
+			.model("sora-2").prompt("cat").build()).firstUrl());
+	}
+
+	/** Util TTS 重载：tts(TtsRequest) 二进制音频响应。 */
+	@Test
+	public void testUtilTtsRequestOverload() {
+		byte[] audio = new byte[] { 5, 6, 7, 8, 9 };
+		handle(ex -> {
+			ex.getResponseHeaders().set("Content-Type", "audio/mpeg");
+			ex.sendResponseHeaders(200, audio.length);
+			try (OutputStream os = ex.getResponseBody()) {
+				os.write(audio);
+			}
+		});
+		OpenAiUtil.init(AiConfig.builder().apiKey("k").baseUrl(this.baseUrl).build());
+		assertEquals(5, OpenAiUtil.tts(TtsRequest.builder()
+			.model("tts-1").input("hi").voice("alloy").build()).audioLength());
+	}
+
+	/** Util STT 重载：stt(SttRequest) multipart 上传 → JSON 文本响应。 */
+	@Test
+	public void testUtilSttRequestOverload() {
+		handle(200, "{\"text\":\"request-transcribed\"}");
+		OpenAiUtil.init(AiConfig.builder().apiKey("k").baseUrl(this.baseUrl).build());
+		assertEquals("request-transcribed", OpenAiUtil.stt(SttRequest.builder()
+			.model("whisper-1").audioData(new byte[] { 1, 2 }).fileName("a.mp3")
+			.contentType("audio/mpeg").build()).text());
+	}
+
+	/** 未 init 时经环境变量懒加载主客户端（loadFromEnv + buildConfigFromEnv 成功路径）。 */
+	@Test
+	public void testLoadFromEnv() throws Exception {
+		handle(200, "{\"id\":\"u\",\"choices\":[{\"index\":0,"
+			+ "\"message\":{\"role\":\"assistant\",\"content\":\"env-yo\"},\"finish_reason\":\"stop\"}]}");
+		EnvVars env = EnvVars.begin();
+		try {
+			env.set(OpenAiUtil.ENV_API_KEY, "env-key");
+			env.set(OpenAiUtil.ENV_BASE_URL, this.baseUrl);
+			resetUtil();
+			assertEquals("env-yo", OpenAiUtil.chat("gpt-4o", "hi").firstText());
+			assertEquals("Bearer env-key", this.lastAuth.get());
+		}
+		finally {
+			env.restore();
+			resetUtil();
+		}
+	}
+
+	/** 批处理便捷方法 batch()/getBatch() 经环境变量懒加载 BATCH 单例。 */
+	@Test
+	public void testUtilBatchConvenience() throws Exception {
+		handle(ex -> {
+			if ("POST".equals(ex.getRequestMethod())) {
+				respond(ex, 200, "{\"id\":\"b1\",\"status\":\"validating\",\"created_at\":1700000000}");
+			} else {
+				respond(ex, 200, "{\"id\":\"b1\",\"status\":\"completed\",\"created_at\":1700000000,"
+					+ "\"request_counts\":{\"total\":2,\"completed\":2,\"failed\":0}}");
+			}
+		});
+		EnvVars env = EnvVars.begin();
+		try {
+			env.set(OpenAiUtil.ENV_API_KEY, "batch-key");
+			env.set(OpenAiUtil.ENV_BASE_URL, this.baseUrl);
+			OpenAiUtil.resetBatchClient();
+			BatchResponse created = OpenAiUtil.batch(BatchRequest.builder()
+				.model("gpt-4o-mini").inputFileId("file-1").build());
+			assertEquals("b1", created.id());
+			BatchResponse got = OpenAiUtil.getBatch("b1");
+			assertEquals("completed", got.status());
+			assertEquals(2, got.requestCounts().completed());
+		}
+		finally {
+			env.restore();
+			OpenAiUtil.resetBatchClient();
+		}
+	}
+
+	/** Realtime 工厂 realtimeClient(model,listener) 经环境变量懒加载并可重置。 */
+	@Test
+	public void testUtilRealtimeFactory() throws Exception {
+		EnvVars env = EnvVars.begin();
+		try {
+			env.set(OpenAiUtil.ENV_API_KEY, "rt-key");
+			env.set(OpenAiUtil.ENV_BASE_URL, this.baseUrl);
+			OpenAiUtil.resetRealtimeClient();
+			OpenAiRealtimeClient client = OpenAiUtil.realtimeClient("gpt-4o-realtime",
+				new NoopRealtimeListener());
+			assertNotNull(client);
+			assertEquals("openai-realtime", client.name());
+			OpenAiUtil.resetRealtimeClient();
+		}
+		finally {
+			env.restore();
+			OpenAiUtil.resetRealtimeClient();
+		}
 	}
 }

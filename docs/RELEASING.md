@@ -302,9 +302,8 @@ mvn -B org.apache.maven.plugins:maven-javadoc-plugin:3.6.3:aggregate -Dgpg.skip=
 - **文件**：`.github/workflows/ci.yml`
 - **触发条件**：push / pull request 到 `main`。
 - **矩阵**：
-  - JDK 21：`ubuntu-latest` + `macos-latest`，并额外 include 一个 `windows-latest`（`continue-on-error: true`，Windows 路径分隔符/脚本行为尚未在 CI 全量验证，失败不阻断整体）；
-  - JDK 25：仅 `ubuntu-latest`（通过 `exclude` 把 JDK25 + macos 排除掉，节省资源）。
-- 每个 job 执行 `mvn -B verify`；JDK21 的 job 额外上传 `sure-ai-*/target/site/jacoco/` 作为 JaCoCo 覆盖率 artifact。
+  - JDK 25：`ubuntu-latest` + `macos-latest`，并额外 include 一个 `windows-latest`（`continue-on-error: true`，Windows 路径分隔符/脚本行为尚未在 CI 全量验证，失败不阻断整体）。2026-10 起放弃 JDK 21 兼容，矩阵仅保留 25。
+- 每个 job 执行 `mvn -B verify`；`ubuntu-latest` 的 job 额外上传 `sure-ai-*/target/site/jacoco/` 作为 JaCoCo 覆盖率 artifact。
 - 另有一个**与 build 矩阵并行**的 `dependency-check` job（见上文 [依赖漏洞扫描（OWASP dependency-check）](#依赖漏洞扫描owasp-dependency-check)），独立跑 OWASP 扫描并归档 HTML/XML 报告，`continue-on-error: true`，不进 `mvn verify`、不拖慢主门禁。
 
 ### javadoc.yml（聚合 Javadoc → GitHub Pages）

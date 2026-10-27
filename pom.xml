@@ -23,7 +23,7 @@
 
     <groupId>io.github.tasure</groupId>
     <artifactId>sureai</artifactId>
-    <version>2.3.0-SNAPSHOT</version>
+    <version>3.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>sureai</name>
@@ -58,13 +58,17 @@
     <modules>
         <module>sure-ai-core</module>
         <module>sure-ai-rag</module>
+        <module>sure-ai-ingest</module>
+        <module>sure-ai-ingest-poi</module>
         <module>sure-ai-agent</module>
+        <module>sure-ai-framework</module>
         <module>sure-ai-mcp</module>
         <module>sure-ai-mcp-server</module>
         <module>sure-ai-gateway</module>
         <module>sure-ai-proxy</module>
         <module>sure-ai-micrometer</module>
         <module>sure-ai-otel</module>
+        <module>sure-ai-evals</module>
         <module>sure-ai-spring-boot-starter</module>
         <module>sure-ai-quarkus-extension</module>
         <module>sure-ai-quarkus-extension-deployment</module>
@@ -97,6 +101,8 @@
         <module>sure-ai-examples</module>
         <module>sure-ai-cli</module>
         <module>sure-ai-archetype</module>
+        <module>sure-ai-templates</module>
+        <module>sure-ai-docsite</module>
     </modules>
 
     <properties>
@@ -104,12 +110,14 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <junit.version>4.13.2</junit.version>
         <sure.core.version>0.2.0</sure.core.version>
-        <!-- JaCoCo 行覆盖率门禁下限（sure-ai-core 在自身 pom 覆盖为 0.70） -->
-        <jacoco.line.min>0.60</jacoco.line.min>
+        <!-- Apache POI 版本：仅 sure-ai-ingest-poi 以 provided 引入，不进运行期链 -->
+        <poi.version>5.5.1</poi.version>
+        <!-- JaCoCo 行覆盖率门禁下限：全模块 ≥98%（sure-ai-core 亦 0.98） -->
+        <jacoco.line.min>0.98</jacoco.line.min>
         <!-- SpotBugs 静态扫描：默认开启，无源码模块在自身 pom 覆盖为 true -->
         <spotbugs.skip>false</spotbugs.skip>
-        <!-- 字节码目标：sureai 仅支持 JDK21+ -->
-        <maven.compiler.release>21</maven.compiler.release>
+        <!-- 字节码目标：sureai 仅支持 JDK25+（2026-10 决策：放弃 JDK21 兼容） -->
+        <maven.compiler.release>25</maven.compiler.release>
     </properties>
 
     <dependencyManagement>
@@ -127,7 +135,22 @@
             </dependency>
             <dependency>
                 <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-ingest</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-ingest-poi</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-agent</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-framework</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -158,6 +181,11 @@
             <dependency>
                 <groupId>io.github.tasure</groupId>
                 <artifactId>sure-ai-otel</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.tasure</groupId>
+                <artifactId>sure-ai-evals</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -293,6 +321,14 @@
                 <version>${sure.core.version}</version>
             </dependency>
 
+            <!-- Apache POI：仅 sure-ai-ingest-poi 以 provided 使用，此处统一版本；
+                 不传递给下游，使用者需自行显式声明 POI 依赖 -->
+            <dependency>
+                <groupId>org.apache.poi</groupId>
+                <artifactId>poi-ooxml</artifactId>
+                <version>${poi.version}</version>
+            </dependency>
+
             <!-- 测试依赖 -->
             <dependency>
                 <groupId>junit</groupId>
@@ -330,7 +366,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
+                <version>3.16.0</version>
             </plugin>
             <!-- 固定资源插件版本：3.4.0 起默认排除 **/.gitignore（CI runner 默认版本漂移
                  会导致 sure-ai-archetype 模板 .gitignore 不进 target/classes、测试失败） -->
@@ -343,6 +379,11 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.1.2</version>
+                <configuration>
+                    <!-- 保留 jacoco prepare-agent 注入的 javaagent，
+                         追加 opens 以允许测试经反射读写 ProcessEnvironment（env 分支单测）。 -->
+                    <argLine>@{argLine} --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED</argLine>
+                </configuration>
             </plugin>
             <!-- 测试覆盖率（各模块独立报告） -->
             <plugin>
@@ -390,7 +431,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-checkstyle-plugin</artifactId>
-                <version>3.3.1</version>
+                <version>3.6.0</version>
                 <configuration>
                     <configLocation>${maven.multiModuleProjectDirectory}/config/checkstyle/checkstyle.xml</configLocation>
                     <consoleOutput>true</consoleOutput>
@@ -504,7 +545,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-source-plugin</artifactId>
-                        <version>3.3.1</version>
+                        <version>3.4.0</version>
                         <executions>
                             <execution>
                                 <id>attach-sources</id>
@@ -517,7 +558,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
-                        <version>3.6.3</version>
+                        <version>3.12.0</version>
                         <executions>
                             <execution>
                                 <id>attach-javadocs</id>
@@ -530,7 +571,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
-                        <version>3.2.4</version>
+                        <version>3.2.8</version>
                         <configuration>
                             <keyname>${gpg.keyname}</keyname>
                         </configuration>
@@ -573,13 +614,19 @@
                     <plugin>
                         <groupId>org.owasp</groupId>
                         <artifactId>dependency-check-maven</artifactId>
-                        <!-- 12.2.2：12.x 成熟补丁线（2026-05）；13.0.0 为 2026-08 新主版本，暂不追新。 -->
-                        <version>12.2.2</version>
+                        <!-- 13.0.0（2026-08 新主版本）：适配 NVD 数据源迁移后的 feed 结构，
+                             修复 12.2.2 拉取 NVD 数据 BlobNotFound(404) 的问题；12.x 为旧补丁线。 -->
+                        <version>13.0.0</version>
                         <configuration>
                             <!-- CVSS >= 7.0（High）时使构建失败；插件默认 11（永不失败）。
                                  仅作门禁阈值，实际是否阻断 CI 由 dependency-check job 的
                                  continue-on-error 决定（见 .github/workflows/ci.yml）。 -->
                             <failBuildOnCVSS>7</failBuildOnCVSS>
+                            <!-- 无 NVD_API_KEY 时官方限流约 5 次/30 秒：请求间隔固定 6s，
+                                 降低无 key 场景下因限流导致的 NVD API 请求失败。
+                                 配置仓库 secrets NVD_API_KEY（50 req/30s）后间隔收紧到 1s，
+                                 首次全量下载从 ~60min 降到 ~10min；后续 CI 由 actions/cache 复用数据目录。 -->
+                            <nvdApiDelay>1000</nvdApiDelay>
                             <!-- 同时输出 HTML（人读报告）与 XML（程序化消费/归档） -->
                             <formats>
                                 <format>HTML</format>

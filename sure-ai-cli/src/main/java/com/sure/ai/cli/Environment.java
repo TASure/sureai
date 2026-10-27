@@ -33,6 +33,15 @@ public interface Environment {
 	 */
 	String getenv(String name);
 
+	/**
+	 * 全部环境变量名（v3.0.0，config 概览用）。
+	 *
+	 * @return 环境变量名集合
+	 */
+	default java.util.Set<String> keySet() {
+		return System.getenv().keySet();
+	}
+
 	/** 默认实现：委托 {@link System#getenv}。 */
 	Environment SYSTEM = System::getenv;
 }

@@ -138,10 +138,20 @@ public class BaiduImageClientTest {
 						"application/json");
 					return;
 				}
+				if ("pollErr".equals(this.mode)) {
+					respond(exchange, 200,
+						"{\"code\":120,\"msg\":\"poll boom\",\"data\":{}}", "application/json");
+					return;
+				}
 				if ("pending".equals(this.mode) || hits == 1) {
 					respond(exchange, 200,
 						"{\"code\":0,\"msg\":\"success\",\"data\":{\"status\":1}}",
 						"application/json");
+					return;
+				}
+				if ("imgList".equals(this.mode)) {
+					respond(exchange, 200, "{\"code\":0,\"msg\":\"success\",\"data\":{\"status\":2,"
+						+ "\"img_list\":[{\"img_url\":\"" + IMAGE_URL + "\"}]}}", "application/json");
 					return;
 				}
 				respond(exchange, 200, "{\"code\":0,\"msg\":\"success\",\"data\":{\"status\":2,"
@@ -236,6 +246,69 @@ public class BaiduImageClientTest {
 			() -> client.generate(BaiduModels.ERNIE_VILG_V2, "slow"));
 		assertTrue("应多次轮询后才超时，实际轮询次数: " + this.pollHits.get(), this.pollHits.get() > 1);
 		client.close();
+	}
+
+	/** 轮询 code!=0 → AiApiException。 */
+	@Test
+	public void testPollError() {
+		this.mode = "pollErr";
+		BaiduImageClient client = newClient();
+		assertThrows(AiApiException.class, () -> client.generate(BaiduModels.ERNIE_VILG_V2, "x"));
+		client.close();
+	}
+
+	/** img_list 分支提取 URL。 */
+	@Test
+	public void testImgListUrl() {
+		this.mode = "imgList";
+		BaiduImageClient client = newClient();
+		ImageResponse resp = client.generate(BaiduModels.ERNIE_VILG_V2, "x");
+		assertEquals(IMAGE_URL, resp.firstUrl());
+		client.close();
+	}
+
+	/** parseSize：非法数字回退默认（catch NumberFormatException）。 */
+	@Test
+	public void testParseSizeInvalid() throws Exception {
+		java.lang.reflect.Method m = BaiduImageClient.class.getDeclaredMethod("parseSize", String.class);
+		m.setAccessible(true);
+		int[] r = (int[]) m.invoke(null, "abxcd");
+		assertEquals(1024, r[0]);
+		assertEquals(1024, r[1]);
+	}
+
+	/** sleepQuietly 中断分支。 */
+	@Test
+	public void testSleepQuietlyInterrupted() throws Exception {
+		BaiduImageClient.POLL_INTERVAL_MS = 10000L;
+		java.lang.reflect.Method m = BaiduImageClient.class.getDeclaredMethod("sleepQuietly");
+		m.setAccessible(true);
+		Thread.currentThread().interrupt();
+		try {
+			assertThrows(java.lang.reflect.InvocationTargetException.class, () -> m.invoke(null));
+		}
+		finally {
+			Thread.interrupted();
+		}
+	}
+
+	/** 缺 secretKey：fetchToken 抛 AiException。 */
+	@Test
+	public void testMissingSecretKey() {
+		BaiduImageClient client = new BaiduImageClient(
+			AiConfig.builder().apiKey("ak").baseUrl(this.baseUrl).build());
+		assertThrows(com.sure.ai.exception.AiException.class,
+			() -> client.generate(BaiduModels.ERNIE_VILG_V2, "x"));
+	}
+
+	/** withDefaults：无 baseUrl → 补默认地址。 */
+	@Test
+	public void testWithDefaults() throws Exception {
+		java.lang.reflect.Method m = BaiduImageClient.class.getDeclaredMethod(
+			"withDefaults", AiConfig.class);
+		m.setAccessible(true);
+		AiConfig cfg = (AiConfig) m.invoke(null, AiConfig.builder().apiKey("k").build());
+		assertEquals(BaiduImageClient.DEFAULT_BASE_URL, cfg.baseUrl());
 	}
 
 	/** token 缓存：两次生成只换一次 token。 */

@@ -33,6 +33,7 @@ import com.sure.ai.model.TextPart;
 import com.sure.ai.model.ToolCall;
 import com.sure.ai.model.ToolFunction;
 import com.sure.ai.model.ToolSpec;
+import com.sure.ai.model.VideoPart;
 
 /**
  * 对话请求归一化与缓存键计算。
@@ -159,6 +160,9 @@ public final class ChatCacheKey {
 				append(sb, dp.mimeType());
 				sb.append(',');
 				append(sb, dp.data());
+			} else if (p instanceof VideoPart vp) {
+				sb.append("video:");
+				append(sb, vp.resolvedUrl());
 			}
 		}
 	}

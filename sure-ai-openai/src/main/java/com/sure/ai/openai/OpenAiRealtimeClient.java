@@ -118,6 +118,19 @@ public class OpenAiRealtimeClient extends AbstractRealtimeClient {
 			case "conversation.item.input_audio_transcription.completed":
 				this.eventListener.onTranscript(o.optString("transcript", ""));
 				break;
+			case "input_audio_buffer.speech_started":
+				// 服务端 VAD：用户语音开始（2.4.0 标准化）
+				this.eventListener.onSpeechStart();
+				break;
+			case "input_audio_buffer.speech_stopped":
+				// 服务端 VAD：用户语音结束（2.4.0 标准化）
+				this.eventListener.onSpeechStop();
+				break;
+			case "conversation.interrupted":
+			case "response.output_audio.interrupted":
+				// 模型输出被打断（barge-in，2.4.0 标准化）
+				this.eventListener.onInterrupted();
+				break;
 			case "error": {
 				String msg = null;
 				if (o.has("error")) {

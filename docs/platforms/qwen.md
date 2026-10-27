@@ -82,6 +82,18 @@ QwenUtil.chatStream(
 - 支持 Function Calling
 - 不同模型计费不同，详见阿里云文档
 
+## 能力核实（v2.4.0，2026-10 联网核对）
+
+- **视频输入（Qwen-VL）已核实支持**：新增 `VideoPart`，在 OpenAI 兼容模式下序列化为
+  `{"type":"video_url","video_url":{"url":resolvedUrl()}}`（url 为公网 URL 或 Base64 Data URL）。
+  仅部分 Qwen-VL / QVQ / Qwen-Omni 模型支持视频文件输入。依据：
+  https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions
+- **图像输入**：`ImagePart` 走 OpenAI 兼容 `image_url` 内容块，已核实。
+- **并行工具调用 / 工具结果回传**：继承 OpenAI 兼容协议（`tool_calls` 数组 + `role:tool` +
+  `tool_call_id`），已核实支持并行多调用。
+
 ## 官方文档
 
 https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope
+https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions
+

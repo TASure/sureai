@@ -45,7 +45,7 @@ import com.sure.tool.lang.Assert;
  *   <li>合并多余空白（连续换行/空格压缩为单个空格）。</li>
  * </ol>
  *
- * <p><b>注意</b>：JDK 21 无内置 HTML 解析器，本实现为基于正则的基础去标签，
+ * <p><b>注意</b>：JDK 无内置 HTML 解析器，本实现为基于正则的基础去标签，
  * 不处理复杂嵌套、畸形标签与 JS 渲染页面，建议仅用于简单静态 HTML 页面。</p>
  *
  * <p>元数据包含 {@code source}（URL）、{@code loaded_at}（ISO-8601 时间戳）、

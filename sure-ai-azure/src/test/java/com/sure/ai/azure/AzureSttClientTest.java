@@ -152,4 +152,82 @@ public class AzureSttClientTest {
 	public void testName() {
 		assertEquals("azure-stt", newClient().name());
 	}
+
+	/** 缺省 language/contentType：回退 zh-CN 与 DEFAULT_CONTENT_TYPE。 */
+	@Test
+	public void testDefaults() {
+		AzureSttClient client = newClient();
+		SttResponse resp = client.transcribe(SttRequest.builder()
+			.model("azure-stt").audioData(new byte[] { 1 }).build());
+		assertEquals("你好世界", resp.text());
+		assertTrue(this.requestPath.contains("language=zh-CN"));
+		assertEquals(AzureSttClient.DEFAULT_CONTENT_TYPE, this.requestContentType);
+		client.close();
+	}
+
+	/** 自定义 contentType 透传。 */
+	@Test
+	public void testCustomContentType() {
+		AzureSttClient client = newClient();
+		client.transcribe(SttRequest.builder().model("azure-stt").audioData(new byte[] { 1 })
+			.language("en-US").contentType("audio/wav").build());
+		assertTrue(this.requestPath.contains("language=en-US"));
+		assertEquals("audio/wav", this.requestContentType);
+		client.close();
+	}
+
+	/** 网络不可达 → AiTimeoutException。 */
+	@Test
+	public void testNetworkError() {
+		AiConfig dead = AiConfig.builder().apiKey("k").baseUrl("http://127.0.0.1:1").build();
+		AzureSttClient client = new AzureSttClient(dead);
+		assertThrows(com.sure.ai.exception.AiTimeoutException.class,
+			() -> client.transcribe(SttRequest.of("azure-stt", new byte[] { 1 })));
+		client.close();
+	}
+
+	/** baseUrl 未配置 → AiException。 */
+	@Test
+	public void testBaseUrlBlank() {
+		AiConfig cfg = AiConfig.builder().apiKey("k").build();
+		AzureSttClient client = new AzureSttClient(cfg);
+		assertThrows(AiException.class,
+			() -> client.transcribe(SttRequest.of("azure-stt", new byte[] { 1 })));
+		client.close();
+	}
+
+	/** baseUrl 以斜杠结尾：resolve 去重斜杠分支。 */
+	@Test
+	public void testBaseUrlTrailingSlash() {
+		AzureSttClient client = new AzureSttClient(AiConfig.builder().apiKey("k")
+			.baseUrl(this.baseUrl + "/").build());
+		SttResponse resp = client.transcribe(SttRequest.of("azure-stt", new byte[] { 1 }));
+		assertEquals("你好世界", resp.text());
+		client.close();
+	}
+
+	/** 线程已中断 → send 抛 InterruptedException 映射 AiException。 */
+	@Test
+	public void testInterrupted() {
+		AzureSttClient client = newClient();
+		Thread.currentThread().interrupt();
+		try {
+			assertThrows(AiException.class,
+				() -> client.transcribe(SttRequest.of("azure-stt", new byte[] { 1 })));
+		}
+		finally {
+			Thread.interrupted();
+		}
+		client.close();
+	}
+
+	/** resolve：path 不以斜杠开头 → base + "/" + path 拼接分支。 */
+	@Test
+	public void testResolveNoLeadingSlash() throws Exception {
+		AzureSttClient client = newClient();
+		java.lang.reflect.Method m = AzureSttClient.class.getDeclaredMethod("resolve", String.class);
+		m.setAccessible(true);
+		assertEquals(this.baseUrl + "/stt/x", m.invoke(client, "stt/x"));
+		client.close();
+	}
 }
