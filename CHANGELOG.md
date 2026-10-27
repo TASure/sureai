@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-本版本线为「开发者体验终极」（路线图最后里程碑）：**模板应用库（一键生成工程） + CLI 增强（new/config/doctor/version + chat 多轮记忆） + 文档站（docs/ → 可发布静态站点，纯 JDK） + 示例/文档全中英**。三个新模块全部零第三方运行期与构建期依赖（不引 Jekyll/npm/commonmark/freemarker/picocli），公共 API 只增不改，版本保持 2.10.0-SNAPSHOT（发布待用户显式指令）。
+（3.0.1-SNAPSHOT 待定）
+
+## [3.0.0] - 2026-10-23
+
+本版本线为「开发者体验终极」（路线图最后里程碑）：**模板应用库（一键生成工程） + CLI 增强（new/config/doctor/version + chat 多轮记忆） + 文档站（docs/ → 可发布静态站点，纯 JDK） + 示例/文档全中英**。三个新模块全部零第三方运行期与构建期依赖（不引 Jekyll/npm/commonmark/freemarker/picocli），公共 API 只增不改。
 
 ### Added
 - **模板应用库（新模块 `sure-ai-templates`）**：`Templates`（`rag-kb` 知识库问答 RAG 端到端 / `customer-service` 客服机器人 ReAct+工具+记忆 / `code-assistant` 代码助手结构化输出+工具，`of/list/slug`）+ `TemplateGenerator.generate(template, targetDir, placeholders[, loader])`（复制 + 占位符替换，支持 file:/jar: 资源协议，目标目录防覆盖）；三套模板工程（pom import sure-ai-bom + sure-ai-all + JUnit + exec 插件 + 最小单元测试），生成即 `mvn test` 零网络可跑。
