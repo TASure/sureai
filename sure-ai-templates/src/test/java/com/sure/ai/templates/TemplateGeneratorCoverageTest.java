@@ -20,9 +20,12 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Constructor;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Map;
 
@@ -97,5 +100,44 @@ public class TemplateGeneratorCoverageTest {
 		assertThrows(IOException.class, () -> TemplateGenerator.enumerate(
 			TemplateGeneratorCoverageTest.class.getClassLoader(),
 			new URL("jar:file:/tmp/x%zz.jar!/"), "/templates/x"));
+	}
+
+	@Test
+	public void enumerateFileUrlWithIllegalEncodingFails() throws Exception {
+		// file 协议但路径含非法转义：Path.of(root.toURI()) 抛异常 → 转 IOException
+		assertThrows(IOException.class, () -> TemplateGenerator.enumerate(
+			TemplateGeneratorCoverageTest.class.getClassLoader(),
+			new URL("file:/tmp/x%zz.yaml"), "/templates/x"));
+	}
+
+	@Test
+	public void resolveDefaultVersionFallsBackOnNullBlankAndMissingKey() throws Exception {
+		assertEquals("3.0.0", TemplateGenerator.resolveDefaultVersion(null));
+		assertEquals("3.0.0", TemplateGenerator.resolveDefaultVersion(
+			new ByteArrayInputStream("sureai.version=  \n".getBytes(StandardCharsets.UTF_8))));
+		assertEquals("3.0.0", TemplateGenerator.resolveDefaultVersion(
+			new ByteArrayInputStream("other.key=1\n".getBytes(StandardCharsets.UTF_8))));
+	}
+
+	@Test
+	public void resolveDefaultVersionParsesAndTrimsValue() throws Exception {
+		assertEquals("4.0.0-RC1", TemplateGenerator.resolveDefaultVersion(
+			new ByteArrayInputStream("sureai.version= 4.0.0-RC1 \n".getBytes(StandardCharsets.UTF_8))));
+	}
+
+	@Test
+	public void resolveDefaultVersionFallsBackOnIoError() throws Exception {
+		InputStream broken = new InputStream() {
+			@Override
+			public int read() throws IOException {
+				throw new IOException("boom");
+			}
+		};
+		assertEquals("3.0.0", TemplateGenerator.resolveDefaultVersion(broken));
+	}
+
+	@Test
+	public void defaultVersionIsResolvedFromClasspath() {
+		assertTrue("构建期注入版本不应为空白", !TemplateGenerator.DEFAULT_SUREAI_VERSION.isBlank());
 	}
 }
