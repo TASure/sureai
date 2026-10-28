@@ -128,7 +128,7 @@ jobs:
         # 前置：permissions 已含 id-token: write + attestations: write（见文件头 permissions 块）。
         # 产物可用性：上方 `clean deploy` 已把各模块 jar 落盘到各自 target，本步骤不做 clean，jar 仍在；
         # Generate SBOM 已落盘 bom.json/bom.xml。
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             sure-ai-all/target/bom.json
