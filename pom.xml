@@ -111,7 +111,7 @@
         <junit.version>4.13.2</junit.version>
         <sure.core.version>0.2.0</sure.core.version>
         <!-- Apache POI 版本：仅 sure-ai-ingest-poi 以 provided 引入，不进运行期链 -->
-        <poi.version>5.5.1</poi.version>
+        <poi.version>6.0.0</poi.version>
         <!-- JaCoCo 行覆盖率门禁下限：全模块 ≥98%（sure-ai-core 亦 0.98） -->
         <jacoco.line.min>0.98</jacoco.line.min>
         <!-- SpotBugs 静态扫描：默认开启，无源码模块在自身 pom 覆盖为 true -->
@@ -358,7 +358,7 @@
                 <plugin>
                     <groupId>org.cyclonedx</groupId>
                     <artifactId>cyclonedx-maven-plugin</artifactId>
-                    <version>2.9.1</version>
+                    <version>2.9.3</version>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -373,7 +373,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
-                <version>3.3.1</version>
+                <version>3.5.0</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -458,7 +458,7 @@
             <plugin>
                 <groupId>com.github.spotbugs</groupId>
                 <artifactId>spotbugs-maven-plugin</artifactId>
-                <version>4.10.4.1</version>
+                <version>4.10.5.0</version>
                 <configuration>
                     <effort>Max</effort>
                     <threshold>Medium</threshold>
