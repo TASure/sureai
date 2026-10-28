@@ -20,6 +20,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -164,6 +165,9 @@ public class CliV300CoverageTest {
 
 	@Test
 	public void newWithRootDirNameFallsBackAndFails() throws Exception {
+		// /proc 为 Linux 专属文件系统，Windows/macOS 无此语义，跳过
+		assumeTrue("仅 Linux 具备 /proc 只读语义，Windows/macOS 跳过",
+				Files.isDirectory(Path.of("/proc")));
 		// --name "/" → Path.of("/").getFileName()==null → 兜底目录名；
 		// 防覆盖检查 Files.walk("/") 遇只读目录（/proc 等）抛 IOException → EXIT_API
 		CliRunner runner = new CliRunner(out, factoryFor(new CountingClient("x"), "m"),
@@ -188,6 +192,9 @@ public class CliV300CoverageTest {
 
 	@Test
 	public void newToReadOnlyPathThrowsIo() {
+		// /proc 为 Linux 专属文件系统，Windows/macOS 无此语义，跳过
+		assumeTrue("仅 Linux 具备 /proc 只读语义，Windows/macOS 跳过",
+				Files.isDirectory(Path.of("/proc")));
 		// /proc 只读 → createDirectories 抛 IOException → EXIT_API
 		CliRunner runner = new CliRunner(out, factoryFor(new CountingClient("x"), "m"),
 			mapEnv(new HashMap<>()), path -> "", () -> null);

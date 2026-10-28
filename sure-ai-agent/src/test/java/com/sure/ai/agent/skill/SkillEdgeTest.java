@@ -19,6 +19,7 @@ package com.sure.ai.agent.skill;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -26,6 +27,7 @@ import java.io.InputStream;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Enumeration;
@@ -214,7 +216,10 @@ public class SkillEdgeTest {
 	}
 
 	@Test
-	public void testLocalUnreadableSkillMdThrows() throws Exception {		this.temp.create();
+	public void testLocalUnreadableSkillMdThrows() throws Exception {
+		assumeTrue("POSIX 权限视图仅在 Unix 系可用，Windows 跳过",
+				FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
+		this.temp.create();
 		Path dir = this.temp.newFolder("deny").toPath();
 		Path md = dir.resolve("SKILL.md");
 		Files.writeString(md, """
@@ -236,6 +241,8 @@ public class SkillEdgeTest {
 
 	@Test
 	public void testUnreadableRootDirScanThrows() throws Exception {
+		assumeTrue("POSIX 权限视图仅在 Unix 系可用，Windows 跳过",
+				FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
 		this.temp.create();
 		Path root = this.temp.newFolder("locked").toPath();
 		Files.createDirectories(root.resolve("x"));
