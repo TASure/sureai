@@ -24,7 +24,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -51,6 +54,23 @@ public class TemplateEndToEndTest {
 	@Rule
 	public TemporaryFolder tmp = new TemporaryFolder();
 
+	/**
+	 * 跨平台 Maven 命令：Windows 下 Maven 仅有 {@code mvn.cmd}（无 {@code mvn.exe}），
+	 * ProcessBuilder 不能直接执行 {@code .cmd}，须经 {@code cmd /c} 包装；Unix 系直接 {@code mvn}。
+	 */
+	private static List<String> mvn(String... args) {
+		List<String> cmd = new ArrayList<>();
+		if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) {
+			cmd.add("cmd");
+			cmd.add("/c");
+			cmd.add("mvn.cmd");
+		} else {
+			cmd.add("mvn");
+		}
+		cmd.addAll(Arrays.asList(args));
+		return cmd;
+	}
+
 	@BeforeClass
 	public static void ensureLocalArtifacts() throws Exception {
 		Path all = Path.of(System.getProperty("user.home"),
@@ -64,8 +84,8 @@ public class TemplateEndToEndTest {
 		// 注意：surefire 下 user.dir 为模块目录，必须上溯到含 <artifactId>sureai</artifactId> 的工程根，
 		// 否则 -pl sure-ai-bom,sure-ai-all 找不到模块。
 		Path root = findProjectRoot();
-		Process p = new ProcessBuilder("mvn", "-q", "-B", "install",
-			"-DskipTests", "-Dgpg.skip=true", "-pl", "sure-ai-bom,sure-ai-all", "-am")
+		Process p = new ProcessBuilder(mvn("-q", "-B", "install",
+			"-DskipTests", "-Dgpg.skip=true", "-pl", "sure-ai-bom,sure-ai-all", "-am"))
 			.directory(root.toFile())
 			.inheritIO()
 			.start();
@@ -112,7 +132,7 @@ public class TemplateEndToEndTest {
 			Map.of("projectName", projectName));
 		assertTrue("生成文件数应 ≥4（pom/README/gitignore/源文件）", generated.size() >= 4);
 
-		Process p = new ProcessBuilder("mvn", "-q", "-B", "-f", target.toString(), "test")
+		Process p = new ProcessBuilder(mvn("-q", "-B", "-f", target.toString(), "test"))
 			.directory(target.toFile())
 			.inheritIO()
 			.start();
