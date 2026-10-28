@@ -138,7 +138,7 @@ jobs:
       - name: Attach SBOM to GitHub Release
         # 将 CycloneDX SBOM 附加到当前 tag 的 Release（JSON 为主，XML 为辅）。
         # softprops/action-gh-release 按 github.ref（触发本 workflow 的 v* tag）创建/更新 Release。
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             sure-ai-all/target/bom.json
