@@ -74,7 +74,7 @@ jobs:
 
       # path 指向【直接含 index.html 的目录】（target/site/apidocs/index.html 即站点首页）。
       - name: Upload Javadoc artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: target/site/apidocs
 
