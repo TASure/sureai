@@ -34,7 +34,7 @@
         为配置了凭证的平台注册 XxxClient 合成 Bean。本模块为构建期模块，不进入应用运行期依赖。</description>
 
     <properties>
-        <quarkus.version>3.27.5</quarkus.version>
+        <quarkus.version>3.40.1.1</quarkus.version>
         <jacoco.skip>true</jacoco.skip>
         <spotbugs.skip>true</spotbugs.skip>
     </properties>
